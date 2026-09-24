@@ -86,8 +86,9 @@ export function relevanceFromRank(record, index) {
     return clamp01(record.relevance)
   }
   if (typeof record.rank === 'number') {
-    // FTS5 bm25-style rank: more negative / smaller is better.
-    return clamp01(1 / (1 + Math.abs(record.rank)))
+    // FTS5 bm25-style rank: more negative is a stronger match.
+    const r = record.rank < 0 ? -record.rank : Math.abs(record.rank)
+    return clamp01(r / (1 + r))
   }
   return clamp01(1 - index * 0.06)
 }
@@ -233,8 +234,16 @@ export function summarizeForPrompt(records, { heading = 'Veyra recalled engineer
       lines.push(`> ⚠️ ${banner}`)
     }
     lines.push(`- [${rec.id}] (${scope}/${auth}/${rec.validation}/${rec.confidence}${ev}${contra}) ${rec.title}`)
-    const body = String(rec.body || '').replace(/\s+/g, ' ').trim()
-    if (body) lines.push(`  ${body.slice(0, 360)}`)
+    const causal = rec.source?.causal
+    if (causal && (causal.symptom || causal.rootCause || causal.remedy || causal.verifiedOutcome)) {
+      if (causal.symptom) lines.push(`  • Symptom: ${causal.symptom}`)
+      if (causal.rootCause) lines.push(`  • Root cause: ${causal.rootCause}`)
+      if (causal.remedy) lines.push(`  • Remedy: ${causal.remedy}`)
+      if (causal.verifiedOutcome) lines.push(`  • Outcome: ${causal.verifiedOutcome}`)
+    } else {
+      const body = String(rec.body || '').replace(/\s+/g, ' ').trim()
+      if (body) lines.push(`  ${body.slice(0, 360)}`)
+    }
   }
   return lines.join('\n')
 }

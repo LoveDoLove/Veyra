@@ -100,6 +100,18 @@ export function strengthenMemory(neighbor, candidate, { workspace = null } = {})
     tags.push('promotion-candidate')
   }
 
+  const existingCausal = neighbor.source?.causal
+  const candidateCausal = candidate.source?.causal
+  let mergedCausal = existingCausal || null
+  if (existingCausal || candidateCausal) {
+    mergedCausal = {
+      symptom: existingCausal?.symptom || candidateCausal?.symptom || null,
+      rootCause: existingCausal?.rootCause || candidateCausal?.rootCause || null,
+      remedy: existingCausal?.remedy || candidateCausal?.remedy || null,
+      verifiedOutcome: candidateCausal?.verifiedOutcome || existingCausal?.verifiedOutcome || null,
+    }
+  }
+
   return {
     ...neighbor,
     evidence: mergedEvidence,
@@ -111,6 +123,7 @@ export function strengthenMemory(neighbor, candidate, { workspace = null } = {})
       observations: obsCount,
       lastConfirmedAt: new Date().toISOString(),
       lastConfirmedBy: candidate.id || null,
+      ...(mergedCausal ? { causal: mergedCausal } : {}),
     },
   }
 }

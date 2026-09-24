@@ -32,11 +32,19 @@ function formatRecord(record) {
   const ev = record.evidence?.length ? ` evidence=${record.evidence.length}` : ''
   const obs = record.source?.observations > 1 ? ` obs=${record.source.observations}` : ''
   const promo = record.tags?.includes('promotion-candidate') ? ' [PROMOTION CANDIDATE]' : ''
-  return [
+  const lines = [
     `${record.id}  ${record.kind}/${record.authority}/${record.validation}/${record.confidence}  ${record.scope}${record.forgotten ? '  FORGOTTEN' : ''}${ev}${obs}${promo}`,
     record.title,
-    record.body,
-  ].join('\n')
+  ]
+  const causal = record.source?.causal
+  if (causal && (causal.symptom || causal.rootCause || causal.remedy || causal.verifiedOutcome)) {
+    if (causal.symptom) lines.push(`symptom: ${causal.symptom}`)
+    if (causal.rootCause) lines.push(`rootCause: ${causal.rootCause}`)
+    if (causal.remedy) lines.push(`remedy: ${causal.remedy}`)
+    if (causal.verifiedOutcome) lines.push(`outcome: ${causal.verifiedOutcome}`)
+  }
+  lines.push(record.body)
+  return lines.join('\n')
 }
 
 export function handleVeyraCommand(runtime, invocation) {
