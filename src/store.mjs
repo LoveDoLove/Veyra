@@ -105,6 +105,10 @@ function nowIso() {
   return new Date().toISOString()
 }
 
+function isIsoDate(value) {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value))
+}
+
 function parseJson(value, fallback) {
   if (value == null || value === '') return fallback
   if (typeof value !== 'string') return value
@@ -200,8 +204,15 @@ function normalizeRecord(input, { existing = null, explicitCanonical = false } =
     contentHash: contentHash(title, body),
     forgotten: Boolean(input.forgotten ?? existing?.forgotten ?? false),
     createdAt: existing?.createdAt ?? input.createdAt ?? stamp,
-    updatedAt: stamp,
-    lastRecalledAt: existing?.lastRecalledAt ?? null,
+    // Always restamp unless the caller explicitly backdates updatedAt
+    // (tests / lifecycle). Spreading an existing record must not freeze
+    // freshness — that path keeps the previous updatedAt by accident.
+    updatedAt: isIsoDate(input.updatedAt) && input.updatedAt !== existing?.updatedAt
+      ? input.updatedAt
+      : stamp,
+    lastRecalledAt: Object.hasOwn(input, 'lastRecalledAt') && (input.lastRecalledAt == null || isIsoDate(input.lastRecalledAt))
+      ? input.lastRecalledAt
+      : (existing?.lastRecalledAt ?? null),
     redacted: !titleScrub.clean || !bodyScrub.clean,
     detectedPatterns: [...new Set([...titleScrub.detectedPatterns, ...bodyScrub.detectedPatterns])],
   }

@@ -7,8 +7,9 @@
  *   3. FTS5 lexical match
  *   4. lifecycle filter — current only, skip stale/invalid/forgotten
  *   5. 6-D ranking      — relevance, evidence, validation, proximity,
- *                          freshness, confidence (never an opaque score)
- *   6. contradiction flag — related `contradicts` links are annotated
+ *                          freshness, confidence, plus a small intent
+ *                          affinity (Mnemon DetectIntent; never opaque)
+ *   6. contradiction banners — both sides stay visible (PMA; never resolved)
  *
  * Invariant (OpenViking merge_policy / GOAL.md):
  *   Similarity only identifies candidates. It is never sufficient evidence
@@ -16,6 +17,8 @@
  */
 
 import { AUTHORITIES, CONFIDENCES, DEFAULT_RECALL_LIMIT, SCOPES, VALIDATIONS, isRecallEligible } from './types.mjs'
+import { detectIntent, intentAffinity, intentWeights } from './intent.mjs'
+import { annotateContradictions } from './evolve.mjs'
 
 export function evidenceStrength(evidence) {
   if (!evidence) return 0.1
@@ -105,9 +108,9 @@ const DEFAULT_WEIGHTS = Object.freeze({
  * Rank records with a full dimensional breakdown.
  * Never returns a single opaque score.
  */
-export function rankRecords(records, { weights = {}, preferProject = true } = {}) {
+export function rankRecords(records, { weights = {}, preferProject = true, intent = null } = {}) {
   if (!Array.isArray(records) || records.length === 0) return []
-  const w = { ...DEFAULT_WEIGHTS, ...weights }
+  const w = { ...DEFAULT_WEIGHTS, ...intentWeights(intent), ...weights }
   const scored = records.map((rec, idx) => {
     const relevance = relevanceFromRank(rec, idx)
     const evidence = evidenceStrength(rec.evidence)
@@ -115,6 +118,7 @@ export function rankRecords(records, { weights = {}, preferProject = true } = {}
     const proximity = scopeProximity(rec.scope, preferProject)
     const freshness = freshnessTier(rec.updatedAt || rec.createdAt)
     const confidence = confidenceScore(rec.confidence)
+    const affinity = intentAffinity(rec, intent)
     const composite = Number((
       relevance * w.relevance
       + evidence * w.evidence
@@ -122,9 +126,11 @@ export function rankRecords(records, { weights = {}, preferProject = true } = {}
       + proximity * w.proximity
       + freshness * w.freshness
       + confidence * w.confidence
+      + affinity
     ).toFixed(4))
     return {
       ...rec,
+      intent: intent || undefined,
       scores: {
         composite,
         relevance: Number(relevance.toFixed(3)),
@@ -133,23 +139,12 @@ export function rankRecords(records, { weights = {}, preferProject = true } = {}
         scope_proximity: Number(proximity.toFixed(3)),
         freshness_tier: Number(freshness.toFixed(3)),
         confidence: Number(confidence.toFixed(3)),
+        intent_affinity: Number(affinity.toFixed(3)),
       },
     }
   })
   scored.sort((a, b) => b.scores.composite - a.scores.composite)
   return scored
-}
-
-function annotateContradictions(records) {
-  const byId = new Map(records.map((r) => [r.id, r]))
-  for (const rec of records) {
-    const hits = []
-    for (const rel of rec.relations || []) {
-      if (rel.type === 'contradicts' && byId.has(rel.targetId)) hits.push(rel.targetId)
-    }
-    rec.contradictions = hits
-  }
-  return records
 }
 
 /**
@@ -164,7 +159,9 @@ export function recall({
   query = '',
   limit = DEFAULT_RECALL_LIMIT,
   includeReusable = true,
+  intent = null,
 } = {}) {
+  const detectedIntent = intent || detectIntent(query)
   const perStore = Math.max(limit * 3, 8)
   const projectHits = projectStore
     ? projectStore.search(query, { limit: perStore, recallOnly: true })
@@ -189,8 +186,22 @@ export function recall({
     merged.push(rec)
   }
 
-  const ranked = annotateContradictions(rankRecords(merged))
-  return ranked.slice(0, Math.max(1, limit))
+  const ranked = annotateContradictions(rankRecords(merged, { intent: detectedIntent }))
+  const limited = ranked.slice(0, Math.max(1, limit))
+  // PMA invariant: never hide one side of a contradiction. Pull the
+  // opposing recall-eligible record even if FTS missed it.
+  const extras = []
+  for (const rec of limited) {
+    for (const rel of rec.relations || []) {
+      if (rel.type !== 'contradicts' || seen.has(rel.targetId)) continue
+      const extra = projectStore?.get(rel.targetId) || reusableStore?.get(rel.targetId)
+      if (!extra || !isRecallEligible(extra)) continue
+      seen.add(extra.id)
+      extras.push(extra)
+    }
+  }
+  if (extras.length === 0) return limited
+  return annotateContradictions(rankRecords([...limited, ...extras], { intent: detectedIntent }))
 }
 
 /**
@@ -216,6 +227,9 @@ export function summarizeForPrompt(records, { heading = 'Veyra recalled engineer
     const ev = rec.evidence?.length ? `; evidence: ${rec.evidence.length}` : ''
     const contra = rec.contradictions?.length ? `; CONTRADICTS ${rec.contradictions.join(', ')}` : ''
     const scope = rec.scope === SCOPES.REUSABLE ? 'reusable' : 'project'
+    for (const banner of rec.contradictionBanners || []) {
+      lines.push(`> ⚠️ ${banner}`)
+    }
     lines.push(`- [${rec.id}] (${scope}/${auth}/${rec.validation}/${rec.confidence}${ev}${contra}) ${rec.title}`)
     const body = String(rec.body || '').replace(/\s+/g, ' ').trim()
     if (body) lines.push(`  ${body.slice(0, 360)}`)

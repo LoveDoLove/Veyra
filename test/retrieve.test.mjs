@@ -29,7 +29,7 @@ test('ranking exposes a full dimensional breakdown, not an opaque score', () => 
   ])
   assert.ok(ranked[0].scores.composite > ranked[1].scores.composite)
   assert.equal(ranked[0].id, 'strong')
-  for (const key of ['composite', 'relevance', 'evidence_strength', 'validation_tier', 'scope_proximity', 'freshness_tier', 'confidence']) {
+  for (const key of ['composite', 'relevance', 'evidence_strength', 'validation_tier', 'scope_proximity', 'freshness_tier', 'confidence', 'intent_affinity']) {
     assert.equal(typeof ranked[0].scores[key], 'number')
   }
 })

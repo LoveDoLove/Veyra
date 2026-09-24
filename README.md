@@ -26,8 +26,8 @@ Requires Node 22.5+ and DSH `>=0.1.2-rc.1`. Memory lives in `$DSH_HOME/veyra/`.
 You do not manage memory for ordinary work.
 
 1. Do engineering in DSH as usual.
-2. Veyra stores candidates from the session, and durable lessons as derived memory.
-3. On a later session in the same project, relevant memory is injected automatically.
+2. Veyra distills the turn into a candidate (files, symbols, claim signal). Durable, grounded lessons become derived memory and are linked to neighbors — extended, updated, or contradicted. Near-duplicates are not cloned. Nothing is merged silently.
+3. On a later session in the same project, relevant memory is injected automatically. Recall is intent-aware (why / how / when). Contradictions stay visible on both sides. Superseded and long-idle unverified memories leave ambient recall. Canonical is never assigned automatically.
 
 Ask the agent to remember something important, or just keep going — automatic recall is already on.
 
@@ -52,7 +52,7 @@ Tools with the same names (`veyra_remember`, `veyra_recall`, …) are available 
 | Remembered / learned lesson | `derived` | yes |
 | Explicitly promoted truth | `canonical` | yes |
 
-Canonical is never assigned automatically. Repo files stay authoritative. Secrets are redacted. Projects are isolated; reusable memory is opt-in.
+Canonical is never assigned automatically. Repo files stay authoritative. Similarity is not identity: overlapping memories are linked, not merged. Secrets are redacted. Projects are isolated; reusable memory is opt-in.
 
 ## Config (optional)
 

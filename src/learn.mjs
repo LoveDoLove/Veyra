@@ -6,27 +6,42 @@
  * canonical authority (GOAL.md: Automatic behavior must not silently
  * create authoritative truth).
  *
- * Adapted in spirit from PMA knowledge-compounding and supermemory
- * `updates` / `extends` / `derives` relations.
+ * Understand (distill) decides what the turn claimed. Evolve (diff)
+ * decides how that claim relates to existing memory. Similarity never
+ * merges two records (OpenViking merge_policy).
  */
 
-import { AUTHORITIES, CONFIDENCES, KINDS, MAX_MEMORY_BODY_CHARS, RELATIONS, STATUSES, VALIDATIONS } from './types.mjs'
+import {
+  AUTHORITIES,
+  CONFIDENCES,
+  KINDS,
+  MAX_MEMORY_BODY_CHARS,
+  RELATIONS,
+  STATUSES,
+  VALIDATIONS,
+  isRecallEligible,
+} from './types.mjs'
 import { contentHash } from './ids.mjs'
-import { isRecallEligible } from './types.mjs'
-
-const LEARN_HINTS = [
-  /\b(decided|decision|always|never|must|should not|root cause|workaround|fix was|the cause|lesson)\b/i,
-  /\b(architecture|constraint|regression|race|deadlock|migration)\b/i,
-]
+import { looksLikeClaim } from './understand.mjs'
+import { evolveAgainst } from './evolve.mjs'
 
 export function looksDurable(text) {
-  if (typeof text !== 'string' || text.length < 60) return false
-  return LEARN_HINTS.some((re) => re.test(text))
+  return looksLikeClaim(text) && typeof text === 'string' && text.length >= 60
+}
+
+function hasGrounding(candidate) {
+  const evidence = candidate?.evidence || []
+  if (evidence.some((item) => item && (item.path || item.uri || item.anchor || item.note))) {
+    return true
+  }
+  const files = candidate?.source?.files || []
+  return files.length > 0
 }
 
 /**
  * After a turn, consider promoting a fresh candidate into derived memory
- * when it looks durable and is not a duplicate of existing knowledge.
+ * when it looks durable, is grounded, and is not a verbatim duplicate of
+ * existing knowledge.
  *
  * Returns the written derived record, or null when nothing was learned.
  */
@@ -36,23 +51,32 @@ export function maybeLearn(store, candidate, { related = [] } = {}) {
   if (!looksDurable(`${candidate.title}\n${candidate.body}`)) return null
 
   const hash = contentHash(candidate.title, candidate.body)
-  const existing = store.list({ limit: 40 }).filter((r) => !r.forgotten)
-  if (existing.some((r) => r.contentHash === hash && r.authority !== AUTHORITIES.CANDIDATE)) {
+  const existing = store.list({ limit: 60 }).filter((r) => !r.forgotten)
+  if (existing.some((r) => r.contentHash === hash && r.authority !== AUTHORITIES.CANDIDATE && r.id !== candidate.id)) {
     return null
   }
 
-  // If a similar derived/canonical memory exists, link rather than clone.
-  const neighbor = existing.find((r) => (
-    isRecallEligible(r)
-    && sharesTokens(r.title, candidate.title)
-  ))
-
-  const relations = []
-  if (neighbor) {
-    relations.push({ type: RELATIONS.EXTENDS, targetId: neighbor.id })
-  }
+  const seedRelations = []
   for (const other of related) {
-    if (other?.id) relations.push({ type: RELATIONS.DERIVES, targetId: other.id })
+    if (other?.id) seedRelations.push({ type: RELATIONS.DERIVES, targetId: other.id })
+  }
+
+  const evolved = evolveAgainst(store, {
+    ...candidate,
+    authority: AUTHORITIES.DERIVED,
+    relations: [...(candidate.relations || []), ...seedRelations],
+  }, existing)
+
+  // A near-verbatim restatement of existing derived knowledge is not new
+  // learning. Keep the candidate as a candidate (inspectable) and link it.
+  if (evolved.action === 'duplicate' && evolved.neighbor && isRecallEligible(evolved.neighbor)) {
+    if (candidate.id) {
+      store.put({
+        ...candidate,
+        relations: evolved.record.relations,
+      })
+    }
+    return null
   }
 
   // Update the candidate in place when it already has an id. A new put
@@ -64,15 +88,19 @@ export function maybeLearn(store, candidate, { related = [] } = {}) {
     status: STATUSES.CURRENT,
     validation: VALIDATIONS.UNVERIFIED,
     authority: AUTHORITIES.DERIVED,
-    confidence: CONFIDENCES.LOW,
+    confidence: hasGrounding(candidate) ? CONFIDENCES.MEDIUM : CONFIDENCES.LOW,
     scope: candidate.scope,
     projectId: candidate.projectId,
     title: candidate.title,
     body: String(candidate.body || '').slice(0, MAX_MEMORY_BODY_CHARS),
-    tags: unique([...(candidate.tags || []), 'learned']),
+    tags: unique([...(candidate.tags || []), 'learned', candidate.source?.signal].filter(Boolean)),
     evidence: candidate.evidence || [],
-    relations,
-    source: { ...(candidate.source || {}), learnedFrom: candidate.id || null },
+    relations: evolved.record.relations,
+    source: {
+      ...(candidate.source || {}),
+      learnedFrom: candidate.id || null,
+      evolveAction: evolved.action,
+    },
   })
   return written.record
 }
@@ -80,20 +108,36 @@ export function maybeLearn(store, candidate, { related = [] } = {}) {
 /**
  * Explicit remember path. Agents / users call this to keep durable
  * knowledge. Still refuses canonical unless `explicitCanonical` is set
- * (only `veyra_promote` does that).
+ * (only `veyra_promote` does that). Evolves relations against neighbors
+ * without merging them.
  */
 export function remember(store, input, { explicitCanonical = false } = {}) {
   const kind = input.kind === KINDS.KNOWLEDGE || input.kind === KINDS.EVIDENCE
     ? input.kind
     : KINDS.MEMORY
-  return store.put({
+  const authority = explicitCanonical
+    ? AUTHORITIES.CANONICAL
+    : (input.authority === AUTHORITIES.CANONICAL ? AUTHORITIES.DERIVED : (input.authority || AUTHORITIES.DERIVED))
+  const written = store.put({
     ...input,
     kind,
-    authority: explicitCanonical ? AUTHORITIES.CANONICAL : (input.authority === AUTHORITIES.CANONICAL ? AUTHORITIES.DERIVED : (input.authority || AUTHORITIES.DERIVED)),
+    authority,
     validation: input.validation || VALIDATIONS.UNVERIFIED,
     confidence: input.confidence || CONFIDENCES.MEDIUM,
     status: input.status || STATUSES.CURRENT,
   }, { explicitCanonical })
+  if (!written.record || written.duplicate) return written
+
+  const existing = store.list({ limit: 60 }).filter((r) => !r.forgotten && r.id !== written.record.id)
+  const evolved = evolveAgainst(store, written.record, existing)
+  const before = JSON.stringify(written.record.relations || [])
+  const after = JSON.stringify(evolved.record.relations || [])
+  if (before === after) return written
+  const updated = store.put({
+    ...written.record,
+    relations: evolved.record.relations,
+  }, { explicitCanonical })
+  return { ...updated, created: written.created, duplicate: written.duplicate }
 }
 
 /**
@@ -128,11 +172,4 @@ function unique(arr) {
   return [...new Set(arr.filter(Boolean))]
 }
 
-function sharesTokens(a, b) {
-  const ta = new Set(String(a || '').toLowerCase().match(/[a-z0-9_]{4,}/g) || [])
-  const tb = String(b || '').toLowerCase().match(/[a-z0-9_]{4,}/g) || []
-  if (ta.size === 0 || tb.length === 0) return false
-  let hits = 0
-  for (const t of tb) if (ta.has(t)) hits++
-  return hits >= 2
-}
+

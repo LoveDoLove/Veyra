@@ -36,7 +36,9 @@ export const GUIDANCE_TEXT = [
   'When you discover a durable decision, root cause, constraint, or fix',
   'pattern, call veyra_remember. When memory is wrong, call veyra_forget',
   'or veyra_promote to correct its standing. Use veyra_recall only when',
-  'you need a targeted search beyond the automatic context.',
+  'you need a targeted search beyond the automatic context. If two',
+  'recalled items contradict each other, surface both and believe the',
+  'repository — do not pick a winner from similarity.',
 ].join('\n')
 
 // Claimed inbox text is gone from inbox and not yet on deriveMessages()

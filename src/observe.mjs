@@ -8,9 +8,9 @@
  * memory. Candidates never enter ambient recall.
  */
 
-import { AUTHORITIES, CONFIDENCES, KINDS, MIN_OBSERVATION_CHARS, SCOPES, STATUSES, VALIDATIONS } from './types.mjs'
+import { MIN_OBSERVATION_CHARS } from './types.mjs'
 import { extractText } from './ids.mjs'
-import { scrub } from './redact.mjs'
+import { distillBuffer } from './understand.mjs'
 
 const NOISE_PREFIXES = [
   '/veyra',
@@ -155,56 +155,22 @@ function collectFiles(files, args) {
 
 /**
  * Decide whether the buffered turn produced a durable-looking observation.
- * Returns a candidate record payload, or null when the turn is noise.
+ * Distills the turn (understand) instead of dumping raw text. Returns a
+ * candidate record payload, or null when the turn is noise.
  *
  * Never returns derived/canonical authority.
  */
 export function candidateFromBuffer(buffer, { projectId, sessionId } = {}) {
-  if (!buffer) return null
-  const user = buffer.user.join('\n').trim()
-  const files = [...(buffer.files || [])].slice(0, 12)
-  const tools = (buffer.tools || []).slice(0, 16)
-  const meaningfulTools = tools.filter((t) => TOOL_SIGNAL.has(String(t.name).split(':')[0]))
-  if (meaningfulTools.length < 1 && user.length < 80) return null
-  if (isNoiseText(user) && meaningfulTools.length < 2) return null
-
-  const title = deriveTitle(user, files, tools)
-  const bodyParts = []
-  if (user) bodyParts.push(user.slice(0, 1200))
-  if (files.length) bodyParts.push(`Files touched: ${files.join(', ')}`)
-  if (tools.length) {
-    const names = [...new Set(tools.map((t) => t.name))].slice(0, 8)
-    bodyParts.push(`Tools: ${names.join(', ')}`)
+  const distilled = distillBuffer(buffer, { projectId, sessionId })
+  if (!distilled) return null
+  const user = (buffer.user || []).join('\n').trim()
+  const signal = distilled.source?.signal
+  const claimed = signal && signal !== 'observation'
+  if (isNoiseText(user) && (distilled.source?.tools || []).length < 2 && !claimed) {
+    return null
   }
-  const body = scrub(bodyParts.join('\n\n')).scrubbed
-  if (body.length < MIN_OBSERVATION_CHARS) return null
-
-  return {
-    kind: KINDS.OBSERVATION,
-    status: STATUSES.CURRENT,
-    validation: VALIDATIONS.UNVERIFIED,
-    authority: AUTHORITIES.CANDIDATE,
-    confidence: CONFIDENCES.LOW,
-    scope: SCOPES.PROJECT,
-    projectId,
-    title,
-    body,
-    tags: ['observation', 'auto'],
-    evidence: files.map((path) => ({ path })),
-    source: {
-      sessionId: sessionId || null,
-      turn: buffer.turn,
-      tools: tools.map((t) => t.name),
-      files,
-      automatic: true,
-    },
-  }
+  return distilled
 }
 
-function deriveTitle(user, files, tools) {
-  const firstLine = user.split('\n').map((s) => s.trim()).find(Boolean)
-  if (firstLine && firstLine.length >= 12) return firstLine.slice(0, 160)
-  if (files.length) return `Worked on ${files[0]}`
-  if (tools.length) return `Used ${tools[0].name}`
-  return 'Engineering observation'
-}
+// Re-export so tests and callers can keep a single observe import.
+export { distillBuffer }

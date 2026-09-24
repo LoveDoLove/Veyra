@@ -20,6 +20,7 @@ import { openProjectStore, openReusableStore } from './store.mjs'
 import { GUIDANCE_TEXT, createContextProvider, rememberClaimedPrompt } from './context.mjs'
 import { candidateFromBuffer, newBuffer, observeEvent } from './observe.mjs'
 import { maybeLearn } from './learn.mjs'
+import { markStale } from './evolve.mjs'
 import { registerTools } from './tools.mjs'
 import { registerCommand } from './commands.mjs'
 import { registerSkills } from './skills.mjs'
@@ -203,6 +204,9 @@ export function apply(ctx, config = {}) {
         const written = projectStore.put(candidate)
         if (runtime.learn && written.created) {
           maybeLearn(projectStore, { ...written.record })
+        }
+        if (runtime.learn) {
+          markStale(projectStore)
         }
       } catch {
         // learning is best-effort

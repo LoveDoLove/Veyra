@@ -67,6 +67,8 @@ Automatic behavior never creates canonical truth. Only an explicit
 - Project isolation is preserved. Do not treat reusable experience as this
   project's architecture.
 - Memory assists engineering; it does not replace verification.
+- Similarity ≠ identity. Overlapping memories are linked, never silently merged.
+- If two recalled items contradict, keep both and believe the repository.
 
 ## Where memory lives
 
