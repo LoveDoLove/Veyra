@@ -43,7 +43,7 @@ function helpText() {
 }
 
 export function handleVeyraCommand(runtime, invocation) {
-  const raw = String(invocation?.text || invocation?.input || invocation?.args || '').trim()
+  const raw = String(invocation?.rawInput || invocation?.text || invocation?.input || invocation?.args || '').trim()
   const cwd = resolveWorkspace(invocation?.agent) || runtime.fallbackCwd
   const projectId = projectIdFor(cwd)
   const projectStore = openProjectStore(runtime.veyraHome, projectId)

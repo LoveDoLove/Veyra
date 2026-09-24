@@ -365,3 +365,23 @@ test('remember/inspect/promote/forget payloads are lossless JSON and forget is s
   closeAllStores()
   rmSync(dir, { recursive: true, force: true })
 })
+
+test('DSH rawInput observatory remainder reaches existing overview and search branches', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'veyra-rawinput-'))
+  const cwd = join(dir, 'workspace')
+  const runtime = { veyraHome: dir, fallbackCwd: cwd, recallLimit: 5, includeReusable: true }
+  const invocation = { agent: { session: { header: { cwd } } } }
+
+  const overview = handleVeyraCommand(runtime, { ...invocation, rawInput: 'observatory overview' })
+  assert.equal(overview.kind, 'success')
+  assert.ok(overview.text.includes('VEYRA KNOWLEDGE OBSERVATORY — OVERVIEW'))
+  assert.equal(overview.text.includes('Veyra — Engineering Brain for DSH'), false)
+
+  const search = handleVeyraCommand(runtime, { ...invocation, rawInput: 'observatory search sqlite mutex' })
+  assert.equal(search.kind, 'success')
+  assert.ok(search.text.includes('VEYRA OBSERVATORY — HYBRID SEARCH'))
+  assert.equal(search.text.includes('Veyra — Engineering Brain for DSH'), false)
+
+  closeAllStores()
+  rmSync(dir, { recursive: true, force: true })
+})
