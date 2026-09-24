@@ -25,6 +25,18 @@ function loadAssertSupportedJsonSchema() {
   }
   return null
 }
+
+function loadValidateJsonSchemaValue() {
+  for (const spec of DSH_TOOLS_CANDIDATES) {
+    try {
+      const mod = require(spec)
+      if (typeof mod.validateJsonSchemaValue === 'function') return mod.validateJsonSchemaValue
+    } catch {
+      // try next
+    }
+  }
+  return null
+}
 import { handleVeyraCommand } from '../src/commands.mjs'
 import { GUIDANCE_TEXT, buildRecallContext } from '../src/context.mjs'
 import { AUTHORITIES } from '../src/types.mjs'
@@ -262,6 +274,37 @@ test('project isolation: memories from another project id do not leak', async ()
     agent: { session: { header: { cwd: '/tmp/project-two' } } },
   })
   assert.equal(other.count, 0)
+  closeAllStores()
+  rmSync(dir, { recursive: true, force: true })
+})
+
+test('tool failure payloads strictly satisfy output schema validation (no null objects)', async () => {
+  const validate = loadValidateJsonSchemaValue()
+  if (!validate) return
+  const dir = mkdtempSync(join(tmpdir(), 'veyra-schema-fail-'))
+  const runtime = { veyraHome: dir, fallbackCwd: '/tmp/proj', recallLimit: 5, includeReusable: true }
+  const defs = Object.fromEntries(buildToolDefinitions(runtime).map((d) => [d.name, d]))
+  const harness = createToolHarness(runtime)
+
+  // 1. inspect non-existent
+  const inspectRes = await harness.call('veyra_inspect', { id: 'vey_missing' }, { agent: { session: { header: { cwd: '/tmp/proj' } } } })
+  assert.equal(inspectRes.ok, false)
+  const inspectViolations = validate(defs.veyra_inspect.output.schema, inspectRes)
+  assert.deepEqual(inspectViolations, [])
+
+  // 2. forget non-existent
+  const forgetRes = await harness.call('veyra_forget', { id: 'vey_missing' }, { agent: { session: { header: { cwd: '/tmp/proj' } } } })
+  assert.equal(forgetRes.ok, false)
+  const forgetViolations = validate(defs.veyra_forget.output.schema, forgetRes)
+  assert.deepEqual(forgetViolations, [])
+
+  // 3. remember then promote without explicit
+  const rememberRes = await harness.call('veyra_remember', { title: 'Test', body: 'Test body' }, { agent: { session: { header: { cwd: '/tmp/proj' } } } })
+  const promoteRes = await harness.call('veyra_promote', { id: rememberRes.record.id, to: 'canonical', explicit: false }, { agent: { session: { header: { cwd: '/tmp/proj' } } } })
+  assert.equal(promoteRes.ok, false)
+  const promoteViolations = validate(defs.veyra_promote.output.schema, promoteRes)
+  assert.deepEqual(promoteViolations, [])
+
   closeAllStores()
   rmSync(dir, { recursive: true, force: true })
 })

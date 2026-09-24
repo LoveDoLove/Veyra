@@ -313,7 +313,9 @@ export function buildToolDefinitions(runtime) {
       execute(args, exec) {
         const { projectStore, reusableStore } = storesFor(runtime, exec, SCOPES.PROJECT)
         const record = inspect({ projectStore, reusableStore, id: args.id })
-        return { ok: Boolean(record), record: recordView(record) }
+        const payload = { ok: Boolean(record) }
+        if (record) payload.record = recordView(record)
+        return payload
       },
       presentCall: (args) => ({ card: 'generic', title: 'Inspect', kind: 'read', rawInput: args.id }),
     },
@@ -337,8 +339,7 @@ export function buildToolDefinitions(runtime) {
       execute(args, exec) {
         const { projectStore, reusableStore } = storesFor(runtime, exec, SCOPES.PROJECT)
         const existing = inspect({ projectStore, reusableStore, id: args.id })
-        if (!existing) return { ok: false, record: null }
-        const store = existing.scope === SCOPES.REUSABLE ? reusableStore : projectStore
+        if (!existing) return { ok: false }
         return { ok: true, record: recordView(store.forget(args.id)) }
       },
       presentCall: (args) => ({ card: 'generic', title: 'Forget', kind: 'other', rawInput: args.id }),
@@ -381,7 +382,10 @@ export function buildToolDefinitions(runtime) {
         if (!existing) return { ok: false, error: 'not found' }
         const store = existing.scope === SCOPES.REUSABLE ? reusableStore : projectStore
         const result = promote(store, args.id, { to, explicit })
-        return { ok: result.ok, error: result.error, record: recordView(result.record) }
+        const payload = { ok: result.ok }
+        if (result.error) payload.error = result.error
+        if (result.record) payload.record = recordView(result.record)
+        return payload
       },
       presentCall: (args) => ({ card: 'generic', title: 'Promote', kind: 'other', rawInput: `${args.id} → ${args.to || 'derived'}` }),
     },
