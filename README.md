@@ -15,6 +15,7 @@ Restart `dsh web`. A good boot looks like this:
 ```
 [veyra] plugin loaded (home=...)
 [veyra] registered /veyra
+[veyra] registered skill: veyra
 [veyra] registered tools: veyra_remember, veyra_recall, veyra_inspect, veyra_forget, veyra_promote
 ```
 
@@ -41,7 +42,7 @@ Ask the agent to remember something important, or just keep going — automatic 
 | `/veyra forget <id>` | Soft-forget (leaves recall, stays inspectable) |
 | `/veyra promote <id> canonical` | Mark as project truth — **only this is canonical** |
 
-Tools with the same names (`veyra_remember`, `veyra_recall`, …) are available to the agent.
+Tools with the same names (`veyra_remember`, `veyra_recall`, …) are available to the agent. Load the bundled `veyra` skill when you need the full remember / recall / promote rules.
 
 ## Memory rules
 

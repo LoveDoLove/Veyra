@@ -8,6 +8,7 @@
  *   - agent/turn-stopping   — persist candidates / maybe-learn
  *   - ctx.tools             — remember / recall / inspect / forget / promote
  *   - ctx.commands          — /veyra
+ *   - ctx.skills            — bundled `veyra` skill (skills/veyra/SKILL.md)
  *
  * Memory lives under $DSH_HOME/veyra/, never inside the user's repository.
  */
@@ -21,6 +22,7 @@ import { candidateFromBuffer, newBuffer, observeEvent } from './observe.mjs'
 import { maybeLearn } from './learn.mjs'
 import { registerTools } from './tools.mjs'
 import { registerCommand } from './commands.mjs'
+import { registerSkills } from './skills.mjs'
 
 export const name = 'veyra'
 export const inject = ['tools']
@@ -126,6 +128,24 @@ export function apply(ctx, config = {}) {
     }).catch((err) => {
       runtime.log.warn(`[veyra] tool register failed: ${err instanceof Error ? err.message : String(err)}`)
     })
+  }
+
+  const registerSkillSurface = (scope) => {
+    void registerSkills(scope, runtime.log).then((names) => {
+      if (names.length) runtime.log.info(`[veyra] registered skill: ${names.join(', ')}`)
+    }).catch((err) => {
+      runtime.log.warn(`[veyra] skill register failed: ${err instanceof Error ? err.message : String(err)}`)
+    })
+  }
+
+  if (typeof ctx.inject === 'function') {
+    try {
+      ctx.inject(['skills'], registerSkillSurface)
+    } catch {
+      registerSkillSurface(ctx)
+    }
+  } else {
+    registerSkillSurface(ctx)
   }
 
   if (typeof ctx.inject === 'function') {

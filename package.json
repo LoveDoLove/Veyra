@@ -1,7 +1,7 @@
 {
   "name": "@lovedolove/veyra",
   "description": "Veyra — the Engineering Brain for DeepSeek Harness. Persistent, evidence-aware, project-isolated engineering memory that observes, remembers, and recalls across DSH sessions.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "main": "src/plugin.mjs",
   "exports": {
@@ -11,6 +11,7 @@
   },
   "files": [
     "src",
+    "skills",
     "cordis.patch.yml",
     "LICENSE",
     "README.md"

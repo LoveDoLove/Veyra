@@ -36,10 +36,20 @@ function mockCtx() {
   const commands = []
   const sections = []
   const contexts = []
+  const skills = []
+  const providers = []
   const listeners = {}
   return {
     tools: { register: (def) => tools.push(def) },
     commands: { register: (def) => commands.push(def) },
+    skills: {
+      register: (def) => skills.push(def),
+      registerProvider: (factory) => {
+        const provider = factory({ signal: new AbortController().signal, invalidate: () => {} })
+        providers.push(provider)
+        return () => {}
+      },
+    },
     systemPrompt: {
       section: (s) => sections.push(s),
       context: (c) => contexts.push(c),
@@ -53,6 +63,8 @@ function mockCtx() {
     _commands: commands,
     _sections: sections,
     _contexts: contexts,
+    _skills: skills,
+    _providers: providers,
     _listeners: listeners,
   }
 }
@@ -170,6 +182,11 @@ test('plugin exports name=veyra and wires DSH surfaces', async () => {
   assert.ok(ctx._sections.some((s) => s.name === 'veyra:guidance'))
   assert.ok(ctx._contexts.some((c) => c.name === 'veyra:recall'))
   assert.ok(ctx._commands.some((c) => c.name === 'veyra'))
+  assert.ok(ctx._providers.some((p) => p.name === 'veyra'))
+  const catalog = await ctx._providers[0].list()
+  assert.ok(catalog.some((c) => c.name === 'veyra'))
+  const loaded = await ctx._providers[0].get(catalog[0])
+  assert.ok(loaded.content.includes('Candidate ≠ Truth'))
   assert.ok(typeof ctx._listeners['session/event']?.[0] === 'function')
   assert.ok(typeof ctx._listeners['agent/turn-stopping']?.[0] === 'function')
   assert.ok(GUIDANCE_TEXT.includes('Memory ≠ Knowledge'))

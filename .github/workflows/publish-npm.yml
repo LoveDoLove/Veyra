@@ -2,31 +2,15 @@ name: Publish @lovedolove/veyra to npm
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
   workflow_dispatch:
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
-
-      - run: npm test
-
   publish:
-    needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip publish]')
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,8 +22,40 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - run: npm test
+
+      # Every push to main publishes. npm versions are immutable, so if
+      # package.json already exists on the registry, bump the patch first
+      # and commit the new version back (marked [skip publish] to avoid a loop).
+      - name: Ensure unpublished version
+        id: version
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          pkg="$(node -p "require('./package.json').name")"
+          before="$(node -p "require('./package.json').version")"
+          if npm view "${pkg}@${before}" version >/dev/null 2>&1; then
+            echo "npm already has ${pkg}@${before}; bumping patch"
+            npm version patch --no-git-tag-version
+          else
+            echo "npm does not have ${pkg}@${before}; publishing as-is"
+          fi
+          after="$(node -p "require('./package.json').version")"
+          echo "before=${before}" >> "$GITHUB_OUTPUT"
+          echo "after=${after}" >> "$GITHUB_OUTPUT"
+
       # Provenance is omitted: npm only accepts Sigstore provenance from
       # public GitHub repos, and this repository is private.
       - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Commit bumped version
+        if: steps.version.outputs.before != steps.version.outputs.after
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "chore: bump version to ${{ steps.version.outputs.after }} [skip publish]"
+          git push
