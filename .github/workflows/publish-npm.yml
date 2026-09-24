@@ -27,7 +27,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,6 +38,8 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - run: npm test
-      - run: npm publish --access public --provenance
+      # Provenance is omitted: npm only accepts Sigstore provenance from
+      # public GitHub repos, and this repository is private.
+      - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
