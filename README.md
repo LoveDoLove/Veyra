@@ -47,7 +47,11 @@ Restart (or reload) the profile after install. On boot you should see:
 
 ```
 [veyra] plugin loaded (home=...)
+[veyra] registered /veyra
+[veyra] registered tools: veyra_remember, veyra_recall, veyra_inspect, veyra_forget, veyra_promote
 ```
+
+If you see `tool register failed`, the installed tarball is stale — reinstall from a freshly packed `lovedolove-veyra-0.1.0.tgz` (wipe the profile's `pnpm-lock.yaml` and `node_modules/@lovedolove` first so pnpm does not reuse the old tarball).
 
 Dev overlay, without installing into the active profile:
 

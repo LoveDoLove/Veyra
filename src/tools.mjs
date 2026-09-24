@@ -11,6 +11,16 @@
  * Registered through `@deepseek-ai/dsh-tools` `defineTool` when the peer
  * is available. Falls back to a duck-typed definition so unit tests and
  * non-DSH hosts can still exercise the execute path.
+ *
+ * Output schemas must already be in the dsh-tools *raw* JSON Schema
+ * subset. `required` is only legal on `type: "object"` (as a string
+ * array). Per-property `required: true` is the author-facing parameter
+ * DSL — if `defineTool` cannot be imported (typical for a profile-
+ * installed plugin, whose resolver cannot see DSH's node_modules), the
+ * raw schema is registered as-is and DSH rejects `required` on
+ * booleans/strings with:
+ *   unsupported JSON schema: schema.properties.ok.required is not
+ *   supported on type "boolean"
  */
 
 import { AUTHORITIES, CONFIDENCES, KINDS, SCOPES, VALIDATIONS, VALID_AUTHORITIES, VALID_CONFIDENCES, VALID_KINDS, VALID_SCOPES } from './types.mjs'
@@ -33,10 +43,58 @@ function fallbackDefineTool(options) {
     name: options.name,
     description: options.description,
     parameters: options.parameters,
-    output: options.output,
+    output: {
+      ...options.output,
+      schema: toRawOutputSchema(options.output.schema),
+    },
     execute: options.execute,
     presentCall: options.presentCall,
   }
+}
+
+/**
+ * Project the author-facing value-schema DSL onto the raw subset that
+ * `ctx.tools.register` validates. Per-property `required: true` becomes
+ * the parent object's `required: string[]`; leftover `required` on
+ * scalars (the live-install failure mode) is stripped.
+ */
+export function toRawOutputSchema(schema) {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return schema
+  if (Array.isArray(schema.oneOf)) {
+    return { ...schema, oneOf: schema.oneOf.map(toRawOutputSchema) }
+  }
+  if (schema.type === 'array') {
+    return schema.items ? { ...schema, items: toRawOutputSchema(schema.items) } : { ...schema }
+  }
+  if (schema.type !== 'object') {
+    if (!Object.hasOwn(schema, 'required')) return schema
+    const { required: _drop, ...rest } = schema
+    return rest
+  }
+  const properties = schema.properties && typeof schema.properties === 'object'
+    ? schema.properties
+    : null
+  const lifted = []
+  const nextProps = {}
+  if (properties) {
+    for (const [key, node] of Object.entries(properties)) {
+      if (node && typeof node === 'object' && !Array.isArray(node) && node.required === true) {
+        lifted.push(key)
+        const { required: _drop, ...rest } = node
+        nextProps[key] = toRawOutputSchema(rest)
+      } else {
+        nextProps[key] = toRawOutputSchema(node)
+      }
+    }
+  }
+  const required = Array.isArray(schema.required)
+    ? [...new Set([...schema.required, ...lifted])]
+    : lifted
+  const next = { ...schema }
+  if (properties) next.properties = nextProps
+  if (required.length) next.required = required
+  else delete next.required
+  return next
 }
 
 function textBlocks(text) {
@@ -117,7 +175,7 @@ export function buildToolDefinitions(runtime) {
           type: 'object',
           additionalProperties: true,
           properties: {
-            ok: { type: 'boolean', required: true },
+            ok: { type: 'boolean' },
             created: { type: 'boolean' },
             duplicate: { type: 'boolean' },
             redacted: { type: 'boolean' },
@@ -175,7 +233,7 @@ export function buildToolDefinitions(runtime) {
           type: 'object',
           additionalProperties: true,
           properties: {
-            ok: { type: 'boolean', required: true },
+            ok: { type: 'boolean' },
             count: { type: 'number' },
             items: { type: 'array', items: RECORD_SCHEMA },
             disclaimer: { type: 'string' },
@@ -221,7 +279,7 @@ export function buildToolDefinitions(runtime) {
           type: 'object',
           additionalProperties: true,
           properties: {
-            ok: { type: 'boolean', required: true },
+            ok: { type: 'boolean' },
             record: RECORD_SCHEMA,
           },
         },
@@ -249,7 +307,7 @@ export function buildToolDefinitions(runtime) {
           type: 'object',
           additionalProperties: true,
           properties: {
-            ok: { type: 'boolean', required: true },
+            ok: { type: 'boolean' },
             record: RECORD_SCHEMA,
           },
         },
@@ -283,7 +341,7 @@ export function buildToolDefinitions(runtime) {
           type: 'object',
           additionalProperties: true,
           properties: {
-            ok: { type: 'boolean', required: true },
+            ok: { type: 'boolean' },
             error: { type: 'string' },
             record: RECORD_SCHEMA,
           },
@@ -319,9 +377,17 @@ export async function registerTools(ctx, runtime) {
   }
   if (typeof defineTool !== 'function') defineTool = fallbackDefineTool
   const registered = []
+  const failures = []
   for (const def of buildToolDefinitions(runtime)) {
-    ctx.tools.register(defineTool(def))
-    registered.push(def.name)
+    try {
+      ctx.tools.register(defineTool(def))
+      registered.push(def.name)
+    } catch (err) {
+      failures.push(`${def.name}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+  if (failures.length && runtime?.log?.warn) {
+    runtime.log.warn(`[veyra] tool register failed: ${failures.join('; ')}`)
   }
   return registered
 }
