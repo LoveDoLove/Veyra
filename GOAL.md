@@ -18,6 +18,22 @@ Veyra must become a real, useful system — not merely a collection of memory AP
 
 ---
 
+## Current Project State
+
+Veyra already has an existing implementation and has been published as an npm package.
+
+The existing published implementation is **not yet considered complete** because it does not fully satisfy the requirements and intended experience defined in this document.
+
+Treat the current Veyra implementation as the starting point for continued development.
+
+Do not assume that existing architecture, features, tests, or publication status are sufficient.
+
+Inspect the current implementation, identify genuine gaps, and improve or replace parts where necessary.
+
+The objective is the Veyra defined by this document, not preservation of the current implementation.
+
+---
+
 ## What Veyra Should Provide
 
 Veyra should enable DSH agents to naturally:
@@ -74,17 +90,18 @@ Veyra is for DSH.
 
 ## Reference Implementations
 
-The following repositories have already been cloned locally and are available as direct implementation references:
+The following repositories are available as direct implementation references:
 
 - `OpenViking`
 - `supermemory`
+- `mnemon`
 - `Project-Memory-Agent`
 
 These are not merely documentation references.
 
-**You must inspect and use these repositories as implementation source material when building Veyra.**
+**Inspect and use these repositories as implementation source material when building Veyra.**
 
-Use the existing source code directly whenever it provides a useful solution.
+Use existing source code directly whenever it provides a useful solution.
 
 You are explicitly encouraged to:
 
@@ -99,7 +116,7 @@ You are explicitly encouraged to:
 - simplify copied code;
 - replace parts that do not fit Veyra.
 
-Do not unnecessarily implement from scratch something that already exists in these repositories and can be adapted to Veyra.
+Do not unnecessarily implement from scratch something that already exists in these repositories and can be adapted.
 
 ### OpenViking
 
@@ -108,6 +125,16 @@ Use as a direct implementation reference for memory/runtime integration, session
 ### supermemory
 
 Use as a direct implementation reference for persistent memory, automatic capture, contextual recall, knowledge evolution, temporal behavior, cross-project memory, retrieval, and other relevant intelligence capabilities.
+
+### mnemon
+
+Use as a direct implementation reference for persistent engineering memory, automatic memory handling, knowledge representation, contextual or intent-aware recall, memory lifecycle, deduplication, knowledge relationships, and DSH integration.
+
+Inspect the actual source code and implementation.
+
+Reuse useful implementations where appropriate rather than merely describing or researching them.
+
+Do not assume Mnemon's architecture is automatically correct for Veyra. Extract useful capabilities and adapt them to Veyra's requirements.
 
 ### Project-Memory-Agent
 
@@ -152,6 +179,8 @@ Prefer simple, reliable solutions over unnecessary complexity.
 Do not add infrastructure merely because it is technically interesting.
 
 Do not build abstractions for problems Veyra does not actually have.
+
+Existing Veyra architecture may be changed when doing so materially improves its ability to satisfy this goal.
 
 ---
 
@@ -298,13 +327,17 @@ Optimize for a genuinely useful engineering experience.
 
 ## Distribution
 
-Veyra must be a proper distributable DSH plugin.
+Veyra is already published as an npm package.
 
-It should be buildable, packageable, installable, and upgradeable through the appropriate DSH plugin workflow.
+The existing publication does not constitute completion.
 
-Prepare the project for npm distribution and an appropriate GitHub Actions release and publish workflow.
+Maintain the package as a proper distributable DSH plugin.
 
-The final package should be suitable for real installation rather than only repository-local development.
+The project should remain buildable, packageable, installable, upgradeable, and releasable through the appropriate DSH and npm workflows.
+
+Maintain an appropriate GitHub Actions release and publish workflow.
+
+When the implementation reaches a releasable state, update the package version and publish/release through the appropriate workflow when authorized and possible.
 
 Never claim publication, CI success, or external installation success without actually verifying it.
 
@@ -382,7 +415,7 @@ Fix problems you discover.
 
 Package it.
 
-Prepare the release workflow.
+Maintain the release and distribution workflow.
 
 Review the final implementation.
 
@@ -415,6 +448,8 @@ The completed system must:
 - be suitable for real distribution and installation;
 - meet the practical production-quality requirements of the project.
 
+Existing publication status alone does not satisfy this definition.
+
 Most importantly, the complete loop must work:
 
 **Engineering Work → Understand → Remember → Later Work → Recall → Apply**
@@ -429,4 +464,6 @@ Build:
 
 Do not merely design it.
 
-**Build it.**
+Do not merely publish it.
+
+**Build it, improve it, verify it, and make it genuinely useful.**
