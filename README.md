@@ -49,7 +49,9 @@ Veyra unifies Engineering Memory (`kind: 'memory'`) and Knowledge Base / RAG doc
 | `/veyra observatory search <query>` | Inspect hybrid search signals and score breakdowns |
 | `/veyra observatory record <id>` | Deep inspection answering the 6 questions (What, Why, Where, When, Evidence, Validation) |
 | `/veyra observatory causality` | Causal knowledge map (`symptom → rootCause → remedy → verifiedOutcome`) |
-| `/veyra observatory relationships` | Directed graph projection of knowledge links |
+| `/veyra observatory relationships [id]` | Directed graph projection of knowledge links |
+| `/veyra observatory local <id>` | 1-hop Local Graph around a record (default graph view) |
+| `/veyra observatory graph [id]` | Local Graph when an id is given; otherwise the project edge list |
 | `/veyra observatory contradictions` | Active conflicting claims shown side-by-side |
 | `/veyra recall <query>` | Hybrid search project (+ reusable) memory |
 | `/veyra recent` | Last 8 records, including candidates |

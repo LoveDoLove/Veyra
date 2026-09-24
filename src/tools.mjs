@@ -134,6 +134,7 @@ function recordView(record) {
     scores: record.scores || {},
     contradictions: record.contradictions || [],
     contradictionBanners: record.contradictionBanners || [],
+    via: record.via || undefined,
     forgotten: Boolean(record.forgotten),
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,

@@ -13,8 +13,9 @@
  *   - Memory is not truth; similarity is not authority.
  */
 
-import { AUTHORITIES, KINDS, RELATIONS, SCOPES, STATUSES, VALIDATIONS } from './types.mjs'
+import { AUTHORITIES, KINDS, RELATIONS, VALIDATIONS } from './types.mjs'
 import { hybridRetrieve } from './retrieve.mjs'
+import { localGraph } from './graph.mjs'
 
 /**
  * High-level knowledge overview projection.
@@ -233,6 +234,8 @@ export function observatoryRecord({ projectStore, reusableStore = null, id } = {
     lines.push('  Rule: Both sides remain visible. Believe repository truth.')
   }
 
+  lines.push('')
+  lines.push(` Next: /veyra observatory local ${record.id}`)
   lines.push('════════════════════════════════════════════════════════════════════════')
 
   return {
@@ -294,6 +297,11 @@ export function observatorySearch({
       if (r.contradictions?.length) {
         lines.push(`    ⚠️ Contradicts: ${r.contradictions.join(', ')}`)
       }
+      if (r.via?.type && r.via.fromId) {
+        lines.push(`    via ${r.via.type} ← [${r.via.fromId}]`)
+      }
+      lines.push(`    Next       : /veyra observatory record ${r.id}`)
+      lines.push(`                 /veyra observatory local ${r.id}`)
     }
   }
 
@@ -396,6 +404,74 @@ export function observatoryRelationships({ projectStore, reusableStore = null, i
   lines.push('════════════════════════════════════════════════════════════════════════')
 
   return { ok: true, data: limitedEdges, formatted: lines.join('\n') }
+}
+
+function nodeLabel(n) {
+  const forgotten = n.forgotten ? ' forgotten' : ''
+  return `[${n.id}] ${n.title} (${n.kind}/${n.authority}/${n.validation}/${n.status}${forgotten})`
+}
+
+/**
+ * Local neighborhood around one record. Default Observatory graph view.
+ * Inspection may show untrusted nodes; they are labeled, not recalled.
+ */
+export function observatoryLocalGraph({
+  projectStore,
+  reusableStore = null,
+  id,
+  hops = 1,
+  trustedOnly = false,
+} = {}) {
+  if (!id) {
+    return { ok: false, error: 'Record id required', formatted: 'Error: record id required for local graph' }
+  }
+
+  const graph = localGraph({ projectStore, reusableStore, id, hops, trustedOnly })
+  if (!graph.center) {
+    return { ok: false, error: 'Record not found', formatted: `Record ${id} not found.` }
+  }
+
+  const lines = [
+    '════════════════════════════════════════════════════════════════════════',
+    ` VEYRA OBSERVATORY — LOCAL GRAPH`,
+    ` Center : ${nodeLabel(graph.center)}`,
+    ` Hops   : ${hops}  |  Nodes: ${graph.nodes.length}  |  Edges: ${graph.edges.length}`,
+    graph.center.trusted ? ' Trust  : center is recall-eligible' : ' Trust  : center is inspect-only (not recall-eligible)',
+    '════════════════════════════════════════════════════════════════════════',
+    '',
+    '── Nodes ────────────────────────────────────────────────────────────────',
+  ]
+
+  for (const n of graph.nodes) {
+    const mark = n.id === graph.center.id ? '*' : ' '
+    const trust = n.trusted ? 'trusted' : 'inspect-only'
+    lines.push(` ${mark} ${nodeLabel(n)} [${trust}]`)
+  }
+
+  lines.push('')
+  lines.push('── Edges ────────────────────────────────────────────────────────────────')
+  if (graph.edges.length === 0 && graph.unresolved.length === 0) {
+    lines.push(' (no stored relations in this neighborhood)')
+  } else {
+    for (const e of graph.edges) {
+      lines.push(`  [${e.fromId}] --[ ${e.type.toUpperCase()} ]--> [${e.targetId}]`)
+    }
+  }
+
+  if (graph.unresolved.length) {
+    lines.push('')
+    lines.push('── Unresolved targets ──────────────────────────────────────────────────')
+    for (const e of graph.unresolved) {
+      lines.push(`  [${e.fromId}] --[ ${e.type.toUpperCase()} ]--> [${e.targetId}] (missing)`)
+    }
+  }
+
+  lines.push('')
+  lines.push(' Invariant: Graph is a projection. Memory rows remain the source of truth.')
+  lines.push(' Next: /veyra observatory record <id>')
+  lines.push('════════════════════════════════════════════════════════════════════════')
+
+  return { ok: true, data: graph, formatted: lines.join('\n') }
 }
 
 /**

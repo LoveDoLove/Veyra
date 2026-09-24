@@ -1,5 +1,8 @@
 # Veyra — Engineering Intelligence Graph & Agent Context
 
+Architecture checkpoint (accepted): [`docs/architecture-graph.md`](docs/architecture-graph.md).
+Graph is a derived projection over SQLite memory rows. No second store.
+
 ## Goal
 
 Evolve Veyra from a verified Engineering Knowledge System into an **Engineering Intelligence Layer for coding agents**.

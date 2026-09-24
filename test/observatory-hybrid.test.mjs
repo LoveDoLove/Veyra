@@ -15,6 +15,7 @@ import {
 import {
   observatoryCausality,
   observatoryContradictions,
+  observatoryLocalGraph,
   observatoryOverview,
   observatoryRecord,
   observatoryRelationships,
@@ -308,6 +309,7 @@ test('knowledge observatory: overview, record deep inspection, causality, relati
   assert.ok(detail.formatted.includes('Remedy       : async write mutex'))
   assert.ok(detail.formatted.includes('Outcome      : test-passed'))
   assert.ok('incomingRelations' in detail.data)
+  assert.ok(detail.formatted.includes(`/veyra observatory local ${mem1.record.id}`))
 
   // 3. Search Inspection
   const sRes = observatorySearch({
@@ -320,6 +322,8 @@ test('knowledge observatory: overview, record deep inspection, causality, relati
   assert.ok(sRes.formatted.includes('Signals    : Lexical='))
   assert.ok(sRes.formatted.includes('Semantic='))
   assert.ok(sRes.formatted.includes('Invariant: Search scores reflect contextual relevance, not authority.'))
+  assert.ok(sRes.formatted.includes(`/veyra observatory record ${sRes.hits[0].id}`))
+  assert.ok(sRes.formatted.includes(`/veyra observatory local ${sRes.hits[0].id}`))
 
   // 4. Causality Map
   const caus = observatoryCausality({ projectStore, reusableStore })
@@ -336,6 +340,12 @@ test('knowledge observatory: overview, record deep inspection, causality, relati
   assert.ok(rels.formatted.includes('RELATIONSHIP GRAPH (2 edges)'))
   assert.ok(rels.formatted.includes('CONTRADICTS'))
   assert.ok(rels.formatted.includes('EXTENDS'))
+
+  const local = observatoryLocalGraph({ projectStore, reusableStore, id: mem1.record.id })
+  assert.equal(local.ok, true)
+  assert.ok(local.formatted.includes('VEYRA OBSERVATORY — LOCAL GRAPH'))
+  assert.ok(local.data.nodes.some((n) => n.id === mem2.record.id))
+  assert.ok(local.data.nodes.some((n) => n.id === doc1.record.id))
 
   // 6. Contradictions Inspection (Both sides kept, side-by-side)
   const contra = observatoryContradictions({ projectStore, reusableStore })

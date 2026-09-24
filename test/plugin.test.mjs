@@ -382,6 +382,10 @@ test('DSH rawInput observatory remainder reaches existing overview and search br
   assert.ok(search.text.includes('VEYRA OBSERVATORY — HYBRID SEARCH'))
   assert.equal(search.text.includes('Veyra — Engineering Brain for DSH'), false)
 
+  const localMissing = handleVeyraCommand(runtime, { ...invocation, rawInput: 'observatory local' })
+  assert.equal(localMissing.kind, 'error')
+  assert.ok(localMissing.text.includes('observatory local <id>'))
+
   closeAllStores()
   rmSync(dir, { recursive: true, force: true })
 })

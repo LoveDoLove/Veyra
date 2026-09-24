@@ -19,6 +19,7 @@
 import { AUTHORITIES, CONFIDENCES, DEFAULT_RECALL_LIMIT, KINDS, SCOPES, VALIDATIONS, isRecallEligible } from './types.mjs'
 import { detectIntent, intentAffinity, intentWeights } from './intent.mjs'
 import { annotateContradictions } from './evolve.mjs'
+import { expandEligibleNeighbors } from './graph.mjs'
 import { jaccard, tokenOverlap } from './text.mjs'
 
 export function evidenceStrength(evidence) {
@@ -293,6 +294,16 @@ export function hybridRetrieve({
       extras.push(extra)
     }
   }
+
+  // 1-hop eligible neighbors (updates/extends/derives/supersedes). Bounded.
+  const neighbors = expandEligibleNeighbors({
+    projectStore,
+    reusableStore,
+    records: [...limited, ...extras],
+    includeReusable,
+  }).filter((rec) => !kind || rec.kind === kind)
+  extras.push(...neighbors)
+
   if (extras.length === 0) return limited
   return annotateContradictions(rankRecords([...limited, ...extras], { query, intent: detectedIntent, preferProject: true }))
 }
@@ -333,6 +344,9 @@ export function summarizeForPrompt(records, { heading = 'Veyra recalled engineer
     }
     const kindTag = rec.kind === KINDS.KNOWLEDGE ? ' [KNOWLEDGE]' : ''
     lines.push(`- [${rec.id}] (${scope}/${auth}/${rec.validation}/${rec.confidence}${ev}${contra})${kindTag} ${rec.title}`)
+    if (rec.via?.type && rec.via.fromId) {
+      lines.push(`  • via ${rec.via.type} ← [${rec.via.fromId}]`)
+    }
     const causal = rec.source?.causal
     if (causal && (causal.symptom || causal.rootCause || causal.remedy || causal.verifiedOutcome)) {
       if (causal.symptom) lines.push(`  • Symptom: ${causal.symptom}`)

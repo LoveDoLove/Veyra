@@ -13,6 +13,7 @@ import { promote } from './learn.mjs'
 import {
   observatoryCausality,
   observatoryContradictions,
+  observatoryLocalGraph,
   observatoryOverview,
   observatoryRecord,
   observatoryRelationships,
@@ -29,7 +30,9 @@ function helpText() {
     '       observatory search <query>          inspect hybrid search signals',
     '       observatory record <id>             deep evidence & provenance inspection',
     '       observatory causality               causal knowledge map (symptom→fix)',
-    '       observatory relationships           graph projection of knowledge links',
+    '       observatory relationships [id]      directed edges (optional filter)',
+    '       observatory local <id>              1-hop neighborhood around a record',
+    '       observatory graph [id]              local graph if id given, else all edges',
     '       observatory contradictions          conflicts and opposing claims',
     '/veyra recall [q]                          hybrid search project (+ reusable) memory',
     '/veyra recent                              last 8 memories (including candidates)',
@@ -100,7 +103,22 @@ export function handleVeyraCommand(runtime, invocation) {
       return { kind: 'success', text: res.formatted }
     }
 
-    if (sub === 'relationships' || sub === 'rel' || sub === 'graph') {
+    if (sub === 'local') {
+      if (!subArg) return { kind: 'error', text: 'Usage: /veyra observatory local <id>' }
+      const res = observatoryLocalGraph({ projectStore, reusableStore, id: subArg })
+      return { kind: res.ok ? 'success' : 'error', text: res.formatted }
+    }
+
+    if (sub === 'graph') {
+      if (subArg) {
+        const res = observatoryLocalGraph({ projectStore, reusableStore, id: subArg })
+        return { kind: res.ok ? 'success' : 'error', text: res.formatted }
+      }
+      const res = observatoryRelationships({ projectStore, reusableStore, id: null })
+      return { kind: 'success', text: res.formatted }
+    }
+
+    if (sub === 'relationships' || sub === 'rel') {
       const res = observatoryRelationships({ projectStore, reusableStore, id: subArg || null })
       return { kind: 'success', text: res.formatted }
     }
@@ -114,7 +132,7 @@ export function handleVeyraCommand(runtime, invocation) {
       kind: 'error',
       text: [
         `Unknown observatory subcommand: ${sub}`,
-        'Available: overview | search <q> | record <id> | causality | relationships | contradictions',
+        'Available: overview | search <q> | record <id> | causality | local <id> | graph [id] | relationships | contradictions',
       ].join('\n'),
     }
   }

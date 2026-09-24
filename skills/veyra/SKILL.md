@@ -54,7 +54,7 @@ Veyra retrieves project knowledge and engineering memory together through a mult
 - **Lexical**: FTS5 BM25 match with exact token, symbol, and file-path boosts.
 - **Semantic**: Token-level Jaccard overlap and query concept coverage.
 - **Memory & Causal**: Intent affinity (`why` → rootCause, `how` → remedy, `outcome` → verifiedOutcome).
-- **Relationships**: Graph connections (`supersedes`, `updates`, `extends`, `resolves`, `affects`).
+- **Relationships**: Graph connections (`updates`, `extends`, `derives`, `contradicts`, `supersedes`). Recall may add a bounded 1-hop of recall-eligible neighbors.
 - **Scoring**: Transparent multi-dimensional scoring (relevance, semantic, evidence, validation, proximity, freshness, confidence). Never a single opaque score.
 
 ## Structured Causal Knowledge
@@ -86,7 +86,9 @@ Humans can explore Veyra's internal state via the `/veyra observatory` slash com
 - `/veyra observatory search <q>`: Inspect hybrid search signals and dimensional scores.
 - `/veyra observatory record <id>`: Deep inspection answering the 6 questions (What, Why, Where, When, Evidence, Validation).
 - `/veyra observatory causality`: Map of all symptom → root cause → remedy → outcome chains.
-- `/veyra observatory relationships`: Directed graph projection of knowledge links.
+- `/veyra observatory relationships [id]`: Directed graph projection of knowledge links.
+- `/veyra observatory local <id>`: 1-hop Local Graph around a record (default graph view).
+- `/veyra observatory graph [id]`: Local Graph when an id is given; otherwise the project edge list.
 - `/veyra observatory contradictions`: Conflicting knowledge claims displayed side-by-side.
 
 ## Rules you must keep
