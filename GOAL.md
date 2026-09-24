@@ -1,510 +1,1005 @@
-# Veyra — Engineering Intelligence Goal
+# Veyra — 0.1.8 Goal
 
 ## Purpose
 
-Veyra is a DSH-native engineering intelligence system that continuously observes engineering work, extracts durable knowledge, recalls relevant context, and learns from verified outcomes.
+Veyra is a **DSH-native Engineering Intelligence system** that gives agents persistent, searchable, evidence-aware engineering knowledge.
 
-Veyra is not a generic RAG system, chat history store, or repository documentation generator.
+Veyra combines:
 
-Its purpose is to turn engineering work into **evidence-backed, reusable engineering knowledge** while preserving repository truth and explicit authority boundaries.
+- engineering memory
+- RAG / knowledge-base retrieval
+- hybrid search
+- project and workspace context
+- causal knowledge
+- relationships
+- evidence and provenance
+- lifecycle and authority
+- contradiction detection
+- agent context injection
+- human-facing knowledge inspection
+
+Veyra is not limited to one retrieval technique. RAG, lexical search, semantic search, vector search, relationship traversal, and memory retrieval are mechanisms that Veyra can combine to produce useful engineering context.
+
+The core objective is:
+
+> **Make engineering knowledge continuously available to agents while preserving provenance, authority, lifecycle, isolation, and verification.**
 
 ---
 
-# Core Loop
+# 1. Core Engineering Intelligence Loop
 
-Veyra's long-term goal is:
+Veyra follows:
 
 ```text
-observe
+Observe
   ↓
-understand
+Understand
   ↓
-remember
+Remember
   ↓
-recall
+Retrieve
   ↓
-apply
+Apply
   ↓
-learn
-  ↺
+Verify
+  ↓
+Learn
 ```
 
-Each stage has a distinct responsibility.
+The system should progressively transform raw engineering interactions into useful, retrievable, and appropriately trusted knowledge.
 
-### Observe
+Veyra must distinguish between:
 
-Capture useful engineering signals from DSH turns without storing raw conversational history as memory.
+```text
+observation
+inference
+memory
+evidence
+validation
+authority
+```
+
+These are related but not interchangeable.
+
+---
+
+# 2. What Veyra Is
+
+Veyra is:
+
+### 2.1 Engineering Memory
+
+Persistent knowledge derived from engineering work, including:
+
+- decisions
+- implementation discoveries
+- solved problems
+- failures
+- fixes
+- verified outcomes
+- architectural relationships
+- causal relationships
+- project conventions
+- reusable engineering knowledge
+
+### 2.2 RAG / Knowledge Retrieval
+
+Veyra can retrieve knowledge from indexed engineering sources.
+
+Sources may include:
+
+- repository documentation
+- source code
+- configuration
+- project knowledge bases
+- indexed technical documents
+- engineering memory
+- other explicitly supported knowledge sources
+
+RAG is therefore a **first-class Veyra capability**.
+
+### 2.3 Hybrid Search
+
+Veyra should support combining multiple retrieval signals.
+
+Conceptually:
+
+```text
+                   Query
+                     │
+          ┌──────────┼──────────┐
+          ▼          ▼          ▼
+       Lexical    Semantic    Memory
+       Search      Search      Search
+          │          │          │
+          └──────────┼──────────┘
+                     ▼
+                Fusion / Rank
+                     │
+                     ▼
+          Lifecycle / Authority
+               Filtering
+                     │
+                     ▼
+          Evidence / Provenance
+                     │
+                     ▼
+             Agent Context
+```
+
+Hybrid Search means:
+
+> **RAG + Engineering Memory in a single retrieval flow.**
+
+It should allow knowledge-base information and engineering-specific context to be retrieved together.
+
+Veyra should not assume that one retrieval technique is universally sufficient.
+
+---
+
+# 3. What Veyra Is Not
+
+These distinctions describe architectural boundaries, not capability prohibitions.
+
+### 3.1 Not Merely Generic RAG
+
+Veyra can use RAG.
+
+However, Veyra's purpose extends beyond retrieving documents and placing them into an LLM context.
+
+Veyra adds:
+
+- persistent engineering memory
+- lifecycle
+- authority
+- evidence
+- provenance
+- causal knowledge
+- relationships
+- contradiction handling
+- learning
+- project isolation
+- DSH-native agent integration
+
+### 3.2 Not Merely Chat-History Storage
+
+Veyra may learn from conversations.
+
+However, raw conversation history is not the desired knowledge model.
+
+Veyra should extract useful engineering knowledge from interactions rather than treating every conversation turn as equally valuable memory.
+
+### 3.3 Not Merely a Documentation Replacement
+
+Veyra can retrieve documentation and project knowledge.
+
+However, documentation represents only one category of engineering knowledge.
+
+Veyra additionally captures:
+
+- why decisions were made
+- what failed
+- what fixed the problem
+- what was verified
+- what knowledge superseded earlier knowledge
+- relationships between engineering facts
+
+### 3.4 Not Primarily a Graph Database
+
+Veyra may expose relationship and causal graph views.
+
+Those relationships are projections of Veyra knowledge.
+
+A graph database is not required to define the product's conceptual model.
+
+### 3.5 Not Merely a Vector Database
+
+Veyra may use embeddings and vector search where appropriate.
+
+Vector similarity alone is insufficient to establish:
+
+- identity
+- authority
+- truth
+- causality
+- validity
+- project ownership
+
+Semantic similarity is a retrieval signal, not an authority mechanism.
+
+### 3.6 Not an Autonomous Agent
+
+Veyra provides intelligence and context to agents.
+
+The DSH agent remains responsible for acting.
+
+Veyra should not silently become an independent autonomous actor merely because it can retrieve, analyze, or organize knowledge.
+
+### 3.7 Not an Unconditional Source of Truth
+
+Veyra must never treat stored memory as automatically authoritative.
+
+Knowledge requires appropriate:
+
+- evidence
+- validation
+- authority
+- lifecycle state
+- provenance
+
+---
+
+# 4. Core Invariants
+
+The following distinctions are fundamental:
+
+```text
+memory != truth
+
+retrieval != authority
+
+similarity != identity
+
+candidate != canonical
+
+evidence != authority
+
+validation != authority
+
+freshness != validity
+
+inference != observation
+
+RAG != memory
+
+memory != documentation
+
+retrieval != action
+```
+
+These invariants must remain visible in implementation, retrieval, agent integration, and documentation.
+
+---
+
+# 5. Veyra 0.1.7 Baseline
+
+Veyra 0.1.8 builds on the verified 0.1.7 baseline.
+
+The baseline already includes:
+
+- persistent local knowledge storage
+- SQLite
+- FTS5 retrieval
+- intent-aware recall
+- causal facets
+- symptom/root-cause/remedy representation
+- verified outcome tracking
+- contradiction detection
+- lifecycle-aware memory handling
+- project isolation
+- memory inspection
+- DSH integration foundations
+- automated tests
+- npm packaging
+
+The 0.1.8 goal is not to discard these capabilities.
+
+It is to make them:
+
+1. more accessible to the DSH agent,
+2. more observable to humans,
+3. more capable as a unified retrieval system.
+
+---
+
+# 6. Veyra 0.1.8 Goal
+
+The primary goal of 0.1.8 is:
+
+> **Make Veyra understandable to the agent, powerful as a hybrid retrieval system, and observable to humans.**
+
+Three areas are mandatory:
+
+```text
+Agent Capability
+       +
+Hybrid Retrieval
+       +
+Knowledge Observatory
+```
+
+---
+
+# 7. Agent Capability Discovery
+
+Before implementation, inspect the **actual installed DSH environment**.
+
+Do not assume tool, skill, command, hook, or prompt-injection names.
+
+Discover:
+
+- actual DSH agent skill mechanism
+- actual Veyra plugin registration
+- actual tool exposure mechanism
+- actual command exposure mechanism
+- actual prompt injection mechanism
+- actual skill discovery mechanism
+- existing DSH context injection patterns
+- Veyra's current agent-facing integration
+- Veyra's storage/read APIs
+- Veyra's retrieval APIs
+- existing inspection/debugging capabilities
+
+The implementation must use the actual interfaces discovered in the repository and installed environment.
+
+No hypothetical DSH API should be invented.
+
+---
+
+# 8. Veyra Agent Skill
+
+Veyra must have a clear agent-facing capability surface.
+
+The DSH agent should be able to understand that Veyra can provide:
+
+- memory recall
+- hybrid knowledge retrieval
+- project context
+- engineering decisions
+- causal knowledge
+- evidence/provenance
+- relationships
+- contradictions
+- knowledge inspection
+- context suitable for current work
+
+The skill must describe **actual implemented capabilities only**.
+
+Documentation must not claim a tool or command that does not exist.
+
+The skill should teach the agent:
+
+```text
+when Veyra is useful
+what Veyra can retrieve
+how to query it
+how to interpret returned knowledge
+how authority/lifecycle affect results
+how to inspect evidence
+how to handle contradictions
+```
+
+---
+
+# 9. Prompt Injection
+
+Veyra's agent integration must be audited and updated so the agent knows when and how to use Veyra.
+
+The intended pipeline is:
+
+```text
+Veyra Knowledge
+      ↓
+Retrieval
+      ↓
+Lifecycle Filtering
+      ↓
+Authority Filtering
+      ↓
+Project Isolation
+      ↓
+Intent / Relevance Filtering
+      ↓
+Structured Context
+      ↓
+DSH Agent Prompt
+```
+
+Injected knowledge must remain bounded and structured.
+
+The system must preserve:
+
+- project isolation
+- reusable/global knowledge boundaries
+- candidate exclusion where required
+- lifecycle rules
+- authority rules
+- contradiction warnings
+- evidence/provenance
+- secret scrubbing
+- prompt-size limits
+
+Veyra must not blindly inject every retrieved memory into every agent interaction.
+
+---
+
+# 10. Hybrid Retrieval
+
+Veyra 0.1.8 should establish the architecture for Hybrid Search.
+
+The retrieval system should be able to combine, where available:
+
+### Lexical retrieval
+
+Examples:
+
+- SQLite FTS5
+- exact terms
+- identifiers
+- filenames
+- symbols
+- error messages
+- configuration keys
+
+### Semantic retrieval
+
+Potential mechanisms include:
+
+- embeddings
+- vector indexes
+- semantic similarity
+
+Semantic retrieval may be introduced where justified by actual engineering requirements.
+
+### Memory retrieval
+
+Signals include:
+
+- intent
+- lifecycle
+- authority
+- verification
+- project scope
+- causal facets
+- relationships
+- historical relevance
+
+### Relationship retrieval
 
 Signals may include:
 
-- touched files
-- symbols
-- commands
-- test execution
-- test results
-- errors
-- decisions
-- claims
-- outcomes
+- supersession
+- contradiction
+- causality
+- dependency
+- affected components
+- related decisions
 
-Observation must remain lightweight and non-authoritative.
+The final retrieval layer should combine appropriate signals rather than assuming one ranking mechanism is sufficient.
 
 ---
 
-### Understand
+# 11. Retrieval Authority
 
-Transform observed signals into structured engineering meaning.
+Retrieval ranking must not determine truth.
 
-Current capabilities include:
+A highly similar result does not automatically become authoritative.
 
-- deterministic lexical distillation
-- file extraction
-- symbol extraction
-- claim extraction
-- deterministic test outcome detection
-
-The next evolution is:
+The system must distinguish:
 
 ```text
-raw engineering signals
-        ↓
-context
-        ↓
-intent
-        ↓
-action / decision
-        ↓
-cause
-        ↓
-outcome
-        ↓
-engineering lesson
+retrieval score
+knowledge confidence
+validation state
+authority
 ```
 
-Understanding must distinguish observed evidence from inferred relationships.
+These are separate dimensions.
 
-Temporal proximity alone must never be treated as proof of causality.
+A retrieval pipeline may therefore find a candidate while later filtering determines whether that candidate is appropriate for agent context.
 
 ---
 
-### Remember
+# 12. Knowledge Observatory
 
-Persist useful engineering knowledge with explicit lifecycle semantics.
+Veyra 0.1.8 should introduce a read-only **Knowledge Observatory**.
 
-Memory categories include:
+The Observatory is a projection of existing Veyra state.
+
+It must not become a second source of truth.
+
+Conceptually:
 
 ```text
-candidate
-derived
-canonical
+                 Veyra Core
+                     │
+              ┌──────┴──────┐
+              │             │
+              ▼             ▼
+        Agent Surface   Human Surface
+              │             │
+              ▼             ▼
+         Context        Observatory
 ```
 
-Candidate observations must not automatically become durable authoritative knowledge.
-
-Explicit promotion remains the authority boundary.
+The Observatory should make Veyra knowledge understandable without requiring the user to inspect SQLite manually.
 
 ---
 
-### Recall
+# 13. Observatory Capabilities
 
-Retrieve relevant engineering knowledge based on the current engineering intent.
+The Observatory should provide read-only inspection for:
 
-Current retrieval uses:
+### Knowledge
 
-- SQLite
-- FTS5
-- lexical relevance
-- BM25-style scoring
-- intent affinity
-- contradiction awareness
+- memory records
+- knowledge categories
+- lifecycle state
+- scope
+- authority
+- timestamps
 
-Recall is contextual assistance, not authority.
+### Search
 
-Retrieved memory must never override repository, source code, configuration, test, or runtime evidence.
+- search queries
+- matched knowledge
+- ranking/relevance
+- retrieval source
 
----
+### Evidence
 
-### Apply
-
-Inject relevant memory into the DSH engineering context so that an agent can use previous engineering experience when solving the current task.
-
-Injected memory is contextual guidance.
-
-It is never authoritative merely because it was retrieved.
-
----
-
-### Learn
-
-Learn from repeated observations and verified outcomes.
-
-Current learning includes:
-
-- ADD
-- DUPLICATE
-- CONFLICT
-- UPDATE
-- evidence accumulation
-- observation counts
-- validation progression
-- confidence progression
-- repository evidence health
-- promotion candidates
-
-Learning must preserve:
+Show:
 
 ```text
-evidence ≠ authority
-confidence ≠ validation
-validation ≠ authority
+What does Veyra know?
+Why does Veyra know it?
+Where did it come from?
+When was it observed?
+What evidence supports it?
+What validation occurred?
 ```
 
-Repeated evidence may strengthen knowledge but must not silently create canonical authority.
+### Causality
 
----
-
-# Authority Model
-
-Veyra must preserve these invariants:
+Expose:
 
 ```text
-memory ≠ truth
-retrieval ≠ authority
-similarity ≠ identity
-candidate ≠ derived ≠ canonical
-evidence ≠ authority
-confidence ≠ validation
-validation ≠ authority
-freshness ≠ validity
-```
-
-The repository remains authoritative for repository facts.
-
-Source code, configuration, tests, runtime behavior, and explicit user decisions take precedence over remembered knowledge.
-
-Canonical authority requires an explicit authority transition.
-
-Veyra must never silently promote inferred or repeated knowledge into canonical truth.
-
----
-
-# Security and Isolation
-
-Veyra must maintain:
-
-- project isolation
-- optional reusable-memory isolation
-- secret scrubbing
-- candidate exclusion from normal recall
-- provenance-aware knowledge
-- explicit authority transitions
-
-Memory from one project must never silently become project-local knowledge in another project.
-
----
-
-# Current Release Baseline
-
-## Veyra 0.1.6
-
-Release:
-
-```text
-Version: 0.1.6
-Commit: f880995
-```
-
-0.1.6 established:
-
-- automatic observation
-- candidate capture
-- lexical distillation
-- file/symbol/claim extraction
-- deterministic test outcome detection
-- explicit memory creation
-- automatic learning
-- ADD / DUPLICATE / CONFLICT / UPDATE
-- evidence accumulation
-- validation progression
-- confidence progression
-- promotion candidates
-- repository evidence health
-- stale/broken evidence handling
-- SQLite FTS retrieval
-- intent-aware retrieval
-- system-prompt injection
-- project isolation
-- reusable memory
-- secret scrubbing
-- explicit canonical promotion
-
-The 0.1.6 release is the verified baseline for subsequent development.
-
----
-
-# 0.1.7 Goal — Structured Causal Engineering Understanding
-
-## Objective
-
-Move Veyra from isolated lexical signals toward **structured engineering experience**.
-
-The target representation is:
-
-```text
-Problem / Symptom
-        ↓
+Symptom
+   ↓
 Root Cause
-        ↓
-Remedy / Action
-        ↓
+   ↓
+Remedy
+   ↓
 Verified Outcome
 ```
 
-The purpose is not to create a generic causal graph.
+### Relationships
 
-The purpose is to allow Veyra to recognize bounded engineering cause/effect patterns from observable development activity.
+Expose relationships such as:
+
+```text
+supersedes
+evolved_from
+resolves
+caused_by
+affects
+belongs_to
+contradicts
+derived_from
+```
+
+Where relationships exist.
+
+### Contradictions
+
+The Observatory should make conflicting knowledge visible rather than silently collapsing it.
 
 ---
 
-# 0.1.7 Scope
+# 14. Human Surface vs Agent Surface
 
-Veyra should extend deterministic understanding so that compatible signals from an engineering turn can produce structured causal facets:
+The two surfaces have different goals.
+
+### Agent Surface
+
+Optimize for:
+
+- compactness
+- relevance
+- deterministic structure
+- low token cost
+- actionable context
+- authority/lifecycle awareness
+
+### Human Surface
+
+Optimize for:
+
+- explainability
+- provenance
+- inspection
+- exploration
+- relationship visibility
+- causal understanding
+- debugging
+
+The human Observatory should therefore expose more information than the normal agent context.
+
+---
+
+# 15. Evidence and Provenance
+
+Every important piece of engineering knowledge should be traceable where possible.
+
+The system should support answering:
+
+```text
+Where did this knowledge originate?
+
+What interaction produced it?
+
+What repository/project was involved?
+
+What file/code/configuration supported it?
+
+Was it explicitly stated or inferred?
+
+Was it verified?
+
+Has it been superseded?
+
+Does contradictory knowledge exist?
+```
+
+Veyra must avoid presenting unsupported inference as established fact.
+
+---
+
+# 16. Causal Knowledge
+
+Causal information is a first-class engineering-memory capability.
+
+Veyra should preserve explicit distinctions between:
 
 ```text
 symptom
-rootCause
+root cause
 remedy
-verifiedOutcome
+verified outcome
 ```
 
-Potential supporting context:
+Causality must not be inferred solely from:
+
+- temporal adjacency
+- files being edited together
+- tools being called sequentially
+- simultaneous changes
+
+Explicit causal evidence or sufficiently strong verification is required.
+
+---
+
+# 17. Lifecycle and Authority
+
+Veyra knowledge must remain lifecycle-aware.
+
+Possible states may include concepts such as:
 
 ```text
-files
-symbols
-commands
-test results
-errors
-decisions
-claims
-timestamps / ordering
-evidence anchors
+candidate
+validated
+verified
+superseded
+invalid
+conflicted
 ```
 
-Causal extraction must remain provenance-aware.
+Exact states must follow the implemented schema rather than being invented by documentation.
 
-Every inferred relationship should retain enough evidence to explain why it was created.
-
----
-
-# Causal Evidence Rules
-
-The following distinction is mandatory:
+The system must distinguish:
 
 ```text
-observed fact
-    ≠
-inferred relationship
-    ≠
-verified causal relationship
+stored
+retrievable
+validated
+verified
+authoritative
 ```
 
-For example:
+These are not equivalent.
+
+---
+
+# 18. Project Isolation
+
+Knowledge must respect scope.
+
+Conceptually:
 
 ```text
-test failed
-→ file edited
-→ test passed
+Project
+  ↓
+Workspace
+  ↓
+Global / Reusable
 ```
 
-may support a causal candidate.
+Veyra must not leak project-specific knowledge into unrelated projects merely because it is semantically similar.
 
-It does not automatically prove:
+Cross-project reuse must be explicit and appropriately classified.
+
+---
+
+# 19. Security
+
+Veyra must preserve:
+
+- secret scrubbing
+- project isolation
+- bounded prompt injection
+- safe provenance rendering
+- lifecycle filtering
+- authority filtering
+- contradiction visibility
+- no accidental exposure of sensitive context
+
+Retrieval should not bypass security boundaries.
+
+---
+
+# 20. Architecture Boundaries
+
+Veyra should remain:
+
+- DSH-native
+- local-first where practical
+- evidence-aware
+- retrieval-flexible
+- extensible
+- inspectable
+- testable
+
+Veyra should avoid introducing infrastructure merely because it is fashionable.
+
+Potential technologies such as:
+
+- vector indexes
+- embeddings
+- graph projections
+- external knowledge bases
+- remote services
+
+may be adopted when they solve a demonstrated Veyra requirement.
+
+They are implementation choices, not architectural identities.
+
+Do not introduce:
+
+- a graph database merely to visualize relationships
+- a vector database merely to claim semantic search
+- external services without demonstrated need
+- an LLM dependency where deterministic logic is sufficient
+- duplicate sources of truth
+
+---
+
+# 21. Schema Policy
+
+Prefer extending existing Veyra structures when they are sufficient.
+
+Avoid schema changes unless the current representation cannot support the required capability.
+
+For example, hybrid retrieval should not automatically require a new database architecture if existing SQLite/FTS5 plus an appropriately designed derived index can support the requirement.
+
+Any new index must remain a derived representation of canonical Veyra knowledge.
+
+---
+
+# 22. Verification
+
+Veyra 0.1.8 must be verified at multiple levels.
+
+### Unit tests
+
+Verify:
+
+- hybrid retrieval logic
+- ranking/fusion
+- lifecycle filtering
+- authority filtering
+- project isolation
+- causal retrieval
+- relationship retrieval
+- contradiction handling
+- evidence/provenance
+- prompt-context generation
+
+### Integration tests
+
+Verify:
 
 ```text
-edited file = root cause
+query
+  ↓
+retrieval
+  ↓
+filtering
+  ↓
+context generation
+  ↓
+agent-facing output
 ```
 
-or:
+### Observatory tests
+
+Verify:
+
+- read-only behavior
+- search
+- knowledge inspection
+- evidence display
+- causal relationships
+- contradictions
+- lifecycle/authority display
+
+### DSH verification
+
+Verify the actual installed DSH integration.
+
+Do not claim runtime verification unless it was actually performed.
+
+---
+
+# 23. DSH Runtime Safety
+
+The existing DSH Web environment is a live development environment.
+
+During Veyra development:
+
+**DO NOT:**
+
+- kill DSH
+- restart DSH
+- disable the DSH Web profile
+- replace the active profile
+- reload the active runtime
+- modify unrelated DSH runtime configuration
+- restart WSL or the machine
+
+Do not use:
 
 ```text
-edited file = complete remedy
+kill
+pkill
+killall
 ```
 
-Causal confidence must therefore depend on evidence quality rather than simple temporal proximity.
+unless explicitly authorized for a future task.
+
+If runtime verification would require disrupting the active environment, document it as unverified rather than pretending it succeeded.
 
 ---
 
-# 0.1.7 Deterministic-First Requirement
+# 24. Documentation
 
-0.1.7 must not require an LLM or external model runtime.
+Documentation must describe the implementation that actually exists.
 
-Preferred approach:
+At minimum, 0.1.8 should update documentation for:
+
+- Veyra architecture
+- hybrid retrieval
+- agent skill
+- prompt injection
+- Observatory
+- evidence/provenance
+- causal knowledge
+- relationships
+- security boundaries
+- usage and inspection
+
+Documentation must not describe hypothetical capabilities as completed features.
+
+---
+
+# 25. Versioning
+
+The implementation must remain version-consistent.
+
+Update:
+
+- package version
+- documentation references
+- tests
+- changelog/release information where present
+
+Only release after verification succeeds.
+
+Do not claim a release until:
 
 ```text
-deterministic signals
-        +
-explicit ordering
-        +
-known engineering patterns
-        +
-test outcomes
-        +
-provenance
-        ↓
-bounded causal candidate
+tests pass
+package validation passes
+working tree is understood
+Git state is understood
+release artifacts are verified
 ```
-
-Model-assisted distillation remains a future capability.
-
-It must not be introduced merely to compensate for weak deterministic design.
 
 ---
 
-# Retrieval Goal
+# 26. Long-Term Direction
 
-Structured causal knowledge should improve intent-aware recall.
+Veyra should evolve toward an engineering intelligence layer that sits between the developer's work and the agent.
 
-For example:
+Long-term:
 
 ```text
-why
-→ prioritize symptom / root cause
-
-how
-→ prioritize remedy / action
-
-what happened
-→ prioritize observed outcome
-
-did this fix it
-→ prioritize verified outcome
+Developer
+    │
+    ▼
+   DSH
+    │
+    ▼
+  Veyra
+    │
+    ├── Hybrid Search
+    ├── RAG
+    ├── Engineering Memory
+    ├── Project Context
+    ├── Causal Knowledge
+    ├── Relationships
+    ├── Evidence
+    ├── Authority
+    ├── Lifecycle
+    └── Learning
+    │
+    ▼
+ Agent Context
 ```
 
-Retrieval must continue to distinguish contextual memory from authoritative repository evidence.
+The objective is not to replace the agent.
+
+The objective is to give the agent a persistent engineering understanding that ordinary stateless retrieval cannot provide.
 
 ---
 
-# Negative Requirements
+# 27. Success Criteria for 0.1.8
 
-0.1.7 must NOT:
+Veyra 0.1.8 is successful when:
 
-- introduce LLM runtime dependencies
-- introduce embeddings
-- introduce vector databases
-- introduce generic RAG infrastructure
-- create an opaque graph database
-- silently promote causal candidates to canonical knowledge
-- infer causality solely from temporal adjacency
-- replace existing ADD / DUPLICATE / CONFLICT / UPDATE semantics
-- break project isolation
-- weaken secret scrubbing
-- bypass evidence requirements
-- make retrieved memory authoritative
-- require a DSH Web restart
-- redesign Veyra's architecture
-
----
-
-# Success Criteria
-
-0.1.7 is successful when:
-
-### Understanding
-
-Deterministic multi-step engineering activity can produce structured causal facets where sufficient evidence exists.
-
-### Safety
-
-Unrelated or weakly related signals do not create false causal relationships.
-
-### Provenance
-
-Causal facets can be traced back to their supporting engineering evidence.
-
-### Learning
-
-Existing evolution semantics continue to work without silent merges or silent canonicalization.
-
-### Validation
-
-A causal candidate does not become authoritative merely because it was inferred.
-
-### Retrieval
-
-`why` and `how` intent can surface useful causal context.
-
-### Regression Safety
-
-Existing 0.1.6 behavior remains intact.
+1. The DSH agent can discover and understand Veyra's actual capabilities.
+2. The Veyra agent skill accurately describes implemented tools/capabilities.
+3. Prompt injection correctly exposes relevant Veyra knowledge to the agent.
+4. RAG and engineering memory can participate in the same retrieval architecture.
+5. Hybrid retrieval combines appropriate lexical, semantic, memory, and relationship signals where implemented.
+6. Retrieval does not bypass lifecycle, authority, security, or project boundaries.
+7. Humans can inspect Veyra knowledge through the Knowledge Observatory.
+8. Users can inspect evidence and provenance.
+9. Users can inspect causal relationships.
+10. Users can identify contradictory knowledge.
+11. Agent-facing context remains compact and bounded.
+12. Human-facing observability remains detailed and explainable.
+13. Tests cover the new behavior and existing 0.1.7 behavior remains intact.
+14. Documentation matches actual implementation.
+15. No unsupported completion or runtime-verification claims are made.
+16. The live DSH environment remains operational and undisturbed.
 
 ---
 
-# Future Goals
+# 28. Final Architectural Principle
 
-The following remain intentionally deferred until evidence justifies them:
+Veyra should not be defined by what retrieval technology it uses.
 
-## Model-Assisted Distillation
+It should be defined by **how it turns engineering knowledge into trustworthy, appropriately scoped, retrievable context for agents.**
 
-Use bounded model assistance for complex unstructured engineering turns where deterministic extraction is demonstrably insufficient.
-
-Requirements:
-
-- provenance
-- uncertainty
-- bounded scope
-- explicit authority boundaries
-- graceful failure
-- controlled runtime cost
-
----
-
-## Vector / Hybrid Retrieval
-
-Consider embeddings or hybrid retrieval only after measurable lexical retrieval failures are demonstrated.
-
-Do not introduce vector search as a feature goal by itself.
-
----
-
-## Knowledge Maintenance
-
-Future maintenance may address:
-
-- compaction
-- superseded knowledge
-- long-term lifecycle management
-- relationship maintenance
-- stale knowledge
-- storage growth
-
-Maintenance must remain bounded and must not silently invalidate canonical knowledge.
-
----
-
-# Long-Term Direction
-
-Veyra should evolve toward:
+Therefore:
 
 ```text
-engineering activity
-        ↓
-observable evidence
-        ↓
-structured understanding
-        ↓
-validated engineering knowledge
-        ↓
-contextual recall
-        ↓
-better engineering decisions
-        ↓
-new evidence
-        ↺
+RAG                 → supported
+Hybrid Search       → first-class capability
+Vector Search       → supported where useful
+Semantic Search     → supported where useful
+Lexical Search      → supported
+Engineering Memory  → core
+Evidence             → core
+Provenance           → core
+Authority            → core
+Lifecycle            → core
+Causality            → core
+Relationships        → core
+Agent Integration    → core
+Human Observatory   → core
 ```
 
-The system should become progressively more useful without becoming progressively less trustworthy.
+The central distinction is:
 
-The central design principle is:
-
-> **Veyra may infer engineering knowledge, but evidence and explicit authority determine what can be trusted.**
+> **Veyra is not “RAG instead of memory” or “memory instead of RAG.” Veyra combines knowledge retrieval and engineering memory into an evidence-aware intelligence layer for DSH agents.**
