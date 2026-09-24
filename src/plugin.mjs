@@ -17,7 +17,7 @@ import { DEFAULT_RECALL_LIMIT } from './types.mjs'
 import { closeAllStores } from './store.mjs'
 import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
-import { GUIDANCE_TEXT, createContextProvider } from './context.mjs'
+import { GUIDANCE_TEXT, createContextProvider, rememberClaimedPrompt } from './context.mjs'
 import { candidateFromBuffer, newBuffer, observeEvent } from './observe.mjs'
 import { maybeLearn } from './learn.mjs'
 import { registerTools } from './tools.mjs'
@@ -160,6 +160,16 @@ export function apply(ctx, config = {}) {
     }
   } else if (registerCommand(ctx, runtime)) {
     runtime.log.info('[veyra] registered /veyra')
+  }
+
+  if (typeof ctx.on === 'function') {
+    ctx.on('agent/inbox/claimed', ({ agent, message } = {}) => {
+      try {
+        rememberClaimedPrompt(agent, message)
+      } catch {
+        // recall query is best-effort
+      }
+    })
   }
 
   if (typeof ctx.on === 'function' && runtime.observe) {

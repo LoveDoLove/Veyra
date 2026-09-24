@@ -39,28 +39,66 @@ export const GUIDANCE_TEXT = [
   'you need a targeted search beyond the automatic context.',
 ].join('\n')
 
+// Claimed inbox text is gone from inbox and not yet on deriveMessages()
+// when systemPrompt.assemble runs (preStep claims, then assembles).
+const claimedByAgent = new WeakMap()
+
+const SKIP_QUERY_PREFIXES = [
+  'veyra recalled',
+  'these items are remembered',
+]
+
+export function isHumanUserMessage(message) {
+  if (!message || typeof message !== 'object') return false
+  if (message.role && message.role !== 'user') return false
+  const kind = message.source?.kind
+  return !kind || kind === 'user'
+}
+
+export function queryTextFromMessage(message) {
+  const text = extractText(message?.content ?? message).trim()
+  if (!text) return ''
+  const lower = text.toLowerCase()
+  if (SKIP_QUERY_PREFIXES.some((p) => lower.startsWith(p))) return ''
+  return text.slice(0, 800)
+}
+
+export function rememberClaimedPrompt(agent, message) {
+  if (!agent || !isHumanUserMessage(message)) return
+  const text = queryTextFromMessage(message)
+  if (text) claimedByAgent.set(agent, text)
+}
+
+function latestHumanQuery(messages) {
+  if (!Array.isArray(messages)) return ''
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    if (!isHumanUserMessage(msg)) continue
+    const text = queryTextFromMessage(msg)
+    if (text) return text
+  }
+  return ''
+}
+
 export function queryFromAssemble(assembleContext) {
   const agent = assembleContext?.agent
-  const session = agent?.session
-  if (!session) return ''
-  // Prefer the latest user-authored text from the runtime context helper
-  // if the host attached one; otherwise walk recent surface messages.
+  if (!agent) return ''
+  const claimed = claimedByAgent.get(agent)
+  if (claimed) return claimed
+
+  const session = agent.session
   try {
-    const messages = session.surface?.messages
-    if (Array.isArray(messages)) {
-      for (let i = messages.length - 1; i >= 0; i--) {
-        const msg = messages[i]
-        if (msg?.role === 'user') {
-          const text = extractText(msg.content)
-          if (text && !text.startsWith('Veyra recalled') && !text.startsWith('These items are remembered')) {
-            return text.slice(0, 800)
-          }
-        }
-      }
+    if (typeof session?.deriveMessages === 'function') {
+      const fromHistory = latestHumanQuery(session.deriveMessages())
+      if (fromHistory) return fromHistory
     }
   } catch {
-    // surface shape is host-defined; fall through
+    // deriveMessages is host-defined; fall through
   }
+
+  // Rare: assemble without a prior claim still seeing queued human text.
+  const fromInbox = latestHumanQuery(agent.inbox?.nextStep) || latestHumanQuery(agent.inbox?.nextTurn)
+  if (fromInbox) return fromInbox
   return ''
 }
 

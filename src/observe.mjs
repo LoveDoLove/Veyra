@@ -57,6 +57,23 @@ export function eventText(event) {
   return ''
 }
 
+export function parseToolArgs(raw) {
+  if (!raw) return {}
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw
+  if (typeof raw !== 'string') return {}
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function eventSourceKind(event) {
+  const data = event?.data ?? event
+  return data?.source?.kind || data?.message?.source?.kind || ''
+}
+
 /**
  * Fold one session event into a per-turn observation buffer.
  * The buffer is cheap and lossy on purpose — it is not memory.
@@ -70,9 +87,12 @@ export function observeEvent(buffer, session, event) {
     buffer.assistant = []
     buffer.tools = []
     buffer.files = new Set()
+    buffer.callNames = new Map()
     return buffer
   }
   if (type === 'user/message') {
+    const kind = eventSourceKind(event)
+    if (kind && kind !== 'user') return buffer
     const text = eventText(event)
     if (text && !isNoiseText(text)) buffer.user.push(text.slice(0, 2000))
     return buffer
@@ -84,7 +104,9 @@ export function observeEvent(buffer, session, event) {
   }
   if (type === 'tool/call') {
     const name = event.data?.name || event.data?.tool || ''
-    const args = event.data?.arguments || event.data?.args || {}
+    const args = parseToolArgs(event.data?.arguments ?? event.data?.args)
+    const callId = event.data?.callId
+    if (callId && name) buffer.callNames.set(callId, name)
     if (INTERESTING_TOOLS.has(name)) {
       buffer.tools.push({ name, args: summarizeArgs(args) })
       collectFiles(buffer.files, args)
@@ -92,7 +114,10 @@ export function observeEvent(buffer, session, event) {
     return buffer
   }
   if (type === 'tool/result') {
-    const name = event.data?.name || event.data?.tool || ''
+    const callId = event.data?.message?.source?.callId
+      || event.data?.message?.content?.[0]?.toolCallId
+      || event.data?.callId
+    const name = event.data?.name || event.data?.tool || (callId ? buffer.callNames.get(callId) : '') || ''
     if (TOOL_SIGNAL.has(name)) {
       const text = eventText(event)
       if (text) buffer.tools.push({ name: `${name}:result`, preview: text.slice(0, 400) })
@@ -109,6 +134,7 @@ export function newBuffer() {
     assistant: [],
     tools: [],
     files: new Set(),
+    callNames: new Map(),
   }
 }
 

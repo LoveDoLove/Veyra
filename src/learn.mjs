@@ -55,7 +55,11 @@ export function maybeLearn(store, candidate, { related = [] } = {}) {
     if (other?.id) relations.push({ type: RELATIONS.DERIVES, targetId: other.id })
   }
 
+  // Update the candidate in place when it already has an id. A new put
+  // with the same title/body would collide on content_hash and return
+  // the original candidate, so learning would never become recallable.
   const written = store.put({
+    id: candidate.id,
     kind: KINDS.MEMORY,
     status: STATUSES.CURRENT,
     validation: VALIDATIONS.UNVERIFIED,

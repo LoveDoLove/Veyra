@@ -188,6 +188,7 @@ test('plugin exports name=veyra and wires DSH surfaces', async () => {
   const loaded = await ctx._providers[0].get(catalog[0])
   assert.ok(loaded.content.includes('Candidate ≠ Truth'))
   assert.ok(typeof ctx._listeners['session/event']?.[0] === 'function')
+  assert.ok(typeof ctx._listeners['agent/inbox/claimed']?.[0] === 'function')
   assert.ok(typeof ctx._listeners['agent/turn-stopping']?.[0] === 'function')
   assert.ok(GUIDANCE_TEXT.includes('Memory ≠ Knowledge'))
   dispose?.()

@@ -135,15 +135,12 @@ export function resolveWorkspace(source) {
 
 export function extractText(content) {
   if (typeof content === 'string') return content
-  if (!Array.isArray(content)) return ''
-  return content
-    .map((block) => {
-      if (!block || typeof block !== 'object') return ''
-      if (typeof block.text === 'string') return block.text
-      if (typeof block.content === 'string') return block.content
-      return ''
-    })
-    .filter(Boolean)
-    .join('\n')
-    .trim()
+  if (!content || typeof content !== 'object') return ''
+  if (Array.isArray(content)) {
+    return content.map(extractText).filter(Boolean).join('\n').trim()
+  }
+  if (typeof content.text === 'string') return content.text
+  if (typeof content.content === 'string') return content.content
+  if (Array.isArray(content.content)) return extractText(content.content)
+  return ''
 }
