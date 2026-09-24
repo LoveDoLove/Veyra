@@ -1,49 +1,16 @@
-# Veyra — The Engineering Brain for DSH
+# Veyra
 
-Veyra is a native [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness) plugin that gives DSH agents persistent engineering experience across sessions and projects.
+Persistent engineering memory for [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness).
 
-**observe → understand → remember → recall → apply → learn**
-
-Memory is ambient during ordinary engineering work. You should not have to manage it for day-to-day use.
-
-## What it does
-
-- Observes DSH session activity (messages, tools, files) without treating every event as knowledge.
-- Remembers durable engineering experience — decisions, root causes, constraints, fix patterns.
-- Recalls relevant memory automatically into the agent's turn context.
-- Distinguishes candidates from derived memory from canonical knowledge.
-- Isolates projects. Reusable experience is opt-in and never treated as another project's truth.
-- Redacts secrets before anything is persisted.
-- Lives **outside** the user's repository (`$DSH_HOME/veyra/`), so it never mutates `docs/` or `AGENTS.md`.
-
-## Principles
-
-- Observe ≠ Store
-- Candidate ≠ Truth
-- Similarity ≠ Authority
-- Memory ≠ Knowledge
-- Knowledge without evidence is not authoritative
-- Repository truth remains authoritative
-- Automatic behavior must not silently create authoritative truth
-- Project isolation must be preserved
-- Memory assists engineering; it does not replace verification
+Install it, restart DSH, keep working. Veyra observes useful context, remembers durable lessons, and recalls them on later turns. It does not write into your repo.
 
 ## Install
-
-Veyra is a DSH bundle plugin.
 
 ```sh
 dsh plugin --profile web add @lovedolove/veyra
 ```
 
-Or from a local checkout / packed tarball:
-
-```sh
-dsh plugin --profile web add /path/to/Veyra
-dsh plugin --profile web add ./lovedolove-veyra-0.1.0.tgz
-```
-
-Restart (or reload) the profile after install. On boot you should see:
+Restart `dsh web`. A good boot looks like this:
 
 ```
 [veyra] plugin loaded (home=...)
@@ -51,82 +18,56 @@ Restart (or reload) the profile after install. On boot you should see:
 [veyra] registered tools: veyra_remember, veyra_recall, veyra_inspect, veyra_forget, veyra_promote
 ```
 
-If you see `tool register failed`, the installed tarball is stale — reinstall from a freshly packed `lovedolove-veyra-0.1.0.tgz` (wipe the profile's `pnpm-lock.yaml` and `node_modules/@lovedolove` first so pnpm does not reuse the old tarball).
+Requires Node 22.5+ and DSH `>=0.1.2-rc.1`. Memory lives in `$DSH_HOME/veyra/`.
 
-Dev overlay, without installing into the active profile:
+## Daily use
 
-```yaml
-# /tmp/veyra.dev.patch.yml
-- insert:
-    - id: veyra
-      name: '/absolute/path/to/Veyra/src/plugin.mjs'
-```
+You do not manage memory for ordinary work.
 
-```sh
-dsh --profile <isolated-profile> --patch /tmp/veyra.dev.patch.yml
-```
+1. Do engineering in DSH as usual.
+2. Veyra stores candidates from the session, and durable lessons as derived memory.
+3. On a later session in the same project, relevant memory is injected automatically.
 
-Do not attach a dev overlay to a DSH Web process someone is already using.
+Ask the agent to remember something important, or just keep going — automatic recall is already on.
 
-## How memory works
+## Commands
 
-| Kind | Authority | In automatic recall? |
-| --- | --- | --- |
-| Observation (auto-captured) | `candidate` | no |
-| Remembered / learned experience | `derived` | yes |
-| Explicitly promoted project truth | `canonical` | yes |
-| Forgotten, stale, invalid, superseded | — | no |
-
-Canonical authority is **never** assigned automatically. Only `/veyra promote <id> canonical` or `veyra_promote` with `explicit: true` can do that, and that is a user action.
-
-Storage:
-
-```
-$DSH_HOME/veyra/projects/<projectId>/memory.db
-$DSH_HOME/veyra/reusable/memory.db
-```
-
-`projectId` is `sha256(gitRoot|gitRemote)` (falling back to the resolved workspace path). Two checkouts of the same remote share a project; unrelated folders do not.
-
-The database is Node's built-in `node:sqlite` with FTS5. There are no native addons.
-
-## Tools
-
-| Tool | Purpose |
+| Command | What it does |
 | --- | --- |
-| `veyra_remember` | Keep durable knowledge (always derived, never canonical) |
-| `veyra_recall` | Targeted search beyond the automatic context |
-| `veyra_inspect` | Read one record, including candidates |
-| `veyra_forget` | Soft-forget (leaves recall, stays inspectable) |
-| `veyra_promote` | Change standing; canonical requires `explicit: true` |
+| `/veyra` | Status for this workspace |
+| `/veyra recall <query>` | Search project (+ reusable) memory |
+| `/veyra recent` | Last 8 records, including candidates |
+| `/veyra inspect <id>` | Read one record |
+| `/veyra forget <id>` | Soft-forget (leaves recall, stays inspectable) |
+| `/veyra promote <id> canonical` | Mark as project truth — **only this is canonical** |
 
-Slash command: `/veyra`, `/veyra recall …`, `/veyra recent`, `/veyra inspect <id>`, `/veyra forget <id>`, `/veyra promote <id> [derived|canonical]`.
+Tools with the same names (`veyra_remember`, `veyra_recall`, …) are available to the agent.
 
-## Configuration
+## Memory rules
 
-Optional `config:` on the Cordis row:
+| What | Authority | Auto-recalled? |
+| --- | --- | --- |
+| Auto-captured observation | `candidate` | no |
+| Remembered / learned lesson | `derived` | yes |
+| Explicitly promoted truth | `canonical` | yes |
+
+Canonical is never assigned automatically. Repo files stay authoritative. Secrets are redacted. Projects are isolated; reusable memory is opt-in.
+
+## Config (optional)
+
+In the profile `cordis.patch.yml`:
 
 ```yaml
 - id: veyra
   name: '@lovedolove/veyra'
   config:
-    home: '~/.dsh/veyra'   # override storage root
     recallLimit: 5
     includeReusable: true
     observe: true
     learn: true
 ```
 
-`VEYRA_HOME` overrides the storage root. `$DSH_HOME` is respected when resolving the default.
-
-## Development
-
-```sh
-npm test
-npm pack
-```
-
-Requires Node 22.5+ (`node:sqlite`).
+`VEYRA_HOME` overrides the storage root.
 
 ## License
 
