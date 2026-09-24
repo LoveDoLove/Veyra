@@ -25,7 +25,7 @@ The objective is:
 
 # 1. Starting Baseline
 
-Veyra `0.1.12` is the verified baseline.
+Veyra `0.1.12` is the verified Graph Foundation baseline (`0.1.13` is the CI version bump of that same commit). Network Graph WebUI is `0.1.14`.
 
 The current baseline has already established:
 

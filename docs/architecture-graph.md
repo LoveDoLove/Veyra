@@ -1,8 +1,9 @@
 # Veyra Engineering Graph — Architecture Checkpoint
 
-Baseline: verified `@lovedolove/veyra@0.1.12`.
+Baseline: verified Graph Foundation `@lovedolove/veyra@0.1.12` (`0.1.13` = CI bump).
+Network Graph WebUI: `0.1.14`.
 Date: 2026-04-06.
-Status: implemented on the 0.1.12 baseline. Graph is a derived projection, not a second store.
+Status: graph is a derived projection, not a second store. WebUI is a host-native Observatory surface over that projection.
 
 This checkpoint is grounded in the current repository. Prompt vocabulary that does
 not exist in `src/types.mjs` is not adopted.
@@ -22,7 +23,7 @@ Veyra is a DSH Cordis plugin (`src/plugin.mjs`), not a standalone web app.
 | Recall gate | `isRecallEligible`: not forgotten, `status===current`, not invalid/stale, not candidate, not observation, authority derived\|canonical |
 | Search | Hybrid FTS5 + Jaccard + intent + relationship *score* |
 | Graph today | Derived Local Graph (`src/graph.mjs`). Recall expands 1-hop eligible neighbors; `contradicts` still has its own extra |
-| Human surface | `/veyra observatory *` read-only text. Alias `graph` already exists |
+| Human surface | `/veyra observatory *` read-only text, plus host HTTP Network Graph at `/veyra` |
 | Agent surface | `systemPrompt.section` + `systemPrompt.context`, tools `remember/recall/inspect/forget/promote` |
 | Fail-closed | empty string if recall throws; isolation is per-DB |
 
@@ -69,7 +70,7 @@ Canonical SQLite
 | **Adopt** | Both sides of a contradiction stay visible | Already implemented; keep as a hard extra, not a soft neighbor |
 | **Adapt** | Supermemory version chain | Use existing `status` + `supersedes`. No `parentMemoryId` column |
 | **Adapt** | OpenViking layers | Existing `kind` + `authority` already separate observation / derived / canonical |
-| **Adapt** | Human graph | Extend Observatory **text** Local Graph. No canvas, no D3, no new web app |
+| **Adapt** | Human graph | Host-native `/veyra` page over `localGraph` JSON. Vanilla SVG. No D3, no React, no new web app |
 | **Adapt** | Relationship-aware retrieval | After hybrid top-K, 1-hop expand through existing relations, then `isRecallEligible` |
 | **Reject** | Neo4j / external graph DB | No concrete gap. Work would stop first if one appeared |
 | **Reject** | New node types (file, commit, repo) | Not records today. Evidence paths stay metadata |
@@ -78,7 +79,7 @@ Canonical SQLite
 | **Reject** | Default full-project graph | Observatory already warns against this; Local Graph is the default |
 | **Reject** | Auto-canonical, silent merge, hiding contradictions | Core invariants |
 | **Reject** | SMFS / FUSE / connectors / remote APIs | Out of scope |
-| **Defer** | Interactive canvas in the DSH host | No Veyra web shell; host would have to grow first |
+| **Adopt** | Host `webServer.register` | DSH already exposes named HTTP routes; `/veyra` is the plugin surface |
 | **Defer** | Default 2-hop traversal | Add only if 1-hop is measurably thin |
 | **Defer** | Edge-level validation / provenance | Relations are `{ type, targetId }` only. Inherit from endpoint records |
 | **Defer** | Impact experiment (GOAL §22) | Requires live paired tasks after this projection ships |
@@ -200,21 +201,28 @@ node and edge sets, stable sort by `id`.
 
 ## 5. WebUI / Observatory
 
-There is no Veyra Network Graph web app in 0.1.12. Shipping a disconnected
-SPA would violate “DSH-native” and add a host Veyra does not own.
+Graph Foundation (0.1.12/0.1.13) remains the derived projection. Network Graph
+WebUI (0.1.14) is a host-native Observatory surface over that projection.
 
-This stage:
+DSH already exposes `ctx.webServer.register`. Veyra uses that — it does not
+ship a second app, a `dsh.client` React bundle, or D3.
 
-- Default view = **Local Graph** (selected id + 1 hop), text, read-only.
-- `/veyra observatory graph` without an id keeps the existing edge list
-  (project-level, still capped).
-- `/veyra observatory local <id>` (and `graph <id>`) render the neighborhood
-  with kind / authority / validation / status labels.
-- Search → record → local graph is already possible via existing subcommands.
-- Mutation stays out of Observatory.
+| Route | Role |
+| --- | --- |
+| `GET /veyra` | vanilla SVG Local Graph page |
+| `GET /veyra/graph?id=&hops=&trustedOnly=&cwd=` | `localGraph` JSON + presentation marks |
+| `GET /veyra/record?id=&cwd=` | compact record JSON (inspect, not mutate) |
+| `GET /veyra/search?q=&cwd=` | hybrid search hits → pick a center |
 
-Interactive canvas is deferred until the DSH host exposes a plugin surface
-for it.
+Default graph = selected record + 1 hop. `hops=2` is user-controlled and
+clamped to `GRAPH_LIMITS.maxHops`. `cwd` selects the project store the same
+way `/veyra` slash commands do. Missing / other-project ids fail closed.
+
+Presentation marks (`selected`, `trusted`, `inspectOnly`, `historical`) are
+computed from existing node fields. Filtering is client-side and does not
+change memory. Visible ≠ trusted. Connected ≠ recall-eligible.
+
+Slash Observatory commands stay text. `graph <id>` also prints the WebUI URL.
 
 ---
 
@@ -243,7 +251,7 @@ Failure: catch and return `''` (existing `createContextProvider` contract).
 | Projection treated as a second truth | No graph table; functions only |
 | Expansion noise | hop=1, maxExtra=4, eligibility gate |
 | Isolation leak | resolve only in opened stores |
-| Host UI expectation | text Observatory; canvas deferred |
+| Host UI expectation | `/veyra` on `webServer`; no second app |
 | `list()` miss on large DBs | unresolved edge, not a guessed node |
 
 ---
@@ -252,12 +260,13 @@ Failure: catch and return `''` (existing `createContextProvider` contract).
 
 1. When (if ever) should evidence paths become first-class nodes?
 2. Does 1-hop measurably help live DSH tasks? (GOAL §22)
-3. Should DSH grow a plugin web panel, or is slash text enough?
+3. Closed for this stage: host `webServer` is enough. A React `dsh.client`
+   panel is not required.
 
 ---
 
 ## 9. Implementation slice (ponytail)
 
-One module `src/graph.mjs`. Observatory and `hybridRetrieve` call it.
-No new dependency, no schema migration, no new tool, no version bump until
-the slice is verified.
+Graph Foundation: `src/graph.mjs`. Network Graph WebUI: `src/webui.mjs`.
+No new dependency, no schema migration, no new tool. Plugin registers
+`/veyra` only when `ctx.webServer` exists.

@@ -421,6 +421,7 @@ export function observatoryLocalGraph({
   id,
   hops = 1,
   trustedOnly = false,
+  cwd = '',
 } = {}) {
   if (!id) {
     return { ok: false, error: 'Record id required', formatted: 'Error: record id required for local graph' }
@@ -469,6 +470,10 @@ export function observatoryLocalGraph({
   lines.push('')
   lines.push(' Invariant: Graph is a projection. Memory rows remain the source of truth.')
   lines.push(' Next: /veyra observatory record <id>')
+  const webui = cwd
+    ? `/veyra?id=${graph.center.id}&cwd=${encodeURIComponent(cwd)}`
+    : `/veyra?id=${graph.center.id}`
+  lines.push(` WebUI: ${webui}  (Local Graph, hops=${hops})`)
   lines.push('════════════════════════════════════════════════════════════════════════')
 
   return { ok: true, data: graph, formatted: lines.join('\n') }

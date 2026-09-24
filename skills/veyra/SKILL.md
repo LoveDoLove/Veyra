@@ -90,6 +90,7 @@ Humans can explore Veyra's internal state via the `/veyra observatory` slash com
 - `/veyra observatory local <id>`: 1-hop Local Graph around a record (default graph view).
 - `/veyra observatory graph [id]`: Local Graph when an id is given; otherwise the project edge list.
 - `/veyra observatory contradictions`: Conflicting knowledge claims displayed side-by-side.
+- Network Graph WebUI: host page `/veyra?id=<record>` (Local Graph over the same derived projection). Visible ≠ trusted.
 
 ## Rules you must keep
 

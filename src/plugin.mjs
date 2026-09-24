@@ -8,12 +8,13 @@
  *   - agent/turn-stopping   — persist candidates / maybe-learn
  *   - ctx.tools             — remember / recall / inspect / forget / promote
  *   - ctx.commands          — /veyra
+ *   - ctx.webServer         — Network Graph WebUI at /veyra (when the host has HTTP)
  *   - ctx.skills            — bundled `veyra` skill (skills/veyra/SKILL.md)
  *
  * Memory lives under $DSH_HOME/veyra/, never inside the user's repository.
  */
 
-import { DEFAULT_RECALL_LIMIT } from './types.mjs'
+import { AUTHORITIES, DEFAULT_RECALL_LIMIT } from './types.mjs'
 import { closeAllStores } from './store.mjs'
 import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
@@ -24,6 +25,7 @@ import { markStale } from './evolve.mjs'
 import { registerTools } from './tools.mjs'
 import { registerCommand } from './commands.mjs'
 import { registerSkills } from './skills.mjs'
+import { registerWebUi } from './webui.mjs'
 
 export const name = 'veyra'
 export const inject = ['tools']
@@ -161,6 +163,10 @@ export function apply(ctx, config = {}) {
     }
   } else if (registerCommand(ctx, runtime)) {
     runtime.log.info('[veyra] registered /veyra')
+  }
+
+  if (registerWebUi(ctx, runtime)) {
+    runtime.log.info('[veyra] Network Graph WebUI at /veyra')
   }
 
   if (typeof ctx.on === 'function') {

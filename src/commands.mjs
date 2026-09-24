@@ -22,7 +22,7 @@ import {
 
 function helpText() {
   return [
-    'Veyra — Engineering Brain for DSH (v0.1.8)',
+    'Veyra — Engineering Brain for DSH (v0.1.14)',
     '',
     '/veyra                                     status for this workspace',
     '/veyra observatory [subcommand]            human knowledge observatory',
@@ -33,6 +33,7 @@ function helpText() {
     '       observatory relationships [id]      directed edges (optional filter)',
     '       observatory local <id>              1-hop neighborhood around a record',
     '       observatory graph [id]              local graph if id given, else all edges',
+    '       Network Graph WebUI                 /veyra?id=<record>  (host HTTP, 1-hop default)',
     '       observatory contradictions          conflicts and opposing claims',
     '/veyra recall [q]                          hybrid search project (+ reusable) memory',
     '/veyra recent                              last 8 memories (including candidates)',
@@ -105,13 +106,13 @@ export function handleVeyraCommand(runtime, invocation) {
 
     if (sub === 'local') {
       if (!subArg) return { kind: 'error', text: 'Usage: /veyra observatory local <id>' }
-      const res = observatoryLocalGraph({ projectStore, reusableStore, id: subArg })
+      const res = observatoryLocalGraph({ projectStore, reusableStore, id: subArg, cwd })
       return { kind: res.ok ? 'success' : 'error', text: res.formatted }
     }
 
     if (sub === 'graph') {
       if (subArg) {
-        const res = observatoryLocalGraph({ projectStore, reusableStore, id: subArg })
+        const res = observatoryLocalGraph({ projectStore, reusableStore, id: subArg, cwd })
         return { kind: res.ok ? 'success' : 'error', text: res.formatted }
       }
       const res = observatoryRelationships({ projectStore, reusableStore, id: null })
