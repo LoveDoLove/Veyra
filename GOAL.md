@@ -1,469 +1,510 @@
-# Veyra
+# Veyra — Engineering Intelligence Goal
 
-## Mission
+## Purpose
 
-Build **Veyra** as a production-quality, native **DSH Engineering Intelligence plugin**.
+Veyra is a DSH-native engineering intelligence system that continuously observes engineering work, extracts durable knowledge, recalls relevant context, and learns from verified outcomes.
 
-Veyra is the **Engineering Brain for DSH**.
+Veyra is not a generic RAG system, chat history store, or repository documentation generator.
 
-Its purpose is to give DSH agents persistent engineering experience across sessions and projects.
-
-The intended experience is:
-
-**observe → understand → remember → recall → apply → learn**
-
-Memory should be ambient during normal engineering work. Developers should not need to manually manage memory for ordinary usage.
-
-Veyra must become a real, useful system — not merely a collection of memory APIs.
+Its purpose is to turn engineering work into **evidence-backed, reusable engineering knowledge** while preserving repository truth and explicit authority boundaries.
 
 ---
 
-## Current Project State
+# Core Loop
 
-Veyra already has an existing implementation and has been published as an npm package.
+Veyra's long-term goal is:
 
-The existing published implementation is **not yet considered complete** because it does not fully satisfy the requirements and intended experience defined in this document.
+```text
+observe
+  ↓
+understand
+  ↓
+remember
+  ↓
+recall
+  ↓
+apply
+  ↓
+learn
+  ↺
+```
 
-Treat the current Veyra implementation as the starting point for continued development.
+Each stage has a distinct responsibility.
 
-Do not assume that existing architecture, features, tests, or publication status are sufficient.
+### Observe
 
-Inspect the current implementation, identify genuine gaps, and improve or replace parts where necessary.
+Capture useful engineering signals from DSH turns without storing raw conversational history as memory.
 
-The objective is the Veyra defined by this document, not preservation of the current implementation.
+Signals may include:
 
----
+- touched files
+- symbols
+- commands
+- test execution
+- test results
+- errors
+- decisions
+- claims
+- outcomes
 
-## What Veyra Should Provide
-
-Veyra should enable DSH agents to naturally:
-
-- understand useful engineering context;
-- remember durable engineering knowledge;
-- preserve useful evidence and context;
-- recall relevant knowledge automatically;
-- provide relevant knowledge to the agent when it is useful;
-- learn from engineering work over time;
-- distinguish temporary observations from durable knowledge;
-- distinguish remembered experience from authoritative truth;
-- respect project boundaries;
-- reuse appropriate knowledge across projects;
-- handle outdated, conflicting, or invalid knowledge safely.
-
-The result should feel like an engineering brain that is continuously available to the agent.
-
----
-
-## Core Principles
-
-Keep these principles intact:
-
-- **Observe ≠ Store**
-- **Candidate ≠ Truth**
-- **Similarity ≠ Authority**
-- **Memory ≠ Knowledge**
-- **Knowledge without evidence is not authoritative**
-- **Repository truth remains authoritative**
-- **Automatic behavior must not silently create authoritative truth**
-- **Project isolation must be preserved**
-- **Memory assists engineering; it does not replace verification**
-
-These principles define the product behavior.
-
-They do not prescribe a particular implementation.
+Observation must remain lightweight and non-authoritative.
 
 ---
 
-## DSH Native
+### Understand
 
-DSH is the target runtime.
+Transform observed signals into structured engineering meaning.
 
-Veyra must be a **first-class native DSH plugin** and integrate naturally with the actual DSH architecture, lifecycle, plugin system, and agent workflow.
+Current capabilities include:
 
-Use the actual DSH source and official DeepSeek Harness documentation as the authority for DSH behavior.
+- deterministic lexical distillation
+- file extraction
+- symbol extraction
+- claim extraction
+- deterministic test outcome detection
 
-Do not build a generic multi-runtime memory framework.
+The next evolution is:
 
-Veyra is for DSH.
+```text
+raw engineering signals
+        ↓
+context
+        ↓
+intent
+        ↓
+action / decision
+        ↓
+cause
+        ↓
+outcome
+        ↓
+engineering lesson
+```
 
----
+Understanding must distinguish observed evidence from inferred relationships.
 
-## Reference Implementations
-
-The following repositories are available as direct implementation references:
-
-- `OpenViking`
-- `supermemory`
-- `mnemon`
-- `Project-Memory-Agent`
-
-These are not merely documentation references.
-
-**Inspect and use these repositories as implementation source material when building Veyra.**
-
-Use existing source code directly whenever it provides a useful solution.
-
-You are explicitly encouraged to:
-
-- copy files;
-- copy and paste code;
-- reuse existing modules;
-- reuse existing implementations;
-- adapt existing implementations;
-- combine implementations from multiple repositories;
-- modify copied code;
-- refactor copied code;
-- simplify copied code;
-- replace parts that do not fit Veyra.
-
-Do not unnecessarily implement from scratch something that already exists in these repositories and can be adapted.
-
-### OpenViking
-
-Use as a direct implementation reference for memory/runtime integration, session behavior, lifecycle handling, context retrieval, persistence, background processing, and other relevant memory capabilities.
-
-### supermemory
-
-Use as a direct implementation reference for persistent memory, automatic capture, contextual recall, knowledge evolution, temporal behavior, cross-project memory, retrieval, and other relevant intelligence capabilities.
-
-### mnemon
-
-Use as a direct implementation reference for persistent engineering memory, automatic memory handling, knowledge representation, contextual or intent-aware recall, memory lifecycle, deduplication, knowledge relationships, and DSH integration.
-
-Inspect the actual source code and implementation.
-
-Reuse useful implementations where appropriate rather than merely describing or researching them.
-
-Do not assume Mnemon's architecture is automatically correct for Veyra. Extract useful capabilities and adapt them to Veyra's requirements.
-
-### Project-Memory-Agent
-
-Use as a historical engineering reference for project-aware memory, evidence, knowledge management, repository integration, packaging, tooling, and other useful existing implementations.
-
-PMA is historical reference material only.
-
-Veyra must not depend on the PMA runtime or simply reproduce PMA as a renamed project.
-
-### DSH
-
-Use the actual DSH source and official DeepSeek Harness documentation as the authority for DSH integration and runtime behavior.
-
-DSH-specific behavior must be implemented according to the actual DSH architecture rather than assumptions derived from the other reference repositories.
-
-### Reuse Principle
-
-**Copy first when useful. Then change it to fit Veyra.**
-
-Do not waste time reinventing working implementations.
-
-Do not preserve an external project's design merely because it exists.
-
-Take useful parts, combine them where appropriate, remove unnecessary complexity, and modify them until they satisfy Veyra's requirements.
-
-The final system must be a coherent Veyra implementation, not an unmodified copy of any reference project.
+Temporal proximity alone must never be treated as proof of causality.
 
 ---
 
-## Engineering Freedom
+### Remember
 
-You own the implementation.
+Persist useful engineering knowledge with explicit lifecycle semantics.
 
-Choose the architecture, technologies, data structures, storage, retrieval, lifecycle, integration points, and internal boundaries based on the actual requirements, DSH, the repository, and the available reference implementations.
+Memory categories include:
 
-Do not wait for the user to design these details.
+```text
+candidate
+derived
+canonical
+```
 
-When multiple approaches are possible, use engineering judgment.
+Candidate observations must not automatically become durable authoritative knowledge.
 
-Prefer simple, reliable solutions over unnecessary complexity.
-
-Do not add infrastructure merely because it is technically interesting.
-
-Do not build abstractions for problems Veyra does not actually have.
-
-Existing Veyra architecture may be changed when doing so materially improves its ability to satisfy this goal.
+Explicit promotion remains the authority boundary.
 
 ---
 
-## Memory
+### Recall
 
-Veyra must provide persistent engineering memory across sessions.
+Retrieve relevant engineering knowledge based on the current engineering intent.
 
-Useful knowledge should be able to survive the end of a session and become available to later engineering work.
+Current retrieval uses:
 
-Memory should retain enough context and provenance to remain understandable and useful.
+- SQLite
+- FTS5
+- lexical relevance
+- BM25-style scoring
+- intent affinity
+- contradiction awareness
 
-The system should be able to distinguish, as appropriate to its design:
+Recall is contextual assistance, not authority.
 
-- observations;
-- memories;
-- learned knowledge;
-- authoritative knowledge;
-- evidence;
-- current repository state.
-
-Stale, invalid, contradictory, or low-value knowledge must not silently dominate future engineering work.
+Retrieved memory must never override repository, source code, configuration, test, or runtime evidence.
 
 ---
 
-## Automatic Experience
+### Apply
 
-Normal memory behavior should be automatic.
+Inject relevant memory into the DSH engineering context so that an agent can use previous engineering experience when solving the current task.
 
-During ordinary DSH usage, Veyra should be capable of:
+Injected memory is contextual guidance.
 
-- observing relevant engineering activity;
-- recognizing potentially useful knowledge;
-- retaining appropriate knowledge;
-- recalling relevant existing knowledge;
-- providing useful context to the agent;
-- improving knowledge over time.
-
-Manual controls may exist for explicit user control, inspection, correction, maintenance, or administration.
-
-Manual interaction should not be required for the normal memory loop.
+It is never authoritative merely because it was retrieved.
 
 ---
 
-## Evidence and Truth
+### Learn
 
-Important knowledge should have a meaningful connection to its origin.
+Learn from repeated observations and verified outcomes.
 
-Veyra should preserve sufficient provenance and context for later understanding and verification.
+Current learning includes:
 
-When remembered information conflicts with the actual repository or current engineering environment, the current verified reality takes precedence.
+- ADD
+- DUPLICATE
+- CONFLICT
+- UPDATE
+- evidence accumulation
+- observation counts
+- validation progression
+- confidence progression
+- repository evidence health
+- promotion candidates
 
-Retrieved memory must never become authoritative merely because it was retrieved.
+Learning must preserve:
 
----
+```text
+evidence ≠ authority
+confidence ≠ validation
+validation ≠ authority
+```
 
-## Project Intelligence
-
-Veyra must understand project boundaries.
-
-Project-specific knowledge must not accidentally become authoritative knowledge for another project.
-
-At the same time, useful engineering experience should be reusable across projects when appropriate.
-
-Cross-project reuse must preserve the distinction between:
-
-- reusable engineering experience;
-- project-specific knowledge;
-- authoritative project truth.
-
----
-
-## Learning and Evolution
-
-Veyra should improve through accumulated engineering experience.
-
-Repeated observations, successful solutions, decisions, relationships, and useful patterns should be capable of becoming increasingly useful knowledge.
-
-Learning must remain evidence-aware and should not turn guesses or unverified observations into unquestioned truth.
-
-Veyra should be capable of evolving its knowledge as engineering reality changes.
+Repeated evidence may strengthen knowledge but must not silently create canonical authority.
 
 ---
 
-## Reliability
+# Authority Model
 
-Veyra is intended for continuous use inside a real development environment.
+Veyra must preserve these invariants:
 
-The implementation should appropriately handle:
+```text
+memory ≠ truth
+retrieval ≠ authority
+similarity ≠ identity
+candidate ≠ derived ≠ canonical
+evidence ≠ authority
+confidence ≠ validation
+validation ≠ authority
+freshness ≠ validity
+```
 
-- persistence;
-- recovery;
-- concurrency;
-- data integrity;
-- failures;
-- configuration;
-- resource usage;
-- upgrades;
-- compatibility;
-- maintainability.
+The repository remains authoritative for repository facts.
 
-Use engineering judgment to determine the appropriate solutions.
+Source code, configuration, tests, runtime behavior, and explicit user decisions take precedence over remembered knowledge.
 
-Do not turn these into unnecessary infrastructure or ceremony.
+Canonical authority requires an explicit authority transition.
 
----
-
-## Security
-
-Veyra must be safe to use with real engineering projects.
-
-Protect secrets and sensitive information from inappropriate persistence.
-
-Do not allow untrusted remembered content to silently become authoritative instructions.
-
-Respect project isolation and user data boundaries.
-
-Do not unnecessarily expose stored engineering information.
-
-Do not damage or unnecessarily disrupt the user's development environment.
+Veyra must never silently promote inferred or repeated knowledge into canonical truth.
 
 ---
 
-## Production Quality
+# Security and Isolation
 
-Build Veyra as software intended for real use.
+Veyra must maintain:
 
-It should be:
+- project isolation
+- optional reusable-memory isolation
+- secret scrubbing
+- candidate exclusion from normal recall
+- provenance-aware knowledge
+- explicit authority transitions
 
-- reliable;
-- maintainable;
-- efficient;
-- secure;
-- persistent;
-- contextual;
-- evidence-aware;
-- project-aware;
-- DSH-native.
-
-Do not optimize for feature count.
-
-Optimize for a genuinely useful engineering experience.
+Memory from one project must never silently become project-local knowledge in another project.
 
 ---
 
-## Distribution
+# Current Release Baseline
 
-Veyra is already published as an npm package.
+## Veyra 0.1.6
 
-The existing publication does not constitute completion.
+Release:
 
-Maintain the package as a proper distributable DSH plugin.
+```text
+Version: 0.1.6
+Commit: f880995
+```
 
-The project should remain buildable, packageable, installable, upgradeable, and releasable through the appropriate DSH and npm workflows.
+0.1.6 established:
 
-Maintain an appropriate GitHub Actions release and publish workflow.
+- automatic observation
+- candidate capture
+- lexical distillation
+- file/symbol/claim extraction
+- deterministic test outcome detection
+- explicit memory creation
+- automatic learning
+- ADD / DUPLICATE / CONFLICT / UPDATE
+- evidence accumulation
+- validation progression
+- confidence progression
+- promotion candidates
+- repository evidence health
+- stale/broken evidence handling
+- SQLite FTS retrieval
+- intent-aware retrieval
+- system-prompt injection
+- project isolation
+- reusable memory
+- secret scrubbing
+- explicit canonical promotion
 
-When the implementation reaches a releasable state, update the package version and publish/release through the appropriate workflow when authorized and possible.
-
-Never claim publication, CI success, or external installation success without actually verifying it.
-
----
-
-## Verification
-
-Verify the implementation against reality.
-
-At minimum, establish that:
-
-- the project builds;
-- the plugin package is valid;
-- DSH can load the plugin;
-- memory can be persisted;
-- memory can survive across sessions;
-- relevant memory can be recalled later;
-- recalled knowledge can become useful agent context;
-- project boundaries work correctly;
-- unsafe or invalid knowledge does not silently become authoritative.
-
-Use tests where they provide useful confidence.
-
-Do not waste the project on excessive artificial testing infrastructure.
-
-Practical verification is preferred where it provides stronger evidence.
-
-Never claim verification that was not actually performed.
+The 0.1.6 release is the verified baseline for subsequent development.
 
 ---
 
-## Core Acceptance Scenario
+# 0.1.7 Goal — Structured Causal Engineering Understanding
 
-The most important scenario is:
+## Objective
 
-### Session A
+Move Veyra from isolated lexical signals toward **structured engineering experience**.
 
-An agent performs meaningful engineering work.
+The target representation is:
 
-Veyra observes the work and recognizes useful durable engineering knowledge.
+```text
+Problem / Symptom
+        ↓
+Root Cause
+        ↓
+Remedy / Action
+        ↓
+Verified Outcome
+```
 
-The knowledge is retained.
+The purpose is not to create a generic causal graph.
 
-### Session B
-
-The agent later encounters a related engineering problem.
-
-Veyra automatically recognizes the relevance and recalls the previous knowledge.
-
-The relevant knowledge becomes useful context for the agent.
-
-The agent can use that experience without manually managing the memory system.
-
-This must work as a real end-to-end behavior.
+The purpose is to allow Veyra to recognize bounded engineering cause/effect patterns from observable development activity.
 
 ---
 
-## Autonomous Execution
+# 0.1.7 Scope
 
-Work autonomously from the existing repository to the finished implementation.
+Veyra should extend deterministic understanding so that compatible signals from an engineering turn can produce structured causal facets:
 
-Inspect what exists.
+```text
+symptom
+rootCause
+remedy
+verifiedOutcome
+```
 
-Use the reference repositories.
+Potential supporting context:
 
-Copy, paste, reuse, adapt, combine, and modify existing implementations whenever useful.
+```text
+files
+symbols
+commands
+test results
+errors
+decisions
+claims
+timestamps / ordering
+evidence anchors
+```
 
-Make implementation and architecture decisions yourself.
+Causal extraction must remain provenance-aware.
 
-Build the system.
-
-Verify it.
-
-Fix problems you discover.
-
-Package it.
-
-Maintain the release and distribution workflow.
-
-Review the final implementation.
-
-Do not stop because a technical decision was not explicitly specified in this document.
-
-Make the decision yourself based on the requirements, the repository, DSH, and the available reference implementations.
-
-Do not ask the user to design routine implementation details.
-
-Only stop when the project is complete or a genuine external blocker prevents further progress.
+Every inferred relationship should retain enough evidence to explain why it was created.
 
 ---
 
-## Definition of Done
+# Causal Evidence Rules
 
-Veyra is complete when it is a genuinely usable **Engineering Brain for DSH**.
+The following distinction is mandatory:
 
-The completed system must:
+```text
+observed fact
+    ≠
+inferred relationship
+    ≠
+verified causal relationship
+```
 
-- operate as a native DSH plugin;
-- work naturally during normal DSH usage;
-- persist useful engineering memory;
-- recall relevant knowledge automatically;
-- provide useful contextual knowledge to the agent;
-- preserve meaningful evidence and provenance;
-- respect project boundaries;
-- support useful cross-project engineering experience;
-- handle knowledge quality and change safely;
-- remain useful across sessions;
-- be suitable for real distribution and installation;
-- meet the practical production-quality requirements of the project.
+For example:
 
-Existing publication status alone does not satisfy this definition.
+```text
+test failed
+→ file edited
+→ test passed
+```
 
-Most importantly, the complete loop must work:
+may support a causal candidate.
 
-**Engineering Work → Understand → Remember → Later Work → Recall → Apply**
+It does not automatically prove:
+
+```text
+edited file = root cause
+```
+
+or:
+
+```text
+edited file = complete remedy
+```
+
+Causal confidence must therefore depend on evidence quality rather than simple temporal proximity.
 
 ---
 
-## Final Objective
+# 0.1.7 Deterministic-First Requirement
 
-Build:
+0.1.7 must not require an LLM or external model runtime.
 
-# Veyra — The Engineering Brain for DSH
+Preferred approach:
 
-Do not merely design it.
+```text
+deterministic signals
+        +
+explicit ordering
+        +
+known engineering patterns
+        +
+test outcomes
+        +
+provenance
+        ↓
+bounded causal candidate
+```
 
-Do not merely publish it.
+Model-assisted distillation remains a future capability.
 
-**Build it, improve it, verify it, and make it genuinely useful.**
+It must not be introduced merely to compensate for weak deterministic design.
+
+---
+
+# Retrieval Goal
+
+Structured causal knowledge should improve intent-aware recall.
+
+For example:
+
+```text
+why
+→ prioritize symptom / root cause
+
+how
+→ prioritize remedy / action
+
+what happened
+→ prioritize observed outcome
+
+did this fix it
+→ prioritize verified outcome
+```
+
+Retrieval must continue to distinguish contextual memory from authoritative repository evidence.
+
+---
+
+# Negative Requirements
+
+0.1.7 must NOT:
+
+- introduce LLM runtime dependencies
+- introduce embeddings
+- introduce vector databases
+- introduce generic RAG infrastructure
+- create an opaque graph database
+- silently promote causal candidates to canonical knowledge
+- infer causality solely from temporal adjacency
+- replace existing ADD / DUPLICATE / CONFLICT / UPDATE semantics
+- break project isolation
+- weaken secret scrubbing
+- bypass evidence requirements
+- make retrieved memory authoritative
+- require a DSH Web restart
+- redesign Veyra's architecture
+
+---
+
+# Success Criteria
+
+0.1.7 is successful when:
+
+### Understanding
+
+Deterministic multi-step engineering activity can produce structured causal facets where sufficient evidence exists.
+
+### Safety
+
+Unrelated or weakly related signals do not create false causal relationships.
+
+### Provenance
+
+Causal facets can be traced back to their supporting engineering evidence.
+
+### Learning
+
+Existing evolution semantics continue to work without silent merges or silent canonicalization.
+
+### Validation
+
+A causal candidate does not become authoritative merely because it was inferred.
+
+### Retrieval
+
+`why` and `how` intent can surface useful causal context.
+
+### Regression Safety
+
+Existing 0.1.6 behavior remains intact.
+
+---
+
+# Future Goals
+
+The following remain intentionally deferred until evidence justifies them:
+
+## Model-Assisted Distillation
+
+Use bounded model assistance for complex unstructured engineering turns where deterministic extraction is demonstrably insufficient.
+
+Requirements:
+
+- provenance
+- uncertainty
+- bounded scope
+- explicit authority boundaries
+- graceful failure
+- controlled runtime cost
+
+---
+
+## Vector / Hybrid Retrieval
+
+Consider embeddings or hybrid retrieval only after measurable lexical retrieval failures are demonstrated.
+
+Do not introduce vector search as a feature goal by itself.
+
+---
+
+## Knowledge Maintenance
+
+Future maintenance may address:
+
+- compaction
+- superseded knowledge
+- long-term lifecycle management
+- relationship maintenance
+- stale knowledge
+- storage growth
+
+Maintenance must remain bounded and must not silently invalidate canonical knowledge.
+
+---
+
+# Long-Term Direction
+
+Veyra should evolve toward:
+
+```text
+engineering activity
+        ↓
+observable evidence
+        ↓
+structured understanding
+        ↓
+validated engineering knowledge
+        ↓
+contextual recall
+        ↓
+better engineering decisions
+        ↓
+new evidence
+        ↺
+```
+
+The system should become progressively more useful without becoming progressively less trustworthy.
+
+The central design principle is:
+
+> **Veyra may infer engineering knowledge, but evidence and explicit authority determine what can be trusted.**
