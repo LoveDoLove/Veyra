@@ -1,1 +1,12 @@
 node_modules
+*.tgz
+.veyra-tmp
+.DS_Store
+coverage
+dist
+.npmrc
+
+# Local implementation references (cloned for GOAL.md; not shipped)
+OpenViking/
+supermemory/
+Project-Memory-Agent/

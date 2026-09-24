@@ -1,0 +1,10 @@
+# Veyra — Engineering Brain for DSH
+#
+# One row: load the native plugin. The plugin registers tools, the /veyra
+# slash command, a system-prompt guidance section, a per-turn recall context,
+# and session/event observers. Memory lives under $DSH_HOME/veyra/, never
+# inside the user's repository.
+
+- insert:
+    - id: veyra
+      name: '@lovedolove/veyra'
