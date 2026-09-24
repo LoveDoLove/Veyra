@@ -38,14 +38,92 @@ function hasGrounding(candidate) {
   return files.length > 0
 }
 
+function mergeEvidence(existing, incoming) {
+  const seen = new Set()
+  const out = []
+  for (const item of [...(existing || []), ...(incoming || [])]) {
+    if (!item) continue
+    const key = typeof item === 'string'
+      ? item
+      : `${item.path || ''}:${item.note || ''}:${item.uri || ''}:${item.anchor || ''}`
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    out.push(item)
+  }
+  return out.slice(0, 32)
+}
+
+/**
+ * Strengthen an existing derived memory with repeated evidence.
+ *
+ * Safe evolution:
+ *   repeated evidence → stronger validation → promotion candidate → explicit authority decision
+ *
+ * Never auto-promotes to canonical authority (core boundary preserved).
+ */
+export function strengthenMemory(neighbor, candidate, { workspace = null } = {}) {
+  if (!neighbor || !candidate) return neighbor
+  if (neighbor.authority === AUTHORITIES.CANONICAL) return neighbor
+
+  const mergedEvidence = mergeEvidence(neighbor.evidence, candidate.evidence)
+  const obsCount = (Number(neighbor.source?.observations) || 1) + 1
+
+  const hasTestEvidence = mergedEvidence.some((e) => {
+    const text = typeof e === 'string' ? e : `${e?.path || ''} ${e?.note || ''}`
+    return /test-passed|tests-touched|test|spec/i.test(text) && !/test-failed/i.test(text)
+  })
+
+  // Validation tier progression:
+  // 1 observation: UNVERIFIED (baseline)
+  // 2+ observations or passing test evidence: REVIEWED
+  // 3+ observations with test evidence: VERIFIED
+  let validation = neighbor.validation
+  if (obsCount >= 3 && hasTestEvidence) {
+    validation = VALIDATIONS.VERIFIED
+  } else if (obsCount >= 2 || hasTestEvidence) {
+    if (validation === VALIDATIONS.UNVERIFIED || validation === VALIDATIONS.STALE) {
+      validation = VALIDATIONS.REVIEWED
+    }
+  }
+
+  // Confidence progression:
+  let confidence = neighbor.confidence
+  if (validation === VALIDATIONS.VERIFIED) {
+    confidence = CONFIDENCES.HIGH
+  } else if (validation === VALIDATIONS.REVIEWED && confidence === CONFIDENCES.LOW) {
+    confidence = CONFIDENCES.MEDIUM
+  }
+
+  // Promotion candidate tagging:
+  const tags = [...(neighbor.tags || [])]
+  if (validation === VALIDATIONS.VERIFIED && !tags.includes('promotion-candidate')) {
+    tags.push('promotion-candidate')
+  }
+
+  return {
+    ...neighbor,
+    evidence: mergedEvidence,
+    validation,
+    confidence,
+    tags: unique(tags),
+    source: {
+      ...(neighbor.source || {}),
+      observations: obsCount,
+      lastConfirmedAt: new Date().toISOString(),
+      lastConfirmedBy: candidate.id || null,
+    },
+  }
+}
+
 /**
  * After a turn, consider promoting a fresh candidate into derived memory
  * when it looks durable, is grounded, and is not a verbatim duplicate of
- * existing knowledge.
+ * existing knowledge. If it confirms an existing derived memory, strengthen
+ * that memory's validation and evidence.
  *
- * Returns the written derived record, or null when nothing was learned.
+ * Returns the written derived record, or null when nothing new was learned.
  */
-export function maybeLearn(store, candidate, { related = [] } = {}) {
+export function maybeLearn(store, candidate, { related = [], workspace = null } = {}) {
   if (!store || !candidate) return null
   if (candidate.authority === AUTHORITIES.CANONICAL) return null
   if (!looksDurable(`${candidate.title}\n${candidate.body}`)) return null
@@ -68,13 +146,18 @@ export function maybeLearn(store, candidate, { related = [] } = {}) {
   }, existing)
 
   // A near-verbatim restatement of existing derived knowledge is not new
-  // learning. Keep the candidate as a candidate (inspectable) and link it.
-  if (evolved.action === 'duplicate' && evolved.neighbor && isRecallEligible(evolved.neighbor)) {
+  // learning. Strengthen the existing neighbor with accumulated evidence and
+  // observations, while keeping the candidate inspectable.
+  if (evolved.action === 'duplicate' && evolved.neighbor) {
     if (candidate.id) {
       store.put({
         ...candidate,
         relations: evolved.record.relations,
       })
+    }
+    if (evolved.neighbor.authority === AUTHORITIES.DERIVED) {
+      const strengthened = strengthenMemory(evolved.neighbor, candidate, { workspace })
+      store.put(strengthened)
     }
     return null
   }
@@ -82,13 +165,17 @@ export function maybeLearn(store, candidate, { related = [] } = {}) {
   // Update the candidate in place when it already has an id. A new put
   // with the same title/body would collide on content_hash and return
   // the original candidate, so learning would never become recallable.
+  const hasPassedTest = (candidate.evidence || []).some((e) => /test-passed/i.test(e?.note || ''))
+  const initialValidation = hasPassedTest ? VALIDATIONS.REVIEWED : VALIDATIONS.UNVERIFIED
+  const initialConfidence = hasPassedTest ? CONFIDENCES.MEDIUM : (hasGrounding(candidate) ? CONFIDENCES.MEDIUM : CONFIDENCES.LOW)
+
   const written = store.put({
     id: candidate.id,
     kind: KINDS.MEMORY,
     status: STATUSES.CURRENT,
-    validation: VALIDATIONS.UNVERIFIED,
+    validation: initialValidation,
     authority: AUTHORITIES.DERIVED,
-    confidence: hasGrounding(candidate) ? CONFIDENCES.MEDIUM : CONFIDENCES.LOW,
+    confidence: initialConfidence,
     scope: candidate.scope,
     projectId: candidate.projectId,
     title: candidate.title,
@@ -98,6 +185,7 @@ export function maybeLearn(store, candidate, { related = [] } = {}) {
     relations: evolved.record.relations,
     source: {
       ...(candidate.source || {}),
+      observations: 1,
       learnedFrom: candidate.id || null,
       evolveAction: evolved.action,
     },

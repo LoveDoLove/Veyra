@@ -5,7 +5,7 @@
  * behavior does not require this command.
  */
 
-import { AUTHORITIES, KINDS } from './types.mjs'
+import { AUTHORITIES, KINDS, VALIDATIONS } from './types.mjs'
 import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
 import { recall } from './retrieve.mjs'
@@ -30,8 +30,10 @@ function helpText() {
 function formatRecord(record) {
   if (!record) return 'not found'
   const ev = record.evidence?.length ? ` evidence=${record.evidence.length}` : ''
+  const obs = record.source?.observations > 1 ? ` obs=${record.source.observations}` : ''
+  const promo = record.tags?.includes('promotion-candidate') ? ' [PROMOTION CANDIDATE]' : ''
   return [
-    `${record.id}  ${record.kind}/${record.authority}/${record.validation}/${record.confidence}  ${record.scope}${record.forgotten ? '  FORGOTTEN' : ''}${ev}`,
+    `${record.id}  ${record.kind}/${record.authority}/${record.validation}/${record.confidence}  ${record.scope}${record.forgotten ? '  FORGOTTEN' : ''}${ev}${obs}${promo}`,
     record.title,
     record.body,
   ].join('\n')
@@ -47,13 +49,21 @@ export function handleVeyraCommand(runtime, invocation) {
   const arg = rest.join(' ').trim()
 
   if (!verb || verb === 'help' || verb === 'status') {
+    const projectRecords = projectStore.list({ limit: 200 })
+    const candidateCount = projectRecords.filter((r) => r.authority === AUTHORITIES.CANDIDATE).length
+    const derivedCount = projectRecords.filter((r) => r.authority === AUTHORITIES.DERIVED).length
+    const canonicalCount = projectRecords.filter((r) => r.authority === AUTHORITIES.CANONICAL).length
+    const verifiedCount = projectRecords.filter((r) => r.validation === VALIDATIONS.VERIFIED).length
+    const reviewedCount = projectRecords.filter((r) => r.validation === VALIDATIONS.REVIEWED).length
+    const promoCount = projectRecords.filter((r) => r.tags?.includes('promotion-candidate')).length
     return {
       kind: 'success',
       text: [
         `Veyra project ${projectId}`,
         `workspace: ${cwd}`,
         `home: ${runtime.veyraHome}`,
-        `project memories: ${projectStore.count()}`,
+        `project memories: ${projectStore.count()} (derived: ${derivedCount}, canonical: ${canonicalCount}, candidate: ${candidateCount})`,
+        `health: ${verifiedCount} verified, ${reviewedCount} reviewed${promoCount > 0 ? `, ${promoCount} promotion candidates` : ''}`,
         `reusable memories: ${reusableStore.count()}`,
         '',
         helpText(),

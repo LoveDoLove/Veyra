@@ -18,6 +18,8 @@
  *   - hide one side of a contradiction
  */
 
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { AUTHORITIES, RELATIONS, STATUSES, VALIDATIONS } from './types.mjs'
 import { DIFF, diffMemory, strongestMatch } from './diff.mjs'
 
@@ -140,11 +142,48 @@ export function evolveAgainst(store, incoming, existing = []) {
 }
 
 /**
- * Mark long-idle, unverified, non-canonical memories as stale so they
- * leave ambient recall. Canonical and recently recalled records are
+ * Verify whether file evidence still exists in the local workspace.
+ * Helps prevent deleted/renamed file references from misleading the agent.
+ */
+export function verifyEvidenceHealth(record, workspace) {
+  if (!workspace || !record || !Array.isArray(record.evidence) || record.evidence.length === 0) {
+    return { status: 'unknown', missingPaths: [], existingPaths: [] }
+  }
+  const filePaths = record.evidence
+    .map((e) => (typeof e === 'string' ? e : e?.path))
+    .filter((p) => typeof p === 'string' && p.trim() && !p.startsWith('sym:') && !p.startsWith('note:'))
+
+  if (filePaths.length === 0) {
+    return { status: 'unanchored', missingPaths: [], existingPaths: [] }
+  }
+
+  const existingPaths = []
+  const missingPaths = []
+  for (const rel of filePaths) {
+    const full = join(workspace, rel)
+    if (existsSync(full)) {
+      existingPaths.push(rel)
+    } else {
+      missingPaths.push(rel)
+    }
+  }
+
+  if (missingPaths.length > 0 && existingPaths.length === 0) {
+    return { status: 'broken', missingPaths, existingPaths }
+  }
+  if (missingPaths.length > 0) {
+    return { status: 'partial', missingPaths, existingPaths }
+  }
+  return { status: 'healthy', missingPaths, existingPaths }
+}
+
+/**
+ * Mark long-idle, unverified, non-canonical memories, or memories whose
+ * referenced files have all been deleted from the repository, as stale so
+ * they leave ambient recall. Canonical and recently active records are
  * left alone. Does not delete anything.
  */
-export function markStale(store, { now = Date.now(), olderThanMs = STALE_AFTER_MS } = {}) {
+export function markStale(store, { now = Date.now(), olderThanMs = STALE_AFTER_MS, workspace = null } = {}) {
   if (!store) return []
   const changed = []
   const rows = store.list({ limit: 80 })
@@ -153,14 +192,32 @@ export function markStale(store, { now = Date.now(), olderThanMs = STALE_AFTER_M
     if (rec.authority === AUTHORITIES.CANONICAL) continue
     if (rec.validation === VALIDATIONS.STALE || rec.validation === VALIDATIONS.INVALID) continue
     if (rec.status !== STATUSES.CURRENT) continue
-    const recalled = Date.parse(rec.lastRecalledAt || '')
-    const updated = Date.parse(rec.updatedAt || rec.createdAt || '')
-    const stamp = Math.max(
-      Number.isFinite(recalled) ? recalled : 0,
-      Number.isFinite(updated) ? updated : 0,
-    )
-    if (!stamp) continue
-    if (now - stamp < olderThanMs) continue
+
+    let isStale = false
+
+    // 1. Evidence health check: if all referenced files were removed from repo, mark stale
+    if (workspace) {
+      const health = verifyEvidenceHealth(rec, workspace)
+      if (health.status === 'broken') {
+        isStale = true
+      }
+    }
+
+    // 2. Idle time check
+    if (!isStale) {
+      const recalled = Date.parse(rec.lastRecalledAt || '')
+      const updated = Date.parse(rec.updatedAt || rec.createdAt || '')
+      const stamp = Math.max(
+        Number.isFinite(recalled) ? recalled : 0,
+        Number.isFinite(updated) ? updated : 0,
+      )
+      if (stamp && now - stamp >= olderThanMs) {
+        isStale = true
+      }
+    }
+
+    if (!isStale) continue
+
     try {
       const written = store.put({
         ...rec,

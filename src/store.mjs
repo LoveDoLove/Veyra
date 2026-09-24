@@ -223,6 +223,7 @@ function openDatabase(filePath) {
   const db = new DatabaseSync(filePath)
   db.exec('PRAGMA journal_mode = WAL;')
   db.exec('PRAGMA foreign_keys = ON;')
+  db.exec('PRAGMA busy_timeout = 5000;')
   db.exec(SCHEMA_DDL)
   const version = db.prepare('SELECT value FROM meta WHERE key = ?').get('schema_version')
   if (!version) {
@@ -445,6 +446,7 @@ export function openEphemeralStore(filePath = ':memory:', identity = { scope: SC
     // node:sqlite memory DBs are fine; skip mkdir.
     const db = new DatabaseSync(':memory:')
     db.exec('PRAGMA foreign_keys = ON;')
+    db.exec('PRAGMA busy_timeout = 5000;')
     db.exec(SCHEMA_DDL)
     db.prepare('INSERT INTO meta(key, value) VALUES (?, ?)').run('schema_version', String(SCHEMA_VERSION))
     const store = Object.create(MemoryStore.prototype)

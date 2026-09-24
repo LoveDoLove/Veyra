@@ -19,7 +19,7 @@ import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
 import { GUIDANCE_TEXT, createContextProvider, rememberClaimedPrompt } from './context.mjs'
 import { candidateFromBuffer, newBuffer, observeEvent } from './observe.mjs'
-import { maybeLearn } from './learn.mjs'
+import { maybeLearn, strengthenMemory } from './learn.mjs'
 import { markStale } from './evolve.mjs'
 import { registerTools } from './tools.mjs'
 import { registerCommand } from './commands.mjs'
@@ -203,10 +203,13 @@ export function apply(ctx, config = {}) {
         if (!candidate) return
         const written = projectStore.put(candidate)
         if (runtime.learn && written.created) {
-          maybeLearn(projectStore, { ...written.record })
+          maybeLearn(projectStore, { ...written.record }, { workspace: cwd })
+        } else if (runtime.learn && written.duplicate && written.record?.authority === AUTHORITIES.DERIVED) {
+          const strengthened = strengthenMemory(written.record, candidate, { workspace: cwd })
+          projectStore.put(strengthened)
         }
         if (runtime.learn) {
-          markStale(projectStore)
+          markStale(projectStore, { workspace: cwd })
         }
       } catch {
         // learning is best-effort

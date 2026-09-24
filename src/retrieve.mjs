@@ -34,7 +34,9 @@ export function evidenceStrength(evidence) {
     if (/\.(mjs|js|ts|tsx|py|go|rs|java|kt)\b/.test(text) || text.includes('/') || text.includes('\\')) {
       hasFile = true
     }
-    if (/test|spec|fixture/i.test(text)) hasTest = true
+    if (/test-passed|tests-touched|test|spec|fixture/i.test(text) && !/test-failed/i.test(text)) {
+      hasTest = true
+    }
   }
   if (hasFile && hasTest) return 1.0
   if (hasFile) return 0.7

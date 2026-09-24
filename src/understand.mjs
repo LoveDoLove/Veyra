@@ -77,6 +77,34 @@ function basename(path) {
   return parts[parts.length - 1] || path
 }
 
+function testOutcomeFrom(tools, files) {
+  let hasTestTool = false
+  let passed = false
+  let failed = false
+
+  for (const t of tools || []) {
+    const name = String(t.name || '')
+    const cmd = String(t.args?.command || '')
+    const isTestCall = /test/i.test(name) || /test|spec/i.test(cmd)
+    if (isTestCall) hasTestTool = true
+
+    if (name.includes(':result')) {
+      const prev = String(t.preview || '')
+      if (/(?:exit code:\s*[1-9]|npm ERR!|FAIL|\bfail(?:ed|s)?\b|\b[1-9]\d*\s+failed)/i.test(prev)) {
+        failed = true
+      } else if (/(?:✔|✓|\bpass(?:ed)?\b|\bok\b|tests?\s+\d+.*pass|\b0 failed\b)/i.test(prev)) {
+        passed = true
+      }
+    }
+  }
+
+  const fileTest = files && files.some((p) => /test|spec|fixture/i.test(p))
+  if (failed) return 'test-failed'
+  if (passed) return 'test-passed'
+  if (hasTestTool || fileTest) return 'tests-touched'
+  return null
+}
+
 function evidenceFrom(files, symbols, tools) {
   const items = []
   for (const path of files.slice(0, 12)) {
@@ -85,15 +113,16 @@ function evidenceFrom(files, symbols, tools) {
   for (const symbol of symbols.slice(0, 8)) {
     items.push({ note: `sym:${symbol}` })
   }
-  const testTouched = files.some((p) => /test|spec|fixture/i.test(p))
-    || tools.some((t) => /test/i.test(String(t.name || '')))
-  if (testTouched) items.push({ note: 'tests-touched' })
+  const outcome = testOutcomeFrom(tools, files)
+  if (outcome) items.push({ note: outcome })
   return items
 }
 
 function tagsFor(signal, files, tools) {
   const tags = ['observation', 'auto', signal]
   if (files.some((p) => /test|spec/i.test(p))) tags.push('tested')
+  const outcome = testOutcomeFrom(tools, files)
+  if (outcome === 'test-passed') tags.push('verified-test')
   const names = new Set(tools.map((t) => String(t.name).split(':')[0]))
   if (names.has('edit') || names.has('write') || names.has('str_replace_editor')) tags.push('edited')
   return [...new Set(tags)].slice(0, 12)
