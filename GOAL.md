@@ -62,9 +62,9 @@ They do not prescribe a particular implementation.
 
 DSH is the target runtime.
 
-Veyra must be a **first-class native DSH plugin** and should integrate naturally with the actual DSH architecture, lifecycle, plugin system, and agent workflow.
+Veyra must be a **first-class native DSH plugin** and integrate naturally with the actual DSH architecture, lifecycle, plugin system, and agent workflow.
 
-Use the actual DSH implementation and official documentation as the source of truth for DSH behavior.
+Use the actual DSH source and official DeepSeek Harness documentation as the authority for DSH behavior.
 
 Do not build a generic multi-runtime memory framework.
 
@@ -72,42 +72,68 @@ Veyra is for DSH.
 
 ---
 
-## Reference Repositories
+## Reference Implementations
 
-Use existing projects as implementation references and source material:
+The following repositories have already been cloned locally and are available as direct implementation references:
 
-- DSH: https://github.com/Anionex/dsh
-- DeepSeek Harness: https://github.com/deepseek-ai/deepseek-harness
-- OpenViking: https://github.com/volcengine/OpenViking
-- Supermemory: https://github.com/supermemoryai/supermemory
-- Historical Project-Memory-Agent, if available locally
+- `OpenViking`
+- `supermemory`
+- `Project-Memory-Agent`
 
-Clone any of these repositories locally whenever useful.
+These are not merely documentation references.
 
-Inspect their actual source code.
+**You must inspect and use these repositories as implementation source material when building Veyra.**
 
-You may freely:
+Use the existing source code directly whenever it provides a useful solution.
 
-- clone;
-- copy;
-- paste;
-- reuse;
-- adapt;
-- combine;
-- modify;
-- refactor;
-- simplify;
-- replace.
+You are explicitly encouraged to:
 
-If an existing implementation solves a relevant problem, reuse it instead of unnecessarily reinventing it.
+- copy files;
+- copy and paste code;
+- reuse existing modules;
+- reuse existing implementations;
+- adapt existing implementations;
+- combine implementations from multiple repositories;
+- modify copied code;
+- refactor copied code;
+- simplify copied code;
+- replace parts that do not fit Veyra.
 
-Copy useful code and change it as necessary to fulfill Veyra's requirements.
+Do not unnecessarily implement from scratch something that already exists in these repositories and can be adapted to Veyra.
 
-Combine useful parts from different projects when appropriate.
+### OpenViking
 
-Do not preserve unnecessary complexity or external architectural decisions.
+Use as a direct implementation reference for memory/runtime integration, session behavior, lifecycle handling, context retrieval, persistence, background processing, and other relevant memory capabilities.
 
-The final implementation must be Veyra and must satisfy Veyra's requirements.
+### supermemory
+
+Use as a direct implementation reference for persistent memory, automatic capture, contextual recall, knowledge evolution, temporal behavior, cross-project memory, retrieval, and other relevant intelligence capabilities.
+
+### Project-Memory-Agent
+
+Use as a historical engineering reference for project-aware memory, evidence, knowledge management, repository integration, packaging, tooling, and other useful existing implementations.
+
+PMA is historical reference material only.
+
+Veyra must not depend on the PMA runtime or simply reproduce PMA as a renamed project.
+
+### DSH
+
+Use the actual DSH source and official DeepSeek Harness documentation as the authority for DSH integration and runtime behavior.
+
+DSH-specific behavior must be implemented according to the actual DSH architecture rather than assumptions derived from the other reference repositories.
+
+### Reuse Principle
+
+**Copy first when useful. Then change it to fit Veyra.**
+
+Do not waste time reinventing working implementations.
+
+Do not preserve an external project's design merely because it exists.
+
+Take useful parts, combine them where appropriate, remove unnecessary complexity, and modify them until they satisfy Veyra's requirements.
+
+The final system must be a coherent Veyra implementation, not an unmodified copy of any reference project.
 
 ---
 
@@ -115,7 +141,7 @@ The final implementation must be Veyra and must satisfy Veyra's requirements.
 
 You own the implementation.
 
-Choose the architecture, technologies, data structures, storage, retrieval, lifecycle, integration points, and internal boundaries based on the actual requirements and the code available to you.
+Choose the architecture, technologies, data structures, storage, retrieval, lifecycle, integration points, and internal boundaries based on the actual requirements, DSH, the repository, and the available reference implementations.
 
 Do not wait for the user to design these details.
 
@@ -314,7 +340,7 @@ Never claim verification that was not actually performed.
 
 The most important scenario is:
 
-**Session A**
+### Session A
 
 An agent performs meaningful engineering work.
 
@@ -322,7 +348,7 @@ Veyra observes the work and recognizes useful durable engineering knowledge.
 
 The knowledge is retained.
 
-**Session B**
+### Session B
 
 The agent later encounters a related engineering problem.
 
@@ -344,7 +370,7 @@ Inspect what exists.
 
 Use the reference repositories.
 
-Clone, copy, reuse, adapt, combine, and modify existing implementations whenever useful.
+Copy, paste, reuse, adapt, combine, and modify existing implementations whenever useful.
 
 Make implementation and architecture decisions yourself.
 
@@ -362,7 +388,7 @@ Review the final implementation.
 
 Do not stop because a technical decision was not explicitly specified in this document.
 
-Make the decision yourself based on the requirements, the repository, DSH, and available reference implementations.
+Make the decision yourself based on the requirements, the repository, DSH, and the available reference implementations.
 
 Do not ask the user to design routine implementation details.
 
