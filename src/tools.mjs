@@ -110,9 +110,13 @@ function storesFor(runtime, exec, scope) {
   return { cwd, projectId, projectStore, reusableStore, store }
 }
 
+function jsonSafe(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value))
+}
+
 function recordView(record) {
   if (!record) return null
-  return {
+  return jsonSafe({
     id: record.id,
     kind: record.kind,
     status: record.status,
@@ -123,17 +127,17 @@ function recordView(record) {
     projectId: record.projectId,
     title: record.title,
     body: record.body,
-    tags: record.tags,
-    evidence: record.evidence,
-    relations: record.relations,
-    source: record.source,
-    scores: record.scores,
-    contradictions: record.contradictions,
-    contradictionBanners: record.contradictionBanners,
-    forgotten: record.forgotten,
+    tags: record.tags || [],
+    evidence: record.evidence || [],
+    relations: record.relations || [],
+    source: record.source || {},
+    scores: record.scores || {},
+    contradictions: record.contradictions || [],
+    contradictionBanners: record.contradictionBanners || [],
+    forgotten: Boolean(record.forgotten),
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
-  }
+  })
 }
 
 const RECORD_SCHEMA = {
@@ -340,6 +344,7 @@ export function buildToolDefinitions(runtime) {
         const { projectStore, reusableStore } = storesFor(runtime, exec, SCOPES.PROJECT)
         const existing = inspect({ projectStore, reusableStore, id: args.id })
         if (!existing) return { ok: false }
+        const store = existing.scope === SCOPES.REUSABLE ? reusableStore : projectStore
         return { ok: true, record: recordView(store.forget(args.id)) }
       },
       presentCall: (args) => ({ card: 'generic', title: 'Forget', kind: 'other', rawInput: args.id }),

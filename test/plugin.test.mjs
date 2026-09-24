@@ -308,3 +308,60 @@ test('tool failure payloads strictly satisfy output schema validation (no null o
   closeAllStores()
   rmSync(dir, { recursive: true, force: true })
 })
+
+function assertLossless(value) {
+  assert.deepEqual(JSON.parse(JSON.stringify(value)), value)
+}
+
+test('remember/inspect/promote/forget payloads are lossless JSON and forget is scoped', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'veyra-json-safe-'))
+  const runtime = { veyraHome: dir, fallbackCwd: '/tmp/proj', recallLimit: 5, includeReusable: true }
+  const harness = createToolHarness(runtime)
+  const exec = { agent: { session: { header: { cwd: '/tmp/proj' } } } }
+  const remembered = await harness.call('veyra_remember', {
+    title: 'JSON-safe remember',
+    body: 'Stored only to prove tool output can be JSON.stringified without holes.',
+    kind: 'knowledge',
+  }, exec)
+  assert.equal(remembered.ok, true)
+  assertLossless(remembered)
+
+  const recalled = await harness.call('veyra_recall', { query: 'JSON-safe remember' }, exec)
+  assertLossless(recalled)
+
+  const inspected = await harness.call('veyra_inspect', { id: remembered.record.id }, exec)
+  assertLossless(inspected)
+
+  const reusable = await harness.call('veyra_remember', {
+    title: 'JSON-safe reusable forget target',
+    body: 'Disposable reusable record used only to prove scoped forget.',
+    scope: 'reusable',
+  }, exec)
+  assert.equal(reusable.ok, true)
+  assertLossless(reusable)
+
+  const promoted = await harness.call('veyra_promote', {
+    id: remembered.record.id,
+    to: 'canonical',
+    explicit: true,
+  }, exec)
+  assert.equal(promoted.ok, true)
+  assertLossless(promoted)
+
+  const forgotProject = await harness.call('veyra_forget', { id: remembered.record.id }, exec)
+  assert.equal(forgotProject.ok, true)
+  assert.equal(forgotProject.record.forgotten, true)
+  assertLossless(forgotProject)
+
+  const forgotReusable = await harness.call('veyra_forget', { id: reusable.record.id }, exec)
+  assert.equal(forgotReusable.ok, true)
+  assert.equal(forgotReusable.record.forgotten, true)
+  assert.equal(forgotReusable.record.scope, 'reusable')
+  assertLossless(forgotReusable)
+
+  const after = await harness.call('veyra_recall', { query: 'JSON-safe remember forget target' }, exec)
+  assert.equal(after.items.some((item) => item.id === remembered.record.id || item.id === reusable.record.id), false)
+
+  closeAllStores()
+  rmSync(dir, { recursive: true, force: true })
+})
