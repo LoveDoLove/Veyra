@@ -2,9 +2,9 @@
  * Veyra — DSH tools.
  *
  * Five model-facing tools:
- *   veyra_remember  — keep durable engineering knowledge
- *   veyra_recall    — targeted search beyond automatic context
- *   veyra_inspect   — read one record, including candidates
+ *   veyra_remember  — keep durable engineering knowledge or RAG knowledge
+ *   veyra_recall    — unified hybrid search beyond automatic context
+ *   veyra_inspect   — read one record with deep provenance, causal facets, relations
  *   veyra_forget    — soft-forget a record
  *   veyra_promote   — change standing; canonical requires explicit=true
  *
@@ -126,6 +126,10 @@ function recordView(record) {
     tags: record.tags,
     evidence: record.evidence,
     relations: record.relations,
+    source: record.source,
+    scores: record.scores,
+    contradictions: record.contradictions,
+    contradictionBanners: record.contradictionBanners,
     forgotten: record.forgotten,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -145,6 +149,11 @@ const RECORD_SCHEMA = {
     scope: { type: 'string' },
     title: { type: 'string' },
     body: { type: 'string' },
+    tags: { type: 'array', items: { type: 'string' } },
+    evidence: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    relations: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    source: { type: 'object', additionalProperties: true },
+    scores: { type: 'object', additionalProperties: true },
   },
 }
 
@@ -154,13 +163,13 @@ export function buildToolDefinitions(runtime) {
       name: 'veyra_remember',
       description:
         'Store durable engineering knowledge in Veyra. Use for decisions, root causes, constraints, '
-        + 'fix patterns, and reusable lessons. Stored items become derived memory (never canonical). '
-        + 'Secrets are redacted. Project scope is the default; use reusable only for experience that '
-        + 'is truly project-agnostic.',
+        + 'fix patterns, RAG documentation (kind: \'knowledge\'), and reusable lessons. Stored items become '
+        + 'derived memory (never canonical). Secrets are redacted. Project scope is the default; use '
+        + 'reusable only for experience that is truly project-agnostic.',
       parameters: {
         title: { type: 'string', required: true, description: 'Short title for the memory.' },
         body: { type: 'string', required: true, description: 'The knowledge itself, with enough context to reuse later.' },
-        kind: { type: 'string', enum: [...VALID_KINDS], description: 'observation | memory | knowledge | evidence. Default memory.' },
+        kind: { type: 'string', enum: [...VALID_KINDS], description: 'observation | memory | knowledge | evidence. Default memory (or knowledge for RAG).' },
         scope: { type: 'string', enum: [...VALID_SCOPES], description: 'project (default) or reusable.' },
         tags: { type: 'array', items: { type: 'string' }, description: 'Optional short tags.' },
         evidence: {
@@ -221,12 +230,14 @@ export function buildToolDefinitions(runtime) {
     {
       name: 'veyra_recall',
       description:
-        'Search Veyra memory for relevant engineering experience. Automatic recall already runs '
-        + 'each turn; use this for a targeted query. Results are not authoritative.',
+        'Unified Hybrid Search across Veyra memory and RAG knowledge. Combines lexical, semantic, '
+        + 'intent, and relationship signals with transparent ranking. Automatic recall already runs '
+        + 'each turn; use this for targeted queries beyond automatic context.',
       parameters: {
         query: { type: 'string', required: true, description: 'What to look for.' },
         limit: { type: 'number', description: 'Max results (default 5, max 20).' },
         include_reusable: { type: 'boolean', description: 'Include cross-project reusable experience. Default true.' },
+        kind: { type: 'string', enum: [...VALID_KINDS], description: 'Optional kind filter: memory | knowledge | evidence | observation. Omit for unified search.' },
       },
       output: {
         schema: {
@@ -255,6 +266,7 @@ export function buildToolDefinitions(runtime) {
           query: args.query,
           limit,
           includeReusable,
+          kind: args.kind || null,
         })
         projectStore.touch(items.filter((r) => r.scope !== SCOPES.REUSABLE).map((r) => r.id))
         return {
@@ -269,7 +281,7 @@ export function buildToolDefinitions(runtime) {
     {
       name: 'veyra_inspect',
       description:
-        'Read one Veyra record by id, including candidates and forgotten items. '
+        'Read one Veyra record by id, including candidates, evidence, causal facets, and relationships. '
         + 'Inspection is not recall and does not grant authority.',
       parameters: {
         id: { type: 'string', required: true, description: 'Record id (vey_…).' },
@@ -283,11 +295,20 @@ export function buildToolDefinitions(runtime) {
             record: RECORD_SCHEMA,
           },
         },
-        render: (_args, value) => textBlocks(
-          value.record
-            ? `${value.record.id} [${value.record.authority}/${value.record.validation}] ${value.record.title}\n${value.record.body}`
-            : 'Not found.',
-        ),
+        render: (_args, value) => {
+          if (!value.record) return textBlocks('Not found.')
+          const r = value.record
+          const lines = [`${r.id} [${r.authority}/${r.validation}/${r.kind}] ${r.title}`]
+          if (r.source?.causal) {
+            const c = r.source.causal
+            if (c.symptom) lines.push(`Symptom: ${c.symptom}`)
+            if (c.rootCause) lines.push(`Root cause: ${c.rootCause}`)
+            if (c.remedy) lines.push(`Remedy: ${c.remedy}`)
+            if (c.verifiedOutcome) lines.push(`Outcome: ${c.verifiedOutcome}`)
+          }
+          lines.push(r.body)
+          return textBlocks(lines.join('\n'))
+        },
       },
       execute(args, exec) {
         const { projectStore, reusableStore } = storesFor(runtime, exec, SCOPES.PROJECT)

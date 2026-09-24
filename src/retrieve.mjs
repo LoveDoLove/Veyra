@@ -1,24 +1,25 @@
 /**
- * Veyra — hybrid recall + transparent ranking.
+ * Veyra — Hybrid Search + Transparent Ranking.
  *
- * Pipeline adapted from PMA's 6-stage retrieval and ranking:
- *   1. authority gate   — candidates / observations never surface as truth
- *   2. project isolation — hard DB-level split, plus optional reusable
- *   3. FTS5 lexical match
- *   4. lifecycle filter — current only, skip stale/invalid/forgotten
- *   5. 6-D ranking      — relevance, evidence, validation, proximity,
- *                          freshness, confidence, plus a small intent
- *                          affinity (Mnemon DetectIntent; never opaque)
- *   6. contradiction banners — both sides stay visible (PMA; never resolved)
+ * Combines:
+ *   1. Authority & lifecycle gate — candidates, observations, stale, invalid never surface
+ *   2. Project isolation — strict DB-level split, plus scoped reusable
+ *   3. Lexical retrieval — SQLite FTS5 BM25 match + exact token/symbol/path match
+ *   4. Semantic retrieval — query coverage + token-level Jaccard overlap
+ *   5. Memory & Causal retrieval — intent affinity (why/how/outcome/symptom), validation, confidence, freshness
+ *   6. Relationship retrieval — graph cohesion, structural connections (updates, extends, derives, resolves)
+ *   7. Unified RAG + Engineering Memory — retrieves Knowledge Base docs and Engineering Memory together
+ *   8. Provenance preservation — origin, document/file path, session, and verification tracked
+ *   9. Contradiction banners — both sides stay visible (never silently resolved)
  *
- * Invariant (OpenViking merge_policy / GOAL.md):
- *   Similarity only identifies candidates. It is never sufficient evidence
- *   of identity or authority.
+ * Invariant (GOAL.md / Core Invariants):
+ *   Retrieval != authority. Similarity != identity. Memory != truth.
  */
 
-import { AUTHORITIES, CONFIDENCES, DEFAULT_RECALL_LIMIT, SCOPES, VALIDATIONS, isRecallEligible } from './types.mjs'
+import { AUTHORITIES, CONFIDENCES, DEFAULT_RECALL_LIMIT, KINDS, SCOPES, VALIDATIONS, isRecallEligible } from './types.mjs'
 import { detectIntent, intentAffinity, intentWeights } from './intent.mjs'
 import { annotateContradictions } from './evolve.mjs'
+import { jaccard, tokenOverlap } from './text.mjs'
 
 export function evidenceStrength(evidence) {
   if (!evidence) return 0.1
@@ -81,7 +82,7 @@ export function freshnessTier(dateStr) {
   return 0.2
 }
 
-export function relevanceFromRank(record, index) {
+export function relevanceFromRank(record, index, hasQuery = false) {
   if (typeof record.relevance === 'number') {
     return clamp01(record.relevance)
   }
@@ -89,6 +90,9 @@ export function relevanceFromRank(record, index) {
     // FTS5 bm25-style rank: more negative is a stronger match.
     const r = record.rank < 0 ? -record.rank : Math.abs(record.rank)
     return clamp01(r / (1 + r))
+  }
+  if (hasQuery) {
+    return 0
   }
   return clamp01(1 - index * 0.06)
 }
@@ -98,6 +102,61 @@ function clamp01(n) {
   return Math.min(1, Math.max(0, n))
 }
 
+/**
+ * Exact token, identifier, and path matching boost on top of FTS5.
+ */
+export function lexicalScore(record, query, index = 0) {
+  const hasQuery = Boolean(query && String(query).trim())
+  const base = relevanceFromRank(record, index, hasQuery)
+  if (!hasQuery) return base
+  const qLower = String(query).toLowerCase().trim()
+  const titleLower = String(record.title || '').toLowerCase()
+  const bodyLower = String(record.body || '').toLowerCase()
+  let boost = 0
+  if (qLower && (titleLower.includes(qLower) || bodyLower.includes(qLower))) {
+    boost += 0.2
+  }
+  const symbols = record.tags || []
+  for (const sym of symbols) {
+    if (sym && qLower.includes(String(sym).toLowerCase())) {
+      boost += 0.15
+      break
+    }
+  }
+  return Number(Math.min(1.0, Math.max(0, base + boost)).toFixed(3))
+}
+
+/**
+ * Token-level semantic overlap and query coverage.
+ */
+export function semanticSimilarity(query, record) {
+  if (!query || !record) return 0
+  const hay = `${record.title || ''} ${record.body || ''} ${(record.tags || []).join(' ')}`
+  const jc = jaccard(query, hay)
+  const overlap = tokenOverlap(hay, query)
+  const sim = overlap.ratio * 0.6 + jc * 0.4
+  return Number(Math.min(1, Math.max(0, sim)).toFixed(3))
+}
+
+/**
+ * Relationship graph connection strength within a candidate pool.
+ */
+export function relationshipScore(record, poolIds = new Set()) {
+  if (!record?.relations?.length) return 0.1
+  let count = 0
+  let interconnected = 0
+  for (const rel of record.relations) {
+    if (!rel || !rel.type) continue
+    count++
+    if (poolIds.has(rel.targetId)) {
+      interconnected++
+    }
+  }
+  const base = Math.min(0.5, count * 0.1)
+  const boost = Math.min(0.5, interconnected * 0.25)
+  return Number(Math.min(1.0, base + boost).toFixed(3))
+}
+
 const DEFAULT_WEIGHTS = Object.freeze({
   relevance: 0.32,
   evidence: 0.18,
@@ -105,30 +164,38 @@ const DEFAULT_WEIGHTS = Object.freeze({
   proximity: 0.14,
   freshness: 0.08,
   confidence: 0.10,
+  semantic: 0.10,
+  relationship: 0.04,
 })
 
 /**
  * Rank records with a full dimensional breakdown.
  * Never returns a single opaque score.
  */
-export function rankRecords(records, { weights = {}, preferProject = true, intent = null } = {}) {
+export function rankRecords(records, { weights = {}, preferProject = true, intent = null, query = '' } = {}) {
   if (!Array.isArray(records) || records.length === 0) return []
   const w = { ...DEFAULT_WEIGHTS, ...intentWeights(intent), ...weights }
+  const poolIds = new Set(records.map((r) => r.id).filter(Boolean))
   const scored = records.map((rec, idx) => {
-    const relevance = relevanceFromRank(rec, idx)
+    const lex = lexicalScore(rec, query, idx)
+    const sem = semanticSimilarity(query, rec)
+    const relevance = lex
     const evidence = evidenceStrength(rec.evidence)
     const validation = validationTier(rec.validation)
     const proximity = scopeProximity(rec.scope, preferProject)
     const freshness = freshnessTier(rec.updatedAt || rec.createdAt)
     const confidence = confidenceScore(rec.confidence)
     const affinity = intentAffinity(rec, intent)
+    const rel = relationshipScore(rec, poolIds)
     const composite = Number((
       relevance * w.relevance
+      + sem * (w.semantic ?? 0.10)
       + evidence * w.evidence
       + validation * w.validation
       + proximity * w.proximity
       + freshness * w.freshness
       + confidence * w.confidence
+      + rel * (w.relationship ?? 0.04)
       + affinity
     ).toFixed(4))
     return {
@@ -137,12 +204,15 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
       scores: {
         composite,
         relevance: Number(relevance.toFixed(3)),
+        lexical: Number(lex.toFixed(3)),
+        semantic: Number(sem.toFixed(3)),
         evidence_strength: Number(evidence.toFixed(3)),
         validation_tier: Number(validation.toFixed(3)),
         scope_proximity: Number(proximity.toFixed(3)),
         freshness_tier: Number(freshness.toFixed(3)),
         confidence: Number(confidence.toFixed(3)),
         intent_affinity: Number(affinity.toFixed(3)),
+        relationship: Number(rel.toFixed(3)),
       },
     }
   })
@@ -151,48 +221,68 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
 }
 
 /**
- * Recall across the project store and (optionally) the reusable store.
+ * Unified Hybrid Retrieval across Project Store and Reusable Store.
  *
- * Project memories always win isolation: reusable hits are tagged and
- * never treated as project truth. Candidates never appear.
+ * Combines:
+ *   - FTS5 lexical matching + exact token matching
+ *   - Semantic similarity
+ *   - Intent affinity and causal prioritization
+ *   - Relationship graph traversal
+ *   - RAG Knowledge and Engineering Memory unification
+ *   - Strict lifecycle & authority filtering
+ *   - Contradiction surfacing
  */
-export function recall({
+export function hybridRetrieve({
   projectStore,
   reusableStore = null,
   query = '',
   limit = DEFAULT_RECALL_LIMIT,
   includeReusable = true,
   intent = null,
+  kind = null,
 } = {}) {
   const detectedIntent = intent || detectIntent(query)
-  const perStore = Math.max(limit * 3, 8)
-  const projectHits = projectStore
+  const perStore = Math.max(limit * 3, 12)
+  const projectFtsHits = projectStore
     ? projectStore.search(query, { limit: perStore, recallOnly: true })
     : []
-  const reusableHits = includeReusable && reusableStore
+  const reusableFtsHits = includeReusable && reusableStore
     ? reusableStore.search(query, { limit: perStore, recallOnly: true })
     : []
 
-  // Isolation: drop any reusable record whose projectId equals the current
-  // project (it belongs in the project DB). Drop any project record that
-  // somehow leaked into reusable.
-  const projectId = projectStore?.projectId
-  const isolatedReusable = reusableHits.filter((r) => r.scope === SCOPES.REUSABLE && r.projectId !== projectId)
-  const isolatedProject = projectHits.filter((r) => r.projectId === projectId || r.scope === SCOPES.PROJECT)
+  // Candidate pooling: include recent records so semantic/intent matches
+  // with differing lexical stems can also be scored and recalled.
+  const projectRecent = projectStore ? projectStore.list({ limit: perStore }) : []
+  const reusableRecent = includeReusable && reusableStore ? reusableStore.list({ limit: perStore }) : []
 
-  const merged = []
-  const seen = new Set()
-  for (const rec of [...isolatedProject, ...isolatedReusable]) {
-    if (!isRecallEligible(rec)) continue
-    if (seen.has(rec.id)) continue
-    seen.add(rec.id)
-    merged.push(rec)
+  const projectId = projectStore?.projectId
+  const candidateMap = new Map()
+
+  const addCandidate = (rec, fromReusable = false) => {
+    if (!rec || !isRecallEligible(rec)) return
+    if (fromReusable) {
+      if (rec.scope !== SCOPES.REUSABLE || rec.projectId === projectId) return
+    } else {
+      if (rec.projectId !== projectId && rec.scope !== SCOPES.PROJECT) return
+    }
+    if (kind && rec.kind !== kind) return
+    if (!candidateMap.has(rec.id)) {
+      candidateMap.set(rec.id, rec)
+    }
   }
 
-  const ranked = annotateContradictions(rankRecords(merged, { intent: detectedIntent }))
+  for (const r of projectFtsHits) addCandidate(r, false)
+  for (const r of reusableFtsHits) addCandidate(r, true)
+  for (const r of projectRecent) addCandidate(r, false)
+  for (const r of reusableRecent) addCandidate(r, true)
+
+  const merged = Array.from(candidateMap.values())
+  const ranked = annotateContradictions(rankRecords(merged, { query, intent: detectedIntent, preferProject: true }))
   const limited = ranked.slice(0, Math.max(1, limit))
-  // PMA invariant: never hide one side of a contradiction. Pull the
-  // opposing recall-eligible record even if FTS missed it.
+
+  // PMA invariant: never hide one side of a contradiction.
+  // Pull opposing recall-eligible records even if search missed them.
+  const seen = new Set(limited.map((r) => r.id))
   const extras = []
   for (const rec of limited) {
     for (const rel of rec.relations || []) {
@@ -204,7 +294,15 @@ export function recall({
     }
   }
   if (extras.length === 0) return limited
-  return annotateContradictions(rankRecords([...limited, ...extras], { intent: detectedIntent }))
+  return annotateContradictions(rankRecords([...limited, ...extras], { query, intent: detectedIntent, preferProject: true }))
+}
+
+/**
+ * Recall across the project store and (optionally) the reusable store.
+ * Delegates to hybridRetrieve.
+ */
+export function recall(options = {}) {
+  return hybridRetrieve(options)
 }
 
 /**
@@ -233,7 +331,8 @@ export function summarizeForPrompt(records, { heading = 'Veyra recalled engineer
     for (const banner of rec.contradictionBanners || []) {
       lines.push(`> ⚠️ ${banner}`)
     }
-    lines.push(`- [${rec.id}] (${scope}/${auth}/${rec.validation}/${rec.confidence}${ev}${contra}) ${rec.title}`)
+    const kindTag = rec.kind === KINDS.KNOWLEDGE ? ' [KNOWLEDGE]' : ''
+    lines.push(`- [${rec.id}] (${scope}/${auth}/${rec.validation}/${rec.confidence}${ev}${contra})${kindTag} ${rec.title}`)
     const causal = rec.source?.causal
     if (causal && (causal.symptom || causal.rootCause || causal.remedy || causal.verifiedOutcome)) {
       if (causal.symptom) lines.push(`  • Symptom: ${causal.symptom}`)
@@ -241,6 +340,10 @@ export function summarizeForPrompt(records, { heading = 'Veyra recalled engineer
       if (causal.remedy) lines.push(`  • Remedy: ${causal.remedy}`)
       if (causal.verifiedOutcome) lines.push(`  • Outcome: ${causal.verifiedOutcome}`)
     } else {
+      const docPath = rec.source?.docPath || rec.source?.uri || rec.evidence?.[0]?.path
+      if (rec.kind === KINDS.KNOWLEDGE && docPath) {
+        lines.push(`  • Source: ${docPath}`)
+      }
       const body = String(rec.body || '').replace(/\s+/g, ' ').trim()
       if (body) lines.push(`  ${body.slice(0, 360)}`)
     }

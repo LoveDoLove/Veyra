@@ -1,8 +1,8 @@
 /**
  * Veyra — /veyra slash command.
  *
- * Manual control for inspection and administration. Normal memory
- * behavior does not require this command.
+ * Manual control for inspection, administration, and the read-only
+ * Knowledge Observatory.
  */
 
 import { AUTHORITIES, KINDS, VALIDATIONS } from './types.mjs'
@@ -10,41 +10,36 @@ import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
 import { recall } from './retrieve.mjs'
 import { promote } from './learn.mjs'
+import {
+  observatoryCausality,
+  observatoryContradictions,
+  observatoryOverview,
+  observatoryRecord,
+  observatoryRelationships,
+  observatorySearch,
+} from './observatory.mjs'
 
 function helpText() {
   return [
-    'Veyra — Engineering Brain for DSH',
+    'Veyra — Engineering Brain for DSH (v0.1.8)',
     '',
-    '/veyra              status for this workspace',
-    '/veyra recall [q]   search project (+ reusable) memory',
-    '/veyra recent       last 8 memories (including candidates)',
-    '/veyra inspect <id> show one record',
-    '/veyra forget <id>  soft-forget a record',
-    '/veyra promote <id> [derived|canonical]',
+    '/veyra                                     status for this workspace',
+    '/veyra observatory [subcommand]            human knowledge observatory',
+    '       observatory overview                aggregate knowledge & health counts',
+    '       observatory search <query>          inspect hybrid search signals',
+    '       observatory record <id>             deep evidence & provenance inspection',
+    '       observatory causality               causal knowledge map (symptom→fix)',
+    '       observatory relationships           graph projection of knowledge links',
+    '       observatory contradictions          conflicts and opposing claims',
+    '/veyra recall [q]                          hybrid search project (+ reusable) memory',
+    '/veyra recent                              last 8 memories (including candidates)',
+    '/veyra inspect <id>                        deep evidence, provenance & causal inspect',
+    '/veyra forget <id>                         soft-forget a record',
+    '/veyra promote <id> [derived|canonical]    promote standing (canonical requires user explicit)',
     '',
     'Canonical promotion is an explicit user action. Automatic capture',
     'never creates authoritative truth. Memory lives in $DSH_HOME/veyra/.',
   ].join('\n')
-}
-
-function formatRecord(record) {
-  if (!record) return 'not found'
-  const ev = record.evidence?.length ? ` evidence=${record.evidence.length}` : ''
-  const obs = record.source?.observations > 1 ? ` obs=${record.source.observations}` : ''
-  const promo = record.tags?.includes('promotion-candidate') ? ' [PROMOTION CANDIDATE]' : ''
-  const lines = [
-    `${record.id}  ${record.kind}/${record.authority}/${record.validation}/${record.confidence}  ${record.scope}${record.forgotten ? '  FORGOTTEN' : ''}${ev}${obs}${promo}`,
-    record.title,
-  ]
-  const causal = record.source?.causal
-  if (causal && (causal.symptom || causal.rootCause || causal.remedy || causal.verifiedOutcome)) {
-    if (causal.symptom) lines.push(`symptom: ${causal.symptom}`)
-    if (causal.rootCause) lines.push(`rootCause: ${causal.rootCause}`)
-    if (causal.remedy) lines.push(`remedy: ${causal.remedy}`)
-    if (causal.verifiedOutcome) lines.push(`outcome: ${causal.verifiedOutcome}`)
-  }
-  lines.push(record.body)
-  return lines.join('\n')
 }
 
 export function handleVeyraCommand(runtime, invocation) {
@@ -79,6 +74,51 @@ export function handleVeyraCommand(runtime, invocation) {
     }
   }
 
+  if (verb === 'observatory' || verb === 'obs') {
+    const [sub, ...subRest] = arg.split(/\s+/)
+    const subArg = subRest.join(' ').trim()
+
+    if (!sub || sub === 'overview' || sub === 'status') {
+      const res = observatoryOverview({ projectStore, reusableStore, cwd, projectId, veyraHome: runtime.veyraHome })
+      return { kind: 'success', text: res.formatted }
+    }
+
+    if (sub === 'search' || sub === 'find') {
+      if (!subArg) return { kind: 'error', text: 'Usage: /veyra observatory search <query>' }
+      const res = observatorySearch({ projectStore, reusableStore, query: subArg, limit: 10 })
+      return { kind: 'success', text: res.formatted }
+    }
+
+    if (sub === 'record' || sub === 'inspect') {
+      if (!subArg) return { kind: 'error', text: 'Usage: /veyra observatory record <id>' }
+      const res = observatoryRecord({ projectStore, reusableStore, id: subArg })
+      return { kind: res.ok ? 'success' : 'error', text: res.formatted }
+    }
+
+    if (sub === 'causality' || sub === 'causal') {
+      const res = observatoryCausality({ projectStore, reusableStore, limit: 25 })
+      return { kind: 'success', text: res.formatted }
+    }
+
+    if (sub === 'relationships' || sub === 'rel' || sub === 'graph') {
+      const res = observatoryRelationships({ projectStore, reusableStore, id: subArg || null })
+      return { kind: 'success', text: res.formatted }
+    }
+
+    if (sub === 'contradictions' || sub === 'conflicts' || sub === 'contra') {
+      const res = observatoryContradictions({ projectStore, reusableStore })
+      return { kind: 'success', text: res.formatted }
+    }
+
+    return {
+      kind: 'error',
+      text: [
+        `Unknown observatory subcommand: ${sub}`,
+        'Available: overview | search <q> | record <id> | causality | relationships | contradictions',
+      ].join('\n'),
+    }
+  }
+
   if (verb === 'recall') {
     const items = recall({
       projectStore,
@@ -108,7 +148,9 @@ export function handleVeyraCommand(runtime, invocation) {
 
   if (verb === 'inspect') {
     const record = projectStore.get(arg) || reusableStore.get(arg)
-    return { kind: record ? 'success' : 'error', text: formatRecord(record) }
+    if (!record) return { kind: 'error', text: 'not found' }
+    const res = observatoryRecord({ projectStore, reusableStore, id: arg })
+    return { kind: 'success', text: res.formatted }
   }
 
   if (verb === 'forget') {
@@ -137,13 +179,12 @@ export function registerCommand(ctx, runtime) {
   if (!ctx?.commands || typeof ctx.commands.register !== 'function') return false
   ctx.commands.register({
     name: 'veyra',
-    description: 'Inspect and administer Veyra engineering memory',
-    input: { hint: '[status|recall|recent|inspect|forget|promote]', attachments: false },
+    description: 'Inspect and administer Veyra engineering memory & observatory',
+    input: { hint: '[status|observatory|recall|recent|inspect|forget|promote]', attachments: false },
     handler: (invocation) => handleVeyraCommand(runtime, invocation),
   })
   return true
 }
 
-// Keep KINDS imported for potential future /veyra observe listing.
 void KINDS
 void resolveVeyraHome
