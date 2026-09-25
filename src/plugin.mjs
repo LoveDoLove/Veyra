@@ -15,6 +15,7 @@
  */
 
 import { AUTHORITIES, DEFAULT_RECALL_LIMIT } from './types.mjs'
+import { normalizeRecallLimit } from './config.mjs'
 import { closeAllStores } from './store.mjs'
 import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
@@ -33,14 +34,16 @@ export const inject = ['tools']
 /**
  * Accepted `config:` keys (all optional, defaults shown):
  *   home: string            storage root, default $DSH_HOME/veyra
- *   recallLimit: number     memories injected per turn, default 5
+ *   recallLimit: number     memories injected per turn, default 5; 0 disables automatic recall
  *   includeReusable: bool   include cross-project experience, default true
  *   observe: bool           capture session activity, default true
  *   learn: bool             promote durable observations, default true
  *
- * No `Config` export on purpose: Cordis treats an exported `Config` as a
- * Standard Schema, and Veyra has no runtime dependency on schemastery.
+ * `Config` is the DSH Settings surface (recallLimit + includeReusable only).
+ * observe/learn stay yaml-only so their lifecycle is not a Settings toggle.
  */
+export { Config, normalizeRecallLimit } from './config.mjs'
+
 export const DEFAULT_CONFIG = Object.freeze({
   recallLimit: DEFAULT_RECALL_LIMIT,
   includeReusable: true,
@@ -76,7 +79,7 @@ function loggerOf(ctx) {
 function createRuntime(ctx, config = {}) {
   return {
     veyraHome: resolveVeyraHome(config),
-    recallLimit: Number(config.recallLimit) > 0 ? Number(config.recallLimit) : DEFAULT_RECALL_LIMIT,
+    recallLimit: normalizeRecallLimit(config.recallLimit),
     includeReusable: config.includeReusable !== false,
     observe: config.observe !== false,
     learn: config.learn !== false,

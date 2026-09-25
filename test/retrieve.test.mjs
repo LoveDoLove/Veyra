@@ -85,4 +85,12 @@ test('recall isolates project stores and excludes candidates', () => {
   const prompt = summarizeForPrompt(fromA)
   assert.ok(prompt.includes('not repository truth'))
   assert.ok(prompt.includes('Similarity is not authority'))
+
+  const none = recall({ projectStore: projectA, reusableStore: reusable, query: 'WAL sqlite FTS', limit: 0 })
+  assert.deepEqual(none, [])
+  assert.equal(summarizeForPrompt(none), '')
+
+  const one = recall({ projectStore: projectA, reusableStore: reusable, query: 'WAL sqlite FTS', limit: 1 })
+  assert.ok(one.length >= 1)
+  assert.ok(one.some((r) => r.title.includes('Project A') || r.title.includes('FTS queries')))
 })

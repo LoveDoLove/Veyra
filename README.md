@@ -74,19 +74,21 @@ Canonical is never assigned automatically. Repo files stay authoritative. Simila
 
 ## Config (optional)
 
+DSH Settings exposes **Recall limit** and **Include reusable**. `recallLimit: 0` disables automatic recalled-memory context only — tools, `/veyra`, Observatory, and stored memory stay available.
+
 In the profile `cordis.patch.yml`:
 
 ```yaml
 - id: veyra
   name: '@lovedolove/veyra'
   config:
-    recallLimit: 5
+    recallLimit: 5   # 0 = no automatic recall context
     includeReusable: true
     observe: true
     learn: true
 ```
 
-`VEYRA_HOME` overrides the storage root.
+`VEYRA_HOME` overrides the storage root. `observe` / `learn` remain yaml-only.
 
 ## License
 

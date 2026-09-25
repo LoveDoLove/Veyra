@@ -243,6 +243,7 @@ export function hybridRetrieve({
   kind = null,
 } = {}) {
   const detectedIntent = intent || detectIntent(query)
+  if (limit === 0) return []
   const perStore = Math.max(limit * 3, 12)
   const projectFtsHits = projectStore
     ? projectStore.search(query, { limit: perStore, recallOnly: true })
@@ -279,7 +280,7 @@ export function hybridRetrieve({
 
   const merged = Array.from(candidateMap.values())
   const ranked = annotateContradictions(rankRecords(merged, { query, intent: detectedIntent, preferProject: true }))
-  const limited = ranked.slice(0, Math.max(1, limit))
+  const limited = ranked.slice(0, Math.max(0, limit))
 
   // PMA invariant: never hide one side of a contradiction.
   // Pull opposing recall-eligible records even if search missed them.

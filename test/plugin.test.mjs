@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { apply, name, DEFAULT_CONFIG } from '../src/plugin.mjs'
+import { apply, name, DEFAULT_CONFIG, Config } from '../src/plugin.mjs'
 import * as pluginExports from '../src/plugin.mjs'
 import { createRequire } from 'node:module'
 import { buildToolDefinitions, createToolHarness, registerTools, toRawOutputSchema } from '../src/tools.mjs'
@@ -38,7 +38,7 @@ function loadValidateJsonSchemaValue() {
   return null
 }
 import { handleVeyraCommand } from '../src/commands.mjs'
-import { GUIDANCE_TEXT, buildRecallContext } from '../src/context.mjs'
+import { GUIDANCE_TEXT, buildRecallContext, createContextProvider } from '../src/context.mjs'
 import { AUTHORITIES } from '../src/types.mjs'
 import { projectIdFor } from '../src/ids.mjs'
 import { closeAllStores } from '../src/store.mjs'
@@ -176,12 +176,66 @@ test('registerTools keeps going when one tool fails DSH schema checks', async ()
   assert.equal(warnings.length, 0)
 })
 
-test('plugin does not export Config (Cordis would treat it as a Standard Schema)', () => {
+test('apply recallLimit 0 disables automatic context and leaves tools working', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'veyra-limit0-'))
+  const cwd = process.cwd()
+  const ctx = mockCtx()
+  apply(ctx, { home: dir, recallLimit: 0 })
+  await new Promise((r) => setTimeout(r, 50))
+  const runtime = { veyraHome: dir, fallbackCwd: cwd, recallLimit: 0, includeReusable: true }
+  const harness = createToolHarness(runtime)
+  const remembered = await harness.call('veyra_remember', {
+    title: 'SQLite WAL must stay on for Veyra stores',
+    body: 'Keep WAL so concurrent readers do not block the writer. This must remain recallable via veyra_recall.',
+  }, { agent: { session: { header: { cwd }, id: 'limit0-a' } } })
+  assert.equal(remembered.ok, true)
+
+  const recalled = await harness.call('veyra_recall', { query: 'WAL sqlite writer' }, {
+    agent: { session: { header: { cwd }, id: 'limit0-b' } },
+  })
+  assert.ok(recalled.count >= 1)
+  assert.ok(recalled.items.some((item) => item.id === remembered.record.id))
+
+  const provider = ctx._contexts.find((c) => c.name === 'veyra:recall')
+  assert.ok(provider)
+  const injected = provider.text({
+    agent: {
+      session: {
+        header: { cwd },
+        deriveMessages: () => [{ role: 'user', content: 'How do we keep the sqlite writer from blocking?' }],
+      },
+    },
+  })
+  assert.equal(injected, '')
+
+  const viaProvider = createContextProvider(runtime)({
+    agent: {
+      session: {
+        header: { cwd },
+        deriveMessages: () => [{ role: 'user', content: 'How do we keep the sqlite writer from blocking?' }],
+      },
+    },
+  })
+  assert.equal(viaProvider, '')
+
+  closeAllStores()
+  rmSync(dir, { recursive: true, force: true })
+})
+
+test('plugin exports a Settings Config for recallLimit and includeReusable', () => {
   assert.equal(name, 'veyra')
-  assert.equal('Config' in pluginExports, false)
-  assert.equal(pluginExports.Config, undefined)
+  assert.equal(typeof Config?.['~standard']?.validate, 'function')
+  assert.equal(typeof Config.toJSON, 'function')
+  assert.equal(pluginExports.Config, Config)
   assert.equal(DEFAULT_CONFIG.observe, true)
   assert.equal(DEFAULT_CONFIG.learn, true)
+  assert.equal(DEFAULT_CONFIG.recallLimit, 5)
+  const form = Config.toJSON()
+  assert.equal(form.refs[5].meta.volatile, true)
+  assert.equal(form.refs[9].meta.volatile, true)
+  assert.deepEqual(Object.keys(form.refs[10].dict).sort(), ['includeReusable', 'recallLimit'])
+  assert.equal(Config.dict.observe, undefined)
+  assert.equal(Config.dict.learn, undefined)
 })
 
 test('plugin exports name=veyra and wires DSH surfaces', async () => {
@@ -238,6 +292,13 @@ test('tools remember → persist → recall across a fresh harness (session A/B)
   })
   assert.ok(ambient.includes(remembered.record.id))
   assert.ok(ambient.includes('not repository truth'))
+
+  assert.equal(buildRecallContext({
+    veyraHome: dir,
+    cwd,
+    query: 'where does veyra persist memory',
+    limit: 0,
+  }), '')
 
   const blocked = await b.call('veyra_promote', { id: remembered.record.id, to: 'canonical', explicit: false }, {
     agent: { session: { header: { cwd } } },

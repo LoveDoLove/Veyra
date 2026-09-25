@@ -105,6 +105,7 @@ export function queryFromAssemble(assembleContext) {
 }
 
 export function buildRecallContext({ veyraHome, cwd, query = '', limit = DEFAULT_RECALL_LIMIT, includeReusable = true }) {
+  if (limit === 0) return ''
   const workspace = cwd || process.cwd()
   const projectId = projectIdFor(workspace)
   const projectStore = openProjectStore(veyraHome, projectId)

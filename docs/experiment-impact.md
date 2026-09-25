@@ -6,7 +6,7 @@
 **Workspace:** `/home/lovedolove/projects/Veyra`
 **Model (intended, both arms):** `omniroute/free-stack`
 **Store source:** `$DSH_HOME/veyra/projects/p_2d599165fe7aa1a7/memory.db` (real project store; no fake memories seeded)
-**Status:** **BLOCKED** — Baseline cannot be isolated via `recallLimit: 0` without touching DSH Web or redesigning Veyra.
+**Status:** **BLOCKED at time of write** — Baseline could not be isolated via `recallLimit: 0` (runtime coerced `0` → `5`; retrieval floored `limit` to `1`). The Settings & Runtime Configuration milestone fixes those product bugs (`normalizeRecallLimit` keeps explicit `0`; `hybridRetrieve` short-circuits at `limit === 0`). Phase 6 itself was **not** run here. After live Settings can set `recallLimit: 0` without touching this Web profile, re-verify empty automatic context, then execute the frozen paired tasks.
 
 ---
 
