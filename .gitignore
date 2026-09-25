@@ -5,10 +5,11 @@ node_modules
 coverage
 dist
 .npmrc
+.dsh-vision-toolkit/
 
 # Local implementation references (cloned for GOAL.md; not shipped)
 OpenViking/
 supermemory/
 Project-Memory-Agent/
 mnemon/
-.dsh-vision-toolkit/
+dsh-approval-gate/
