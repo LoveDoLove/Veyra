@@ -15,7 +15,7 @@
  */
 
 import { AUTHORITIES, DEFAULT_RECALL_LIMIT } from './types.mjs'
-import { normalizeRecallLimit } from './config.mjs'
+import { Config, normalizeRecallLimit } from './config.mjs'
 import { closeAllStores } from './store.mjs'
 import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
@@ -93,6 +93,21 @@ function createRuntime(ctx, config = {}) {
  * @param {object} [config]
  */
 export function apply(ctx, config = {}) {
+  // Attach Config to the apply function so Cordis registry wires it into runtime.Config.
+  // SettingsForms.describe() reads `entry.fiber?.runtime?.Config`.
+  apply.Config = Config
+
+  // Register Veyra's Config in DSH Settings UI (auto=true surfaces the section).
+  if (typeof ctx.inject === 'function') {
+    try {
+      ctx.inject(['settings'], (child) => {
+        child.effect(() => child.settings.configure({ auto: true }, ctx.fiber))
+      })
+    } catch {
+      // settings service unavailable; settings will not be exposed but plugin still works
+    }
+  }
+
   const runtime = createRuntime(ctx, { ...DEFAULT_CONFIG, ...config })
   const buffers = new WeakMap()
 
