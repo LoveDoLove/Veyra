@@ -29,14 +29,25 @@ export function evidenceStrength(evidence) {
   let hasFile = false
   let hasTest = false
   for (const item of arr) {
+    // Compose every available field. Reading only `path || uri || anchor ||
+    // note` kept the first truthy field and discarded the rest, so the note
+    // carrying the test outcome was ignored whenever a path was present. The
+    // effect: `hasTest` was really "does some path contain test/spec/fixture",
+    // so a memory that merely opened a file under test/ scored 1.0 while a
+    // memory recording a genuine outcome under an ordinary path scored 0.7.
     const text = typeof item === 'string'
       ? item
-      : String(item?.path || item?.uri || item?.anchor || item?.note || '')
+      : [item?.path, item?.uri, item?.anchor, item?.note]
+        .filter((part) => typeof part === 'string' && part.trim())
+        .join(' ')
     if (!text) continue
     if (/\.(mjs|js|ts|tsx|py|go|rs|java|kt)\b/.test(text) || text.includes('/') || text.includes('\\')) {
       hasFile = true
     }
-    if (/test-passed|tests-touched|test|spec|fixture/i.test(text) && !/test-failed/i.test(text)) {
+    // Closed vocabulary, as in the learning path: an unanchored `test|spec`
+    // also matches ordinary prose such as "inspector", "protest" or "aspect".
+    if (/(^|[^a-z0-9-])(test-passed|tests-touched)([^a-z0-9-]|$)/i.test(text)
+      && !/(^|[^a-z0-9-])test-failed([^a-z0-9-]|$)/i.test(text)) {
       hasTest = true
     }
   }
