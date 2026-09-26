@@ -1,7 +1,7 @@
 {
   "name": "@lovedolove/veyra",
   "description": "Veyra — Engineering Intelligence for Coding Agents. Persistent, evidence-aware, project-isolated engineering memory and unified hybrid search (memory + RAG documentation) for DeepSeek Harness.",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "type": "module",
   "main": "src/plugin.mjs",
   "exports": {
