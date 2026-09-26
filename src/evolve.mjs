@@ -13,6 +13,12 @@
  *     subject both records share
  *   - mark a record stale when it has sat unused past a threshold
  *
+ * `supersedes` is DIRECTED — retired --supersedes--> replacement — and exactly
+ * one such edge exists per supersede event. The retired record points at what
+ * replaced it, so "what replaced this?" is one hop and never depends on the
+ * mutable `status` field. The replacement carries no `supersedes` edge.
+ * `contradicts` is unaffected and stays bidirectional in both directions.
+ *
  * Automatic evolution may never:
  *   - assign canonical authority
  *   - delete or merge two records into one
@@ -71,7 +77,7 @@ function supersedeEligible(incoming, neighbor) {
  *
  * @returns {boolean} whether a lifecycle change was actually applied
  */
-function linkConflict(store, incoming, neighbor, relations) {
+function linkConflict(store, incoming, neighbor) {
   if (store && incoming.id && neighbor?.authority !== AUTHORITIES.CANONICAL) {
     const superseded = supersedeEligible(incoming, neighbor)
     try {
@@ -92,7 +98,9 @@ function linkConflict(store, incoming, neighbor, relations) {
         ),
       })
       if (superseded) {
-        relations.push({ type: RELATIONS.SUPERSEDES, targetId: neighbor.id })
+        // No mirror edge. `supersedes` is directed retired -> replacement, and
+        // the retired record already carries the edge (written above). The
+        // replacement deliberately carries no `supersedes` edge of its own.
         return true
       }
     } catch {
@@ -107,7 +115,7 @@ function linkConflict(store, incoming, neighbor, relations) {
  *
  * @returns {boolean} whether a lifecycle change was actually applied
  */
-function linkUpdate(store, incoming, neighbor, relations) {
+function linkUpdate(store, incoming, neighbor) {
   const superseded = store && supersedeEligible(incoming, neighbor)
   if (superseded) {
     try {
@@ -125,7 +133,8 @@ function linkUpdate(store, incoming, neighbor, relations) {
           incoming.id,
         ),
       })
-      relations.push({ type: RELATIONS.SUPERSEDES, targetId: neighbor.id })
+      // No mirror edge. `supersedes` is directed retired -> replacement; the
+      // retired record carries it (written above) and the replacement does not.
       return true
     } catch {
       // supersede is best-effort
@@ -169,7 +178,7 @@ export function evolveAgainst(store, incoming, existing = []) {
     // Both records are always kept and the contradicts edge is always linked
     // in both directions — including when a lifecycle change also happens, so
     // a replacement never hides that the two claims disagree.
-    const superseded = linkConflict(store, incoming, neighbor, relations)
+    const superseded = linkConflict(store, incoming, neighbor)
 
     return {
       record: { ...incoming, relations: uniqueRelations(relations) },
@@ -186,7 +195,7 @@ export function evolveAgainst(store, incoming, existing = []) {
 
     // UPDATE is a relationship classification, not a lifecycle verdict.
     // Similarity can link two records; it can never retire one.
-    const superseded = linkUpdate(store, incoming, neighbor, relations)
+    const superseded = linkUpdate(store, incoming, neighbor)
 
     if (!superseded && neighbor) {
       relations.push({ type: RELATIONS.EXTENDS, targetId: neighbor.id })

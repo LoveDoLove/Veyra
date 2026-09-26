@@ -133,7 +133,8 @@ Kind stays `observation | memory | knowledge | evidence`. Files mentioned in
 fromId → type → targetId
 ```
 
-All five types are directional as stored.
+Relations are stored with a `from`/`target` pair; `contradicts` is the one
+type Veyra actively writes in both directions.
 
 | Type | Meaning already in evolve/store |
 | --- | --- |
@@ -141,11 +142,24 @@ All five types are directional as stored.
 | `extends` | related elaboration / near-duplicate link |
 | `derives` | derived from |
 | `contradicts` | opposing claim; both sides stay visible |
-| `supersedes` | lifecycle replacement; target is typically `status=superseded` |
+| `supersedes` | lifecycle replacement; **directed, retired → replacement**; exactly one edge per supersede event |
 
-`contradicts` is **not** rewritten as undirected. Display and agent extras
-follow both stored directions when present (evolve already writes the back-link
-best-effort).
+`supersedes` is the only directed relation. It reads *retired --supersedes-->
+replacement*, so "what replaced this?" is one hop and never depends on the
+mutable `status` field. The replacement carries no `supersedes` edge. The
+origin record is the one the lifecycle gate set to `status=superseded`; the
+edge is an output of that gate and is never read back by it.
+
+`contradicts` is **not** rewritten as undirected, and the decision above does
+not change it. Display and agent extras follow both stored directions when
+present (evolve already writes the back-link best-effort).
+
+Rows written before the direction decision carry a mirror edge on each
+endpoint, so their direction is ambiguous by construction.
+`src/migrate.mjs` plans the one-time correction: it keeps the edge originating
+from the endpoint whose `status` is `superseded` and drops the mirror. The
+planner is read-only and quarantines any pair whose direction it cannot decide
+rather than guessing.
 
 Edges have no independent validation, authority, or evidence. Trust is the
 conjunction of the two endpoint records. A dangling `targetId` is kept as an
