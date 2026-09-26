@@ -76,6 +76,8 @@ Canonical is never assigned automatically. Repo files stay authoritative. Simila
 
 DSH Settings exposes **Recall limit** and **Include reusable**. `recallLimit: 0` disables automatic recalled-memory context only — tools, `/veyra`, Observatory, and stored memory stay available.
 
+The Settings dialog has a dedicated **Veyra** section (browser half: `client.js`) with both controls. It writes through the shared DSH settings document, the Host re-validates against Veyra's schema, and cordis remounts the plugin — a saved change applies from the next turn, no restart.
+
 In the profile `cordis.patch.yml`:
 
 ```yaml

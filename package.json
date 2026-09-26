@@ -7,11 +7,13 @@
   "exports": {
     ".": "./src/plugin.mjs",
     "./dsh": "./src/plugin.mjs",
+    "./client": "./client.js",
     "./package.json": "./package.json"
   },
   "files": [
     "src",
     "skills",
+    "client.js",
     "cordis.patch.yml",
     "LICENSE",
     "README.md"
@@ -47,6 +49,13 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
     },
     "compatibility": {
       "dshReleases": {
