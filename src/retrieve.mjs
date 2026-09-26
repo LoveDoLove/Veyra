@@ -20,7 +20,7 @@ import { AUTHORITIES, CONFIDENCES, DEFAULT_RECALL_LIMIT, KINDS, SCOPES, VALIDATI
 import { detectIntent, intentAffinity, intentWeights } from './intent.mjs'
 import { annotateContradictions } from './evolve.mjs'
 import { expandEligibleNeighbors } from './graph.mjs'
-import { jaccard, tokenOverlap } from './text.mjs'
+import { jaccard, tokenOverlap, hasNegation } from './text.mjs'
 
 export function evidenceStrength(evidence) {
   if (!evidence) return 0.1
@@ -181,6 +181,42 @@ const DEFAULT_WEIGHTS = Object.freeze({
 })
 
 /**
+ * Textual claim of a record, in the same projection `semanticSimilarity`
+ * uses. Polarity lives in the RAW text, because `not`/`no`/`never` are
+ * stopwords and do not survive tokenization.
+ */
+function claimText(record) {
+  return `${record?.title || ''} ${record?.body || ''} ${(record?.tags || []).join(' ')}`
+}
+
+/**
+ * Polarity compatibility between a query and a candidate.
+ *
+ * `not`/`no`/`never` are stopwords, so "serialize writes" and "do not
+ * serialize writes" tokenize to the SAME set and score 1.0 on textual
+ * similarity. `semanticSimilarity` is deliberately left alone — polarity is
+ * not a property of one text, it is a relationship between two.
+ *
+ * Both sides matter:
+ *   - a NEGATED QUERY prefers negated records and must not be answered by the
+ *     affirmative claim it is negating;
+ *   - a NEUTRAL QUERY must not be answered by a record asserting the opposite
+ *     of what was asked, so a negated record does not outrank the plain one.
+ * When neither side is negated there is nothing to reconcile and every
+ * candidate is compatible, so existing behaviour is untouched.
+ *
+ * This is a RANKING COMPATIBILITY CONSTRAINT, not a trust signal. A
+ * polarity-mismatched candidate keeps every metadata component and stays
+ * fully recallable; it simply cannot outrank the best candidate that agrees
+ * with the query's polarity. Subtracting or zeroing the textual score is not
+ * enough: the remaining metadata floor is large enough to let a mismatched
+ * record outrank a plain affirmative.
+ */
+function polarityCompatible(query, record) {
+  return hasNegation(query) === hasNegation(claimText(record))
+}
+
+/**
  * Rank records with a full dimensional breakdown.
  * Never returns a single opaque score.
  */
@@ -199,6 +235,7 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
     const confidence = confidenceScore(rec.confidence)
     const affinity = intentAffinity(rec, intent)
     const rel = relationshipScore(rec, poolIds)
+    const compatible = polarityCompatible(query, rec)
     const composite = Number((
       relevance * w.relevance
       + sem * (w.semantic ?? 0.10)
@@ -225,10 +262,37 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
         confidence: Number(confidence.toFixed(3)),
         intent_affinity: Number(affinity.toFixed(3)),
         relationship: Number(rel.toFixed(3)),
+        polarity_compatible: compatible,
       },
     }
   })
-  scored.sort((a, b) => b.scores.composite - a.scores.composite)
+
+  // Applied after scoring so every component above is preserved verbatim.
+  // A polarity-mismatched candidate is capped just below the best compatible
+  // one; it is never removed, invalidated, or demoted in lifecycle terms.
+  //
+  // Several mismatches can land on the SAME capped value, which would make
+  // their relative order fall back to input (Map insertion) order. The pre-cap
+  // composite is therefore retained as a SORT KEY ONLY for those rows — it is
+  // never added to the weighted score and is not a ranking signal of its own.
+  const compatibleScores = scored.filter((r) => r.scores.polarity_compatible)
+  if (compatibleScores.length > 0 && compatibleScores.length < scored.length) {
+    const best = Math.max(...compatibleScores.map((r) => r.scores.composite))
+    for (const r of scored) {
+      if (r.scores.polarity_compatible) continue
+      r.scores.polarity_mismatch = true
+      r.scores.polarity_original_composite = r.scores.composite
+      if (r.scores.composite >= best) r.scores.composite = Number((best - 0.0001).toFixed(4))
+    }
+  }
+
+  // Primary: the (possibly capped) composite. Secondary, only when the primary
+  // ties: the pre-cap composite, so capped rows keep their true relative order
+  // regardless of the order they entered rankRecords. Records without the key
+  // fall back to their own composite, so matching-polarity behaviour is
+  // byte-identical to before.
+  const sortKey = (r) => r.scores.polarity_original_composite ?? r.scores.composite
+  scored.sort((a, b) => (b.scores.composite - a.scores.composite) || (sortKey(b) - sortKey(a)))
   return scored
 }
 
