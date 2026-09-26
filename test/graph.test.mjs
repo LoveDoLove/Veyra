@@ -301,7 +301,7 @@ test('slash search → record → local graph stays inside handleVeyraCommand', 
   assert.equal(graph.kind, 'success')
   assert.ok(graph.text.includes('VEYRA OBSERVATORY — LOCAL GRAPH'))
   assert.ok(graph.text.includes(child.id))
-  assert.equal(graph.text.includes('Veyra — Engineering Brain for DSH'), false)
+  assert.equal(graph.text.includes('Veyra — Engineering Intelligence for Coding Agents'), false)
 
   closeAllStores()
   rmSync(dir, { recursive: true, force: true })

@@ -1,0 +1,30 @@
+# Veyra — DSH profile plugin entry (complete example).
+#
+# This is the same entry the README shows, with every accepted config key.
+# Copy the `config:` block into your profile's cordis.patch.yml (or install
+# with `dsh plugin --profile web add @lovedolove/veyra`, which appends the
+# bare entry for you).
+#
+# Keys marked "Settings" are also editable at runtime in
+# DSH Settings → Veyra; the rest are yaml-only.
+
+- insert:
+    - id: veyra
+      name: '@lovedolove/veyra'
+      config:
+        # Settings: max records injected into each turn (0 = no automatic
+        # recalled-memory context; tools, /veyra and the Observatory keep working).
+        recallLimit: 5
+
+        # Settings: include the cross-project `scope: reusable` store in recall.
+        includeReusable: true
+
+        # yaml-only: capture session activity into candidates.
+        observe: true
+
+        # yaml-only: let durable candidates be learned as derived memory.
+        learn: true
+
+        # yaml-only: storage root. Defaults to $DSH_HOME/veyra (~/.dsh/veyra).
+        # VEYRA_HOME overrides this from the environment.
+        # home: ~/.dsh/veyra

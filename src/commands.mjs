@@ -5,6 +5,7 @@
  * Knowledge Observatory.
  */
 
+import { readFileSync } from 'node:fs'
 import { AUTHORITIES, KINDS, VALIDATIONS } from './types.mjs'
 import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
@@ -20,9 +21,19 @@ import {
   observatorySearch,
 } from './observatory.mjs'
 
+/** Installed version, read from package.json; 'dev' outside the package. */
+export function packageVersion() {
+  try {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+    return typeof pkg.version === 'string' && pkg.version ? pkg.version : 'dev'
+  } catch {
+    return 'dev'
+  }
+}
+
 function helpText() {
   return [
-    'Veyra — Engineering Brain for DSH (v0.1.14)',
+    `Veyra — Engineering Intelligence for Coding Agents (v${packageVersion()})`,
     '',
     '/veyra                                     status for this workspace',
     '/veyra observatory [subcommand]            human knowledge observatory',

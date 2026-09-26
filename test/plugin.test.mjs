@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply, name, DEFAULT_CONFIG, Config } from '../src/plugin.mjs'
@@ -436,16 +436,33 @@ test('DSH rawInput observatory remainder reaches existing overview and search br
   const overview = handleVeyraCommand(runtime, { ...invocation, rawInput: 'observatory overview' })
   assert.equal(overview.kind, 'success')
   assert.ok(overview.text.includes('VEYRA KNOWLEDGE OBSERVATORY — OVERVIEW'))
-  assert.equal(overview.text.includes('Veyra — Engineering Brain for DSH'), false)
+  assert.equal(overview.text.includes('Veyra — Engineering Intelligence for Coding Agents'), false)
 
   const search = handleVeyraCommand(runtime, { ...invocation, rawInput: 'observatory search sqlite mutex' })
   assert.equal(search.kind, 'success')
   assert.ok(search.text.includes('VEYRA OBSERVATORY — HYBRID SEARCH'))
-  assert.equal(search.text.includes('Veyra — Engineering Brain for DSH'), false)
+  assert.equal(search.text.includes('Veyra — Engineering Intelligence for Coding Agents'), false)
 
   const localMissing = handleVeyraCommand(runtime, { ...invocation, rawInput: 'observatory local' })
   assert.equal(localMissing.kind, 'error')
   assert.ok(localMissing.text.includes('observatory local <id>'))
+
+  closeAllStores()
+  rmSync(dir, { recursive: true, force: true })
+})
+
+test('/veyra help banner reports the installed package version', () => {
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  const dir = mkdtempSync(join(tmpdir(), 'veyra-version-'))
+  const cwd = join(dir, 'workspace')
+  const runtime = { veyraHome: dir, fallbackCwd: cwd, recallLimit: 5, includeReusable: true }
+
+  const help = handleVeyraCommand(runtime, {
+    rawInput: 'help',
+    agent: { session: { header: { cwd } } },
+  })
+  assert.equal(help.kind, 'success')
+  assert.ok(help.text.includes(`Veyra — Engineering Intelligence for Coding Agents (v${pkg.version})`))
 
   closeAllStores()
   rmSync(dir, { recursive: true, force: true })

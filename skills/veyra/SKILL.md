@@ -110,8 +110,10 @@ Humans can explore Veyra's internal state via the `/veyra observatory` slash com
 ## Where memory lives
 
 Memory is stored under `$DSH_HOME/veyra/`, never inside the user's repository.
-A git repository (or its remote) maps to one project id, so clones and
-worktrees of the same repo share project memory. Reusable experience is
-opt-in and must not be treated as this project's architecture.
+The project id hashes the checkout's git root path together with its origin
+remote, so every workspace inside one checkout shares memory while unrelated
+folders — and separate clones or worktrees of the same repository — stay
+isolated. Reusable experience is opt-in and must not be treated as this
+project's architecture.
 
 Do not invent other storage locations or invent extra Veyra commands.

@@ -44,8 +44,9 @@ jobs:
           echo "before=${before}" >> "$GITHUB_OUTPUT"
           echo "after=${after}" >> "$GITHUB_OUTPUT"
 
-      # Provenance is omitted: npm only accepts Sigstore provenance from
-      # public GitHub repos, and this repository is private.
+      # Provenance is omitted: it would need `permissions: id-token: write`
+      # plus `npm publish --provenance`. The repository is public now, so
+      # that can be enabled later; the release path is left unchanged here.
       - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

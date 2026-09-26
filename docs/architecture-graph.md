@@ -1,8 +1,8 @@
 # Veyra Engineering Graph — Architecture Checkpoint
 
 Baseline: verified Graph Foundation `@lovedolove/veyra@0.1.12` (`0.1.13` = CI bump).
-Network Graph WebUI: `0.1.14`.
-Date: 2026-04-06.
+Network Graph WebUI: `0.1.14`; bounded overview landing view: `0.1.18`.
+Date: 2026-09-26 (last updated).
 Status: graph is a derived projection, not a second store. WebUI is a host-native Observatory surface over that projection.
 
 This checkpoint is grounded in the current repository. Prompt vocabulary that does
@@ -17,7 +17,7 @@ Veyra is a DSH Cordis plugin (`src/plugin.mjs`), not a standalone web app.
 | Layer | Fact |
 | --- | --- |
 | Canonical store | `node:sqlite` + FTS5 under `$DSH_HOME/veyra/` |
-| Identity | `memory.id` (`vey_…`); project id `p_` + sha256(cwd\|remote) |
+| Identity | `memory.id` (`vey_…`); project id `p_` + sha256(gitRoot\|remote) |
 | Relations | JSON array on the memory row: `{ type, targetId }` |
 | Relation types | `updates \| extends \| derives \| contradicts \| supersedes` |
 | Recall gate | `isRecallEligible`: not forgotten, `status===current`, not invalid/stale, not candidate, not observation, authority derived\|canonical |
@@ -212,8 +212,10 @@ node and edge sets, stable sort by `id`.
 Graph Foundation (0.1.12/0.1.13) remains the derived projection. Network Graph
 WebUI (0.1.14) is a host-native Observatory surface over that projection.
 
-DSH already exposes `ctx.webServer.register`. Veyra uses that — it does not
-ship a second app, a `dsh.client` React bundle, or D3.
+DSH already exposes `ctx.webServer.register`. Veyra uses that — the graph
+ships no second app, no graph React bundle, and no D3. (The package does ship
+`client.js`, but only for the Settings section and the sidebar entry; it is
+not the graph surface.)
 
 | Route | Role |
 | --- | --- |
@@ -275,7 +277,8 @@ Failure: catch and return `''` (existing `createContextProvider` contract).
 1. When (if ever) should evidence paths become first-class nodes?
 2. Does 1-hop measurably help live DSH tasks? (GOAL §22)
 3. Closed for this stage: host `webServer` is enough. A React `dsh.client`
-   panel is not required.
+   panel is not required for the graph. (The shipped `client.js` serves the
+   Veyra Settings section and the sidebar entry, not the Network Graph.)
 
 ---
 

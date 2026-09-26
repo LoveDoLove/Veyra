@@ -1,6 +1,6 @@
 {
   "name": "@lovedolove/veyra",
-  "description": "Veyra — the Engineering Brain for DeepSeek Harness. Persistent, evidence-aware, project-isolated engineering memory that observes, remembers, and recalls across DSH sessions.",
+  "description": "Veyra — Engineering Intelligence for Coding Agents. Persistent, evidence-aware, project-isolated engineering memory and unified hybrid search (memory + RAG documentation) for DeepSeek Harness.",
   "version": "0.1.20",
   "type": "module",
   "main": "src/plugin.mjs",
@@ -16,7 +16,8 @@
     "client.js",
     "cordis.patch.yml",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "test": "node --test test/*.test.mjs",
@@ -29,6 +30,10 @@
     "harness",
     "memory",
     "engineering-brain",
+    "engineering-intelligence",
+    "coding-agents",
+    "hybrid-search",
+    "rag",
     "plugin"
   ],
   "publishConfig": {
@@ -44,7 +49,7 @@
   },
   "homepage": "https://github.com/LoveDoLove/Veyra#readme",
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=22.5.0 <25.0.0"
   },
   "dsh": {
     "bundle": {
@@ -66,7 +71,8 @@
         "0.1.3-alpha.2": "compatible",
         "0.1.5-alpha.1": "compatible",
         "0.1.5-rc.2": "compatible",
-        "0.1.5-rc.3": "compatible"
+        "0.1.5-rc.3": "compatible",
+        "0.1.7-rc.2": "compatible"
       },
       "nodeVersions": ">=22.5.0 <25.0.0",
       "dshVersions": ">=0.1.2-rc.1 <0.2.0-0"
