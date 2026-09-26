@@ -162,6 +162,82 @@ export function localGraph({
 }
 
 /**
+ * Bounded overview over every isolation-visible record in the opened
+ * stores. Discovery surface for the WebUI landing page: same projection
+ * contract as localGraph (node = row, edge = stored relation, dangling
+ * target = unresolved edge), same caps, no traversal engine.
+ */
+export function overviewGraph({ projectStore, reusableStore = null } = {}) {
+  const empty = { center: null, nodes: [], edges: [], unresolved: [] }
+  const projectId = projectStore?.projectId
+  const pool = loadPool(projectStore, reusableStore)
+  if (!pool.size) return empty
+
+  const resolve = (id) => pool.get(id) || projectStore?.get?.(id) || reusableStore?.get?.(id) || null
+
+  // Seed with records that carry stored relations (and their visible targets)
+  // so the bounded overview shows the real network, then fill with the newest
+  // records. Deterministic: pool order is the store's updated_at order.
+  const selected = new Map()
+  const consider = (rec) => {
+    if (!rec || selected.has(rec.id) || selected.size >= GRAPH_LIMITS.maxNodes) return
+    if (!inIsolation(rec, projectId)) return
+    selected.set(rec.id, rec)
+  }
+  const relationHolders = [...pool.values()].filter((rec) =>
+    (rec.relations || []).some((rel) => rel?.targetId && VALID_RELATIONS.includes(rel.type)),
+  )
+  for (const rec of relationHolders) {
+    if (selected.size >= GRAPH_LIMITS.maxNodes) break
+    consider(rec)
+    for (const rel of rec.relations || []) {
+      if (selected.size >= GRAPH_LIMITS.maxNodes) break
+      if (!rel?.targetId || !VALID_RELATIONS.includes(rel.type)) continue
+      consider(resolve(rel.targetId))
+    }
+  }
+  for (const rec of pool.values()) {
+    if (selected.size >= GRAPH_LIMITS.maxNodes) break
+    consider(rec)
+  }
+
+  const nodeMap = new Map()
+  const sources = []
+  for (const rec of selected.values()) {
+    sources.push(rec)
+    nodeMap.set(rec.id, projectNode(rec))
+  }
+
+  const edgeMap = new Map()
+  const unresolved = []
+  const seenUnresolved = new Set()
+  for (const rec of sources) {
+    for (const rel of rec.relations || []) {
+      if (!rel?.targetId || !VALID_RELATIONS.includes(rel.type)) continue
+      const edgeId = `${rec.id}:${rel.type}:${rel.targetId}`
+      if (edgeMap.has(edgeId)) continue
+      const target = resolve(rel.targetId)
+      if (!target) {
+        if (!seenUnresolved.has(edgeId) && unresolved.length < GRAPH_LIMITS.maxEdges) {
+          seenUnresolved.add(edgeId)
+          unresolved.push(projectEdge(rec.id, rel.type, rel.targetId))
+        }
+        continue
+      }
+      if (!inIsolation(target, projectId)) continue // fail closed, like localGraph
+      if (!nodeMap.has(target.id)) continue // target dropped by the node cap
+      if (edgeMap.size >= GRAPH_LIMITS.maxEdges) continue
+      edgeMap.set(edgeId, projectEdge(rec.id, rel.type, rel.targetId))
+    }
+  }
+
+  const nodes = [...nodeMap.values()].sort((a, b) => a.id.localeCompare(b.id))
+  const edges = [...edgeMap.values()].sort((a, b) => a.id.localeCompare(b.id))
+  unresolved.sort((a, b) => a.id.localeCompare(b.id))
+  return { center: null, nodes, edges, unresolved }
+}
+
+/**
  * 1-hop recall-eligible neighbors of an already-retrieved hit set.
  * Skips `contradicts` — that path stays dedicated in hybridRetrieve.
  */

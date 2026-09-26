@@ -3,13 +3,13 @@
  *
  * Host-native Observatory surface. Not a store, not a second identity.
  * GET /veyra        HTML (vanilla SVG)
- * GET /veyra/graph  localGraph JSON
+ * GET /veyra/graph  localGraph JSON with ?id, bounded overview JSON without
  * GET /veyra/record compact record JSON
  * GET /veyra/search hybrid search JSON
  */
 
 import { resolve } from 'node:path'
-import { GRAPH_LIMITS, localGraph } from './graph.mjs'
+import { GRAPH_LIMITS, localGraph, overviewGraph } from './graph.mjs'
 import { projectIdFor } from './ids.mjs'
 import { observatoryRecord, observatorySearch } from './observatory.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
@@ -83,6 +83,34 @@ export function buildGraphPayload({
     unresolved: graph.unresolved,
     error: graph.center ? null : (id ? 'Record not found' : 'Record id required'),
     note: 'Graph is a projection. Visible ≠ trusted. Connected ≠ recall-eligible.',
+  }
+}
+
+/**
+ * Landing view: bounded overview of every visible record in this workspace.
+ * No id required, so the page always renders real Veyra nodes/edges (or an
+ * honest empty state). Local Graph stays the view for any selected record.
+ */
+export function buildOverviewPayload({
+  projectStore,
+  reusableStore = null,
+  cwd = '',
+  projectId = '',
+} = {}) {
+  const graph = overviewGraph({ projectStore, reusableStore })
+  return {
+    ok: true,
+    view: 'overview',
+    limits: GRAPH_LIMITS,
+    projectId: projectId || projectStore?.projectId || '',
+    cwd,
+    center: null,
+    nodes: graph.nodes.map((n) => ({ ...n, mark: classifyNode(n, null) })),
+    edges: graph.edges,
+    unresolved: graph.unresolved,
+    empty: graph.nodes.length === 0,
+    error: null,
+    note: 'Overview is a bounded projection of this workspace. Graph is a projection. Visible ≠ trusted. Connected ≠ recall-eligible.',
   }
 }
 
@@ -178,10 +206,15 @@ export function handleVeyraHttp(runtime, req, res) {
     const trustedOnly = url.searchParams.get('trustedOnly') === '1'
 
     if (path === `${WEBUI_PATH}/graph`) {
+      if (!id) {
+        // No id → bounded workspace overview (real nodes, no hardcoded data).
+        sendJson(res, 200, buildOverviewPayload({ projectStore, reusableStore, cwd, projectId }))
+        return
+      }
       const payload = buildGraphPayload({
         projectStore, reusableStore, id, hops, trustedOnly, cwd, projectId,
       })
-      sendJson(res, payload.ok || !id ? 200 : 404, payload)
+      sendJson(res, payload.ok ? 200 : 404, payload)
       return
     }
     if (path === `${WEBUI_PATH}/record`) {
@@ -247,19 +280,30 @@ main{display:grid;grid-template-columns:1fr 320px;min-height:0}
 svg{width:100%;height:100%;display:block;background:#0e1116;touch-action:none}
 #status{position:absolute;left:10px;top:10px;color:var(--muted);background:#0e1116cc;padding:4px 8px;border-radius:4px;max-width:70%}
 #legend{position:absolute;left:10px;bottom:10px;color:var(--muted);background:#0e1116cc;padding:6px 8px;border-radius:4px;font-size:11px}
+#loading{position:absolute;inset:0;display:flex;gap:10px;align-items:center;justify-content:center;background:#0e1116cc;color:var(--ink);z-index:5}
+#loading[hidden]{display:none}
+.spin{width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--sel);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#tip{position:absolute;pointer-events:none;max-width:280px;background:#0e1116f2;border:1px solid var(--line);border-radius:4px;padding:6px 8px;font-size:11px;white-space:pre-line;z-index:6}
+#tip[hidden]{display:none}
 aside{overflow:auto;padding:12px;background:var(--panel)}
 aside h2{font-size:14px;margin:0 0 8px}
 aside .meta{color:var(--muted);font-size:12px}
 aside .body{white-space:pre-wrap;margin:8px 0;padding:8px;background:#0e1116;border-radius:4px}
 aside .warn{color:var(--contra)}
+aside .actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+aside .actions button{background:#0e1116;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:5px 8px;cursor:pointer}
 .badge{display:inline-block;border:1px solid var(--line);border-radius:3px;padding:1px 5px;margin:0 4px 4px 0;font-size:11px}
 #hits{list-style:none;margin:8px 0 0;padding:0}
 #hits button{width:100%;text-align:left;background:#0e1116;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:6px;margin-bottom:6px;cursor:pointer}
 .node.selected .ring{stroke:var(--sel);stroke-width:3}
+.node.hover .shape{stroke:var(--sel);stroke-width:2.5}
+.node.hover .ring{stroke:#f0c14b88}
 .node.inspect .shape{fill:none;stroke-dasharray:4 3}
 .node.historical{opacity:.55}
 .node.forgotten .shape{stroke-dasharray:2 3}
 .edge.contradicts{stroke:var(--contra);stroke-dasharray:6 4}
+.edge.hl{stroke:var(--sel);stroke-width:2}
 .edge-label{fill:var(--muted);font-size:10px}
 </style>
 </head>
@@ -271,11 +315,12 @@ aside .warn{color:var(--contra)}
 <label>hops <select id="hops"><option value="1" selected>1</option><option value="2">2</option></select></label>
 <label><input id="trusted" type="checkbox"> trusted only</label>
 <label><input id="hide-hist" type="checkbox"> hide historical</label>
+<button type="button" id="overview">workspace overview</button>
 <button type="button" id="fit">reset view</button>
 </header>
 <main>
 <div id="canvas-wrap">
-<div id="status">Default: selected record + 1 hop. Visible ≠ trusted.</div>
+<div id="status">Loading workspace overview…</div>
 <svg id="g" viewBox="0 0 960 640">
 <defs>
 <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#8b95a8"/></marker>
@@ -283,13 +328,16 @@ aside .warn{color:var(--contra)}
 </defs>
 <g id="world"></g>
 </svg>
+<div id="loading" hidden><div class="spin"></div><span>Loading graph data…</span></div>
+<div id="tip" hidden></div>
 <div id="legend">
 ◆ canonical · ● derived · ■ candidate<br>
 solid = trusted · hollow = inspect-only · faded = historical<br>
-edges: labeled + directed · contradicts = dashed red ≠
+edges: labeled + directed · contradicts = dashed red ≠<br>
+Visible ≠ trusted · Connected ≠ recall-eligible
 </div>
 </div>
-<aside id="panel"><p class="meta">Select a node. Graph is a projection over SQLite memory rows.</p></aside>
+<aside id="panel"><p class="meta">Loading… Graph is a projection over SQLite memory rows.</p></aside>
 </main>
 </div>
 <script>
@@ -297,7 +345,12 @@ const $ = (id) => document.getElementById(id)
 const params = new URLSearchParams(location.search)
 const cwd = params.get('cwd') || ''
 let hops = params.get('hops') === '2' ? 2 : 1
-let state = { graph: null, selected: params.get('id') || '', vx:0, vy:0, scale:1, drag:null }
+const state = {
+  graph: null, selected: params.get('id') || '',
+  vx: 0, vy: 0, scale: 1,
+  pos: new Map(), edgeEls: new Map(),
+  lastLoad: null, drag: null,
+}
 $('hops').value = String(hops)
 
 function api(path, extra={}) {
@@ -307,6 +360,8 @@ function api(path, extra={}) {
   return fetch(u).then(r => r.json())
 }
 function setStatus(t){ $('status').textContent = t }
+function setLoading(on){ $('loading').hidden = !on }
+function errMsg(e){ return (e && e.message) || String(e) }
 function shapeFor(n){
   if (n.authority === 'canonical') return 'diamond'
   if (n.authority === 'candidate') return 'square'
@@ -336,6 +391,20 @@ function layout(graph){
   const w=960,h=640,cx=480,cy=320
   const hm = hopMap(graph)
   const pos = new Map()
+  if (!graph.center) {
+    // Overview: deterministic concentric rings (≤14 per ring), then fitView scales to fit.
+    const list = graph.nodes
+    const per = 14
+    list.forEach((n,i) => {
+      const ring = Math.floor(i/per)
+      const idx = i % per
+      const count = Math.min(list.length - ring*per, per)
+      const r = 170 + ring*170
+      const a = (Math.PI*2*idx)/Math.max(count,1) - Math.PI/2
+      pos.set(n.id, {x: cx + Math.cos(a)*r, y: cy + Math.sin(a)*r})
+    })
+    return pos
+  }
   const rings = {0:[],1:[],2:[]}
   for (const n of graph.nodes) rings[Math.min(hm.get(n.id) ?? 1, 2)].push(n)
   if (rings[0][0]) pos.set(rings[0][0].id, {x:cx,y:cy})
@@ -352,6 +421,33 @@ function layout(graph){
 function applyView(){
   $('world').setAttribute('transform', 'translate('+state.vx+','+state.vy+') scale('+state.scale+')')
 }
+// Client pixel → SVG viewBox coordinates (keeps pan/zoom correct under any container scale).
+function svgPt(ev){
+  const svg = $('g')
+  const m = svg.getScreenCTM && svg.getScreenCTM()
+  if (!m) return {x: ev.clientX, y: ev.clientY}
+  const p = svg.createSVGPoint()
+  p.x = ev.clientX; p.y = ev.clientY
+  const q = p.matrixTransform(m.inverse())
+  return {x: q.x, y: q.y}
+}
+function fitView(){
+  const pos = state.pos
+  if (!pos.size) { state.vx=0; state.vy=0; state.scale=1; applyView(); return }
+  let minx=Infinity, miny=Infinity, maxx=-Infinity, maxy=-Infinity
+  for (const p of pos.values()) {
+    if (p.x<minx) minx=p.x; if (p.x>maxx) maxx=p.x
+    if (p.y<miny) miny=p.y; if (p.y>maxy) maxy=p.y
+  }
+  const pad = 70
+  const bw = Math.max(maxx-minx, 1), bh = Math.max(maxy-miny, 1)
+  let s = Math.min((960-pad*2)/bw, (640-pad*2)/bh)
+  s = Math.max(0.15, Math.min(s, 2))
+  state.scale = s
+  state.vx = 480 - ((minx+maxx)/2)*s
+  state.vy = 320 - ((miny+maxy)/2)*s
+  applyView()
+}
 function visibleNodes(graph){
   const trustedOnly = $('trusted').checked
   const hideHist = $('hide-hist').checked
@@ -365,9 +461,13 @@ function draw(){
   const graph = state.graph
   const world = $('world')
   world.innerHTML = ''
-  if (!graph || !graph.center) return
+  state.pos = new Map()
+  state.edgeEls = new Map()
+  hideTip()
+  if (!graph || !graph.nodes || !graph.nodes.length) return
   const keep = new Set(visibleNodes(graph).map(n => n.id))
   const pos = layout(graph)
+  state.pos = pos
   for (const e of graph.edges) {
     if (!keep.has(e.fromId) || !keep.has(e.targetId)) continue
     const a = pos.get(e.fromId), b = pos.get(e.targetId)
@@ -381,6 +481,7 @@ function draw(){
     line.setAttribute('marker-end', contra ? 'url(#arrow-contra)' : 'url(#arrow)')
     line.setAttribute('class', 'edge'+(contra?' contradicts':''))
     world.appendChild(line)
+    state.edgeEls.set(e.id, { el: line, from: e.fromId, to: e.targetId })
     const label = document.createElementNS('http://www.w3.org/2000/svg','text')
     label.setAttribute('x', (a.x+b.x)/2); label.setAttribute('y', (a.y+b.y)/2 - 6)
     label.setAttribute('class','edge-label')
@@ -401,7 +502,7 @@ function draw(){
     g.style.cursor = 'pointer'
     const ring = document.createElementNS('http://www.w3.org/2000/svg','circle')
     ring.setAttribute('class','ring')
-    ring.setAttribute('cx', p.x); ring.setAttribute('cy', p.y); ring.setAttribute('r', n.id===graph.center.id?28:22)
+    ring.setAttribute('cx', p.x); ring.setAttribute('cy', p.y); ring.setAttribute('r', n.id===(graph.center&&graph.center.id)?28:22)
     ring.setAttribute('fill','none'); ring.setAttribute('stroke', n.id===state.selected?'#f0c14b':'transparent')
     g.appendChild(ring)
     const shape = shapeFor(n)
@@ -423,34 +524,147 @@ function draw(){
     title.setAttribute('text-anchor','middle'); title.setAttribute('fill','#e8edf5'); title.setAttribute('font-size','11')
     title.textContent = (n.title||n.id).slice(0,28)
     g.appendChild(title)
+    g.addEventListener('mouseenter', (ev) => hoverNode(g, n, ev, true))
+    g.addEventListener('mousemove', (ev) => moveTip(ev))
+    g.addEventListener('mouseleave', () => hoverNode(g, n, null, false))
     g.addEventListener('click', (ev) => { ev.stopPropagation(); select(n.id) })
     world.appendChild(g)
   }
+}
+function hoverNode(g, n, ev, on){
+  g.classList.toggle('hover', on)
+  for (const rec of state.edgeEls.values()) {
+    if (rec.from === n.id || rec.to === n.id) rec.el.classList.toggle('hl', on)
+  }
+  if (on) showTip(n, ev); else hideTip()
+}
+function showTip(n, ev){
+  const tip = $('tip')
+  tip.textContent = (n.title || n.id) + '\\n' +
+    n.kind + ' · ' + n.authority + ' · ' + n.validation + ' · ' + (n.trusted ? 'trusted' : 'inspect-only') +
+    (n.forgotten ? ' · forgotten' : '') + '\\n' + n.id
+  tip.hidden = false
+  moveTip(ev)
+}
+function moveTip(ev){
+  if (!ev) return
+  const tip = $('tip')
+  if (tip.hidden) return
+  const wrap = $('canvas-wrap').getBoundingClientRect()
+  let x = ev.clientX - wrap.left + 14
+  let y = ev.clientY - wrap.top + 14
+  if (x + 290 > wrap.width) x = Math.max(4, wrap.width - 290)
+  if (y + 80 > wrap.height) y = Math.max(4, wrap.height - 80)
+  tip.style.left = x + 'px'
+  tip.style.top = y + 'px'
+}
+function hideTip(){ $('tip').hidden = true }
+function drawMessage(msg){
+  state.graph = null
+  state.pos = new Map()
+  state.edgeEls = new Map()
+  hideTip()
+  $('world').innerHTML = ''
+  state.vx = 0; state.vy = 0; state.scale = 1
+  applyView()
+  const t = document.createElementNS('http://www.w3.org/2000/svg','text')
+  t.setAttribute('x', 480); t.setAttribute('y', 320)
+  t.setAttribute('text-anchor','middle'); t.setAttribute('fill','#8b95a8'); t.setAttribute('font-size','16')
+  t.textContent = msg
+  $('world').appendChild(t)
 }
 function circ(x,y,r){ const e=document.createElementNS('http://www.w3.org/2000/svg','circle'); e.setAttribute('cx',x); e.setAttribute('cy',y); e.setAttribute('r',r); return e }
 function rect(x,y,w,h){ const e=document.createElementNS('http://www.w3.org/2000/svg','rect'); e.setAttribute('x',x); e.setAttribute('y',y); e.setAttribute('width',w); e.setAttribute('height',h); return e }
 function diamond(x,y,s){ const e=document.createElementNS('http://www.w3.org/2000/svg','polygon'); e.setAttribute('points', x+','+(y-s)+' '+(x+s)+','+y+' '+x+','+(y+s)+' '+(x-s)+','+y); return e }
 
+function showError(msg, clear){
+  if (clear !== false) drawMessage('Graph unavailable.')
+  setStatus('Error · ' + msg)
+  const el = $('panel')
+  el.innerHTML = '<h2>Error</h2><p class="warn" id="err-msg"></p><div class="actions" id="err-actions"></div>'
+  el.querySelector('#err-msg').textContent = msg
+  const mk = (label, fn) => {
+    const b = document.createElement('button')
+    b.type = 'button'; b.textContent = label
+    b.addEventListener('click', fn)
+    return b
+  }
+  const box = el.querySelector('#err-actions')
+  if (state.lastLoad) box.appendChild(mk('Retry', () => state.lastLoad()))
+  box.appendChild(mk('Workspace overview', loadOverview))
+}
+function renderOverviewPanel(data, empty){
+  const el = $('panel')
+  if (empty) {
+    el.innerHTML = '<h2>Empty graph</h2><p class="meta">No Veyra records exist for this workspace yet. Nodes and edges appear here once Veyra observes, learns, or remembers something — the graph never uses hardcoded data.</p>'
+    return
+  }
+  el.innerHTML = '<h2>Workspace overview</h2><p class="meta" id="ov-meta"></p><p class="meta">Hover a node for a preview. Click it to open its record and center its Local Graph. Search narrows to a single record.</p>'
+  el.querySelector('#ov-meta').textContent =
+    data.nodes.length + ' records · ' + data.edges.length + ' relationships · ' +
+    data.unresolved.length + ' unresolved · project ' + (data.projectId || '(unknown)')
+}
+async function loadOverview(){
+  state.lastLoad = loadOverview
+  setLoading(true)
+  setStatus('Loading workspace overview…')
+  try {
+    const data = await api('/veyra/graph')
+    if (!data.ok) { showError(data.error || 'Overview failed'); return }
+    state.graph = data
+    state.selected = ''
+    const next = new URL(location.href)
+    next.searchParams.delete('id')
+    history.replaceState(null, '', next)
+    if (!data.nodes.length) {
+      drawMessage('No memories yet in this workspace.')
+      setStatus('Empty · 0 nodes · 0 edges · no records to graph')
+      renderOverviewPanel(data, true)
+      return
+    }
+    setStatus('Overview · ' + data.nodes.length + ' nodes · ' + data.edges.length + ' edges · ' + data.unresolved.length + ' unresolved · ' + data.note)
+    draw()
+    fitView()
+    renderOverviewPanel(data, false)
+  } catch (err) {
+    showError('Overview request failed: ' + errMsg(err))
+  } finally {
+    setLoading(false)
+  }
+}
 async function loadGraph(id){
-  if (!id) { setStatus('Search or open /veyra?id=<record>. Default is Local Graph, 1 hop.'); state.graph=null; draw(); return }
+  if (!id) { loadOverview(); return }
+  state.lastLoad = () => loadGraph(id)
+  setLoading(true)
   setStatus('Loading graph…')
-  const data = await api('/veyra/graph', { id, hops })
-  state.graph = data
-  state.selected = data.center?.id || id
-  if (!data.ok) { setStatus(data.error || 'Not found'); draw(); renderPanel({ok:false,error:data.error}); return }
-  setStatus('Local Graph · hops '+data.hops+' · '+data.nodes.length+' nodes · '+data.edges.length+' edges · '+data.note)
-  const next = new URL(location.href)
-  next.searchParams.set('id', state.selected)
-  next.searchParams.set('hops', String(hops))
-  history.replaceState(null, '', next)
-  draw()
-  select(state.selected, false)
+  try {
+    const data = await api('/veyra/graph', { id, hops })
+    if (!data.ok) { showError(data.error || 'Not found'); return }
+    state.graph = data
+    state.selected = data.center?.id || id
+    setStatus('Local Graph · hops '+data.hops+' · '+data.nodes.length+' nodes · '+data.edges.length+' edges · '+data.note)
+    const next = new URL(location.href)
+    next.searchParams.set('id', state.selected)
+    next.searchParams.set('hops', String(hops))
+    history.replaceState(null, '', next)
+    draw()
+    fitView()
+    select(state.selected, false)
+  } catch (err) {
+    showError('Graph request failed: ' + errMsg(err))
+  } finally {
+    setLoading(false)
+  }
 }
 async function select(id, reload=true){
   state.selected = id
   draw()
-  const rec = await api('/veyra/record', { id })
-  renderPanel(rec)
+  try {
+    const rec = await api('/veyra/record', { id })
+    renderPanel(rec)
+  } catch (err) {
+    renderPanel({ ok: false, error: 'Record request failed: ' + errMsg(err) })
+  }
   if (reload && state.graph?.center?.id !== id) loadGraph(id)
 }
 function esc(s){ return String(s??'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])) }
@@ -477,35 +691,58 @@ $('search-form').addEventListener('submit', async (ev) => {
   const q = $('q').value.trim()
   if (!q) return
   setStatus('Searching…')
-  const data = await api('/veyra/search', { q })
-  const el = $('panel')
-  if (!data.hits.length) { el.innerHTML = '<p class="meta">No matches.</p>'; setStatus('No matches'); return }
-  el.innerHTML = '<h2>Search</h2><ul id="hits"></ul>'
-  for (const h of data.hits) {
-    const b = document.createElement('button')
-    b.type='button'
-    b.textContent = (h.trusted?'trusted':'inspect-only')+' · '+h.authority+'/'+h.validation+' · '+h.title
-    b.addEventListener('click', () => loadGraph(h.id))
-    $('hits').appendChild(b)
+  setLoading(true)
+  try {
+    const data = await api('/veyra/search', { q })
+    const el = $('panel')
+    if (!data.hits.length) { el.innerHTML = '<p class="meta">No matches.</p>'; setStatus('No matches'); return }
+    el.innerHTML = '<h2>Search</h2><ul id="hits"></ul>'
+    for (const h of data.hits) {
+      const b = document.createElement('button')
+      b.type='button'
+      b.textContent = (h.trusted?'trusted':'inspect-only')+' · '+h.authority+'/'+h.validation+' · '+h.title
+      b.addEventListener('click', () => loadGraph(h.id))
+      $('hits').appendChild(b)
+    }
+    setStatus(data.hits.length+' hit(s). Pick one for Local Graph.')
+  } catch (err) {
+    showError('Search request failed: ' + errMsg(err), false)
+  } finally {
+    setLoading(false)
   }
-  setStatus(data.hits.length+' hit(s). Pick one for Local Graph.')
 })
 $('hops').addEventListener('change', () => { hops = Number($('hops').value)||1; if (state.selected) loadGraph(state.selected) })
 $('trusted').addEventListener('change', () => { if (state.graph) draw() })
 $('hide-hist').addEventListener('change', () => { if (state.graph) draw() })
-$('fit').addEventListener('click', () => { state.vx=0; state.vy=0; state.scale=1; applyView() })
+$('fit').addEventListener('click', fitView)
+$('overview').addEventListener('click', loadOverview)
 const svg = $('g')
 svg.addEventListener('wheel', (ev) => {
   ev.preventDefault()
+  const loc = svgPt(ev)
   const f = ev.deltaY < 0 ? 1.1 : 0.9
-  state.scale = Math.max(0.3, Math.min(3, state.scale * f))
+  const wx = (loc.x - state.vx) / state.scale
+  const wy = (loc.y - state.vy) / state.scale
+  state.scale = Math.max(0.15, Math.min(4, state.scale * f))
+  state.vx = loc.x - wx * state.scale
+  state.vy = loc.y - wy * state.scale
   applyView()
 }, {passive:false})
-svg.addEventListener('pointerdown', (ev) => { if (ev.target === svg) state.drag = {x:ev.clientX-state.vx, y:ev.clientY-state.vy} })
-window.addEventListener('pointermove', (ev) => { if (!state.drag) return; state.vx = ev.clientX-state.drag.x; state.vy = ev.clientY-state.drag.y; applyView() })
+svg.addEventListener('pointerdown', (ev) => {
+  if (ev.target !== svg) return
+  const p = svgPt(ev)
+  state.drag = { x: p.x, y: p.y, vx: state.vx, vy: state.vy }
+})
+window.addEventListener('pointermove', (ev) => {
+  if (!state.drag) return
+  const p = svgPt(ev)
+  state.vx = state.drag.vx + (p.x - state.drag.x)
+  state.vy = state.drag.vy + (p.y - state.drag.y)
+  applyView()
+})
 window.addEventListener('pointerup', () => { state.drag = null })
 if (state.selected) loadGraph(state.selected)
-else setStatus('Search or open /veyra?id=<record>. Default is Local Graph, 1 hop.')
+else loadOverview()
 </script>
 </body>
 </html>`

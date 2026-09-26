@@ -52,7 +52,7 @@ Veyra unifies Engineering Memory (`kind: 'memory'`) and Knowledge Base / RAG doc
 | `/veyra observatory relationships [id]` | Directed graph projection of knowledge links |
 | `/veyra observatory local <id>` | 1-hop Local Graph around a record (default graph view) |
 | `/veyra observatory graph [id]` | Local Graph when an id is given; otherwise the project edge list |
-| Network Graph WebUI | Host page at `/veyra?id=<record>` (Local Graph, 1 hop default). Search → record → graph |
+| Network Graph WebUI | Host page at `/veyra` — bounded workspace overview of real records; `/veyra?id=<record>` centers the Local Graph (1 hop). Hover → click → search |
 | `/veyra observatory contradictions` | Active conflicting claims shown side-by-side |
 | `/veyra recall <query>` | Hybrid search project (+ reusable) memory |
 | `/veyra recent` | Last 8 records, including candidates |

@@ -13,6 +13,7 @@ import { projectIdFor } from '../src/ids.mjs'
 import { GRAPH_LIMITS } from '../src/graph.mjs'
 import {
   buildGraphPayload,
+  buildOverviewPayload,
   classifyNode,
   clampUiHops,
   graphPage,
@@ -142,6 +143,86 @@ test('graph payload is localGraph plus presentation marks; isolation stays fail-
   rmSync(dir, { recursive: true, force: true })
 })
 
+test('overview payload is the bounded projection with presentation marks', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'veyra-ovp-'))
+  const cwd = join(dir, 'ws')
+  const projectId = projectIdFor(cwd)
+  const store = openProjectStore(dir, projectId)
+  const { root, child, candidate, contra } = seed(store, projectId)
+
+  const payload = buildOverviewPayload({ projectStore: store, cwd, projectId })
+  assert.equal(payload.ok, true)
+  assert.equal(payload.view, 'overview')
+  assert.equal(payload.center, null)
+  assert.equal(payload.empty, false)
+  assert.equal(payload.projectId, projectId)
+  assert.ok(payload.nodes.length >= 4)
+  assert.ok(payload.nodes.every((n) => n.mark && n.mark.selected === false))
+  assert.equal(payload.nodes.find((n) => n.id === candidate.id).mark.inspectOnly, true)
+  assert.equal(payload.nodes.find((n) => n.id === child.id).mark.trusted, true)
+  assert.ok(payload.edges.some((e) => e.type === RELATIONS.CONTRADICTS && e.fromId === contra.id))
+  assert.ok(payload.nodes.some((n) => n.id === root.id && n.mark.historical === false))
+
+  const fresh = mkdtempSync(join(tmpdir(), 'veyra-ovp-empty-'))
+  const freshStore = openProjectStore(fresh, projectIdFor(join(fresh, 'ws')))
+  const empty = buildOverviewPayload({ projectStore: freshStore, cwd: join(fresh, 'ws'), projectId: projectIdFor(join(fresh, 'ws')) })
+  assert.equal(empty.ok, true)
+  assert.equal(empty.empty, true)
+  assert.deepEqual(empty.nodes, [])
+  assert.deepEqual(empty.edges, [])
+
+  closeAllStores()
+  rmSync(dir, { recursive: true, force: true })
+  rmSync(fresh, { recursive: true, force: true })
+})
+
+test('GET /veyra/graph without id serves the overview; empty workspace stays honest', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'veyra-http-ov-'))
+  const cwd = join(dir, 'ws')
+  const projectId = projectIdFor(cwd)
+  const store = openProjectStore(dir, projectId)
+  const { root, child, contra } = seed(store, projectId)
+  const runtime = { veyraHome: dir, fallbackCwd: cwd }
+
+  const ov = await (async () => {
+    const { req, res, done } = mockReqRes(`/veyra/graph?cwd=${encodeURIComponent(cwd)}`)
+    handleVeyraHttp(runtime, req, res)
+    return done
+  })()
+  const body = JSON.parse(ov.body)
+  assert.equal(ov.status, 200)
+  assert.equal(body.view, 'overview')
+  assert.equal(body.center, null)
+  assert.ok(body.nodes.some((n) => n.id === root.id))
+  assert.ok(body.nodes.some((n) => n.id === child.id))
+  assert.ok(body.edges.some((e) => e.type === RELATIONS.CONTRADICTS && e.fromId === contra.id))
+  assert.ok(body.nodes.every((n) => n.mark))
+
+  const missing = await (async () => {
+    const { req, res, done } = mockReqRes(`/veyra/graph?id=vey_nope&cwd=${encodeURIComponent(cwd)}`)
+    handleVeyraHttp(runtime, req, res)
+    return done
+  })()
+  assert.equal(missing.status, 404)
+  assert.equal(JSON.parse(missing.body).ok, false)
+
+  const freshCwd = join(dir, 'fresh-ws')
+  const emptyRes = await (async () => {
+    const { req, res, done } = mockReqRes(`/veyra/graph?cwd=${encodeURIComponent(freshCwd)}`)
+    handleVeyraHttp(runtime, req, res)
+    return done
+  })()
+  const emptyBody = JSON.parse(emptyRes.body)
+  assert.equal(emptyRes.status, 200)
+  assert.equal(emptyBody.ok, true)
+  assert.equal(emptyBody.empty, true)
+  assert.equal(emptyBody.nodes.length, 0)
+  assert.equal(emptyBody.edges.length, 0)
+
+  closeAllStores()
+  rmSync(dir, { recursive: true, force: true })
+})
+
 test('HTTP GET /veyra serves page; /graph /record /search stay read-only and isolated', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'veyra-http-'))
   const cwd = join(dir, 'ws')
@@ -160,6 +241,14 @@ test('HTTP GET /veyra serves page; /graph /record /search stay read-only and iso
   assert.match(page.body, /Veyra Network Graph/)
   assert.match(page.body, /Visible ≠ trusted/)
   assert.match(graphPage(), /contradicts/)
+  // page ships the interaction + state surface, not a static demo
+  assert.match(page.body, /id="loading"/)
+  assert.match(page.body, /id="tip"/)
+  assert.match(page.body, /id="overview"/)
+  assert.match(page.body, /function loadOverview/)
+  assert.match(page.body, /function hoverNode/)
+  assert.match(page.body, /function fitView/)
+  assert.match(page.body, /Retry/)
 
   const graph = await (async () => {
     const { req, res, done } = mockReqRes(`/veyra/graph?id=${root.id}&cwd=${encodeURIComponent(cwd)}`)

@@ -33,7 +33,7 @@ function helpText() {
     '       observatory relationships [id]      directed edges (optional filter)',
     '       observatory local <id>              1-hop neighborhood around a record',
     '       observatory graph [id]              local graph if id given, else all edges',
-    '       Network Graph WebUI                 /veyra?id=<record>  (host HTTP, 1-hop default)',
+    '       Network Graph WebUI                 /veyra (workspace overview) · /veyra?id=<record> (local graph)',
     '       observatory contradictions          conflicts and opposing claims',
     '/veyra recall [q]                          hybrid search project (+ reusable) memory',
     '/veyra recent                              last 8 memories (including candidates)',

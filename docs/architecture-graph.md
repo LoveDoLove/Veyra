@@ -70,7 +70,7 @@ Canonical SQLite
 | **Adopt** | Both sides of a contradiction stay visible | Already implemented; keep as a hard extra, not a soft neighbor |
 | **Adapt** | Supermemory version chain | Use existing `status` + `supersedes`. No `parentMemoryId` column |
 | **Adapt** | OpenViking layers | Existing `kind` + `authority` already separate observation / derived / canonical |
-| **Adapt** | Human graph | Host-native `/veyra` page over `localGraph` JSON. Vanilla SVG. No D3, no React, no new web app |
+| **Adapt** | Human graph | Host-native `/veyra` page over `localGraph` JSON plus a bounded `overviewGraph` landing view. Vanilla SVG. No D3, no React, no new web app |
 | **Adapt** | Relationship-aware retrieval | After hybrid top-K, 1-hop expand through existing relations, then `isRecallEligible` |
 | **Reject** | Neo4j / external graph DB | No concrete gap. Work would stop first if one appeared |
 | **Reject** | New node types (file, commit, repo) | Not records today. Evidence paths stay metadata |
@@ -84,6 +84,14 @@ Canonical SQLite
 | **Defer** | Edge-level validation / provenance | Relations are `{ type, targetId }` only. Inherit from endpoint records |
 | **Defer** | Impact experiment (GOAL §22) | Requires live paired tasks after this projection ships |
 | **Defer** | New MCP / extra tools | `veyra_inspect` already returns relations |
+
+Update (Network Graph milestone): the WebUI landing page (no `id`) serves a
+**bounded overview projection** — `overviewGraph()` in `src/graph.mjs`, the same
+node/edge contract, the same `GRAPH_LIMITS` caps (40 nodes / 80 edges) and the
+same isolation rules — so the page renders real workspace nodes without a known
+id, or an honest empty state. It is discovery only: not a traversal or query
+path, Local Graph stays the default graph view for any selected record, and the
+rejection above still holds for an *unbounded* default full-project graph.
 
 ---
 
@@ -209,14 +217,20 @@ ship a second app, a `dsh.client` React bundle, or D3.
 
 | Route | Role |
 | --- | --- |
-| `GET /veyra` | vanilla SVG Local Graph page |
+| `GET /veyra` | vanilla SVG Network Graph page (overview → local drill-down) |
 | `GET /veyra/graph?id=&hops=&trustedOnly=&cwd=` | `localGraph` JSON + presentation marks |
+| `GET /veyra/graph?cwd=` (no `id`) | bounded `overviewGraph` JSON for the landing view |
 | `GET /veyra/record?id=&cwd=` | compact record JSON (inspect, not mutate) |
 | `GET /veyra/search?q=&cwd=` | hybrid search hits → pick a center |
 
-Default graph = selected record + 1 hop. `hops=2` is user-controlled and
-clamped to `GRAPH_LIMITS.maxHops`. `cwd` selects the project store the same
-way `/veyra` slash commands do. Missing / other-project ids fail closed.
+Landing (no `id`) = bounded workspace overview. Default graph for a selected
+record = selected record + 1 hop. `hops=2` is user-controlled and clamped to
+`GRAPH_LIMITS.maxHops`. `cwd` selects the project store the same way `/veyra`
+slash commands do. Missing / other-project ids fail closed.
+
+The page ships the interaction surface: zoom (wheel, cursor-anchored), pan
+(pointer drag), node hover preview, node selection with drill-down, plus
+loading / empty / error states with retry. No graph library — vanilla SVG.
 
 Presentation marks (`selected`, `trusted`, `inspectOnly`, `historical`) are
 computed from existing node fields. Filtering is client-side and does not
