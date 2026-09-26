@@ -69,6 +69,10 @@ export function tokenOverlap(a, b) {
 /**
  * Explicit negation in the raw text. Stopwords strip "not"/"no", so
  * polarity must be read from the original string (Mnemon `hasNegation`).
+ *
+ * Polarity is NOT replacement. "never use X" is a polarity claim about X;
+ * only a directional phrase ("switched from X to Y") can claim that one
+ * value replaced another.
  */
 const NEGATION_MARKERS = /(^|[^a-z0-9_])(not|no|never|cannot|without|none)([^a-z0-9_]|$)|n['’]t([^a-z0-9_]|$)/i
 
@@ -77,9 +81,11 @@ export function hasNegation(text) {
 }
 
 const REPLACEMENT_PHRASES = [
-  'no longer', "don't", "doesn't", 'never', 'switched from',
-  'instead of', 'rather than', 'replaced', 'deprecated',
-  '不再', '放弃', '替换', '取消',
+  // Directional replacement only. Plain negation (not / no / never) is polarity
+  // evidence and must never, on its own, prove that a claim replaces another.
+  'switched from', 'moved from', 'replaced', 'instead of', 'rather than',
+  'no longer', 'in favor of', 'deprecated',
+  '不再', '取代', '替换为', '改为', '切换到', '放弃',
 ]
 
 export function hasReplacementLanguage(text) {

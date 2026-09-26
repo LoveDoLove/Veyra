@@ -8,20 +8,22 @@
  *
  * Automatic evolution may:
  *   - link records (extends / updates / contradicts / supersedes)
- *   - mark an older derived record superseded when a newer derived
- *     claim updates it
+ *   - mark an older derived record superseded ONLY on independent evidence:
+ *     a directional replacement claim, absent from the older claim, about a
+ *     subject both records share
  *   - mark a record stale when it has sat unused past a threshold
  *
  * Automatic evolution may never:
  *   - assign canonical authority
  *   - delete or merge two records into one
  *   - hide one side of a contradiction
+ *   - supersede on similarity alone (Similarity ≠ Authority)
  */
 
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { AUTHORITIES, RELATIONS, STATUSES, VALIDATIONS } from './types.mjs'
-import { DIFF, diffMemory, strongestMatch } from './diff.mjs'
+import { DIFF, diffMemory, replacementEvidence, sharesSubject, strongestMatch } from './diff.mjs'
 
 const STALE_AFTER_MS = 120 * 86_400_000
 
@@ -40,6 +42,97 @@ function uniqueRelations(list) {
 
 function withRelation(record, type, targetId) {
   return uniqueRelations([...(record.relations || []), { type, targetId }])
+}
+
+/**
+ * Supersede eligibility — independent of how a pair was classified.
+ *
+ * A lifecycle change requires ALL of:
+ *   - the incoming claim states a directional replacement the older one does not
+ *   - both records are about a subject they demonstrably share
+ *   - the existing authority/lifecycle guards allow it
+ *
+ * CONFLICT classification is never itself evidence: a plain polarity flip
+ * reaches `false` here and therefore never supersedes.
+ */
+function supersedeEligible(incoming, neighbor) {
+  if (!incoming || !neighbor) return false
+  if (neighbor.authority === AUTHORITIES.CANONICAL) return false
+  if (neighbor.status !== STATUSES.CURRENT) return false
+  if (incoming.authority === AUTHORITIES.CANDIDATE) return false
+  if (!incoming.id || incoming.id === neighbor.id) return false
+  return replacementEvidence(incoming) && !replacementEvidence(neighbor) && sharesSubject(incoming, neighbor)
+}
+
+/**
+ * Link a conflicting neighbor back to the incoming record, and — only when the
+ * independent gate agrees — retire it in the same single write, so the
+ * contradicts edge survives alongside the supersede. Best-effort.
+ *
+ * @returns {boolean} whether a lifecycle change was actually applied
+ */
+function linkConflict(store, incoming, neighbor, relations) {
+  if (store && incoming.id && neighbor?.authority !== AUTHORITIES.CANONICAL) {
+    const superseded = supersedeEligible(incoming, neighbor)
+    try {
+      store.put({
+        ...neighbor,
+        status: superseded ? STATUSES.SUPERSEDED : neighbor.status,
+        // withRelation returns the whole deduped list — compose first, then
+        // dedupe once. Nesting it inside uniqueRelations() would flatten to [].
+        relations: withRelation(
+          {
+            relations: [
+              ...(neighbor.relations || []),
+              ...(superseded ? [{ type: RELATIONS.SUPERSEDES, targetId: incoming.id }] : []),
+            ],
+          },
+          RELATIONS.CONTRADICTS,
+          incoming.id,
+        ),
+      })
+      if (superseded) {
+        relations.push({ type: RELATIONS.SUPERSEDES, targetId: neighbor.id })
+        return true
+      }
+    } catch {
+      // linking is best-effort
+    }
+  }
+  return false
+}
+
+/**
+ * Link an updated neighbor, retiring it only through the same independent gate.
+ *
+ * @returns {boolean} whether a lifecycle change was actually applied
+ */
+function linkUpdate(store, incoming, neighbor, relations) {
+  const superseded = store && supersedeEligible(incoming, neighbor)
+  if (superseded) {
+    try {
+      store.put({
+        ...neighbor,
+        status: STATUSES.SUPERSEDED,
+        relations: withRelation(
+          {
+            relations: [
+              ...(neighbor.relations || []),
+              { type: RELATIONS.SUPERSEDES, targetId: incoming.id },
+            ],
+          },
+          RELATIONS.UPDATES,
+          incoming.id,
+        ),
+      })
+      relations.push({ type: RELATIONS.SUPERSEDES, targetId: neighbor.id })
+      return true
+    } catch {
+      // supersede is best-effort
+      return false
+    }
+  }
+  return false
 }
 
 /**
@@ -70,21 +163,18 @@ export function evolveAgainst(store, incoming, existing = []) {
 
   const conflict = strongestMatch(diff, DIFF.CONFLICT)
   if (conflict) {
+    const neighbor = conflict.record
     relations.push({ type: RELATIONS.CONTRADICTS, targetId: conflict.id })
-    if (store && incoming.id && conflict.record?.authority !== AUTHORITIES.CANONICAL) {
-      try {
-        store.put({
-          ...conflict.record,
-          relations: withRelation(conflict.record, RELATIONS.CONTRADICTS, incoming.id),
-        })
-      } catch {
-        // linking is best-effort
-      }
-    }
+
+    // Both records are always kept and the contradicts edge is always linked
+    // in both directions — including when a lifecycle change also happens, so
+    // a replacement never hides that the two claims disagree.
+    const superseded = linkConflict(store, incoming, neighbor, relations)
+
     return {
       record: { ...incoming, relations: uniqueRelations(relations) },
-      action: 'conflict',
-      neighbor: conflict.record,
+      action: superseded ? 'supersede' : 'conflict',
+      neighbor,
       diff,
     }
   }
@@ -93,30 +183,17 @@ export function evolveAgainst(store, incoming, existing = []) {
   if (update) {
     relations.push({ type: RELATIONS.UPDATES, targetId: update.id })
     const neighbor = update.record
-    const canSupersede = neighbor
-      && neighbor.authority !== AUTHORITIES.CANONICAL
-      && neighbor.status === STATUSES.CURRENT
-      && incoming.authority !== AUTHORITIES.CANDIDATE
-    if (store && canSupersede && incoming.id && incoming.id !== neighbor.id) {
-      try {
-        store.put({
-          ...neighbor,
-          status: STATUSES.SUPERSEDED,
-          relations: uniqueRelations([
-            ...(neighbor.relations || []),
-            { type: RELATIONS.SUPERSEDES, targetId: incoming.id },
-          ]),
-        })
-        relations.push({ type: RELATIONS.SUPERSEDES, targetId: neighbor.id })
-      } catch {
-        // supersede is best-effort
-      }
-    } else if (neighbor) {
+
+    // UPDATE is a relationship classification, not a lifecycle verdict.
+    // Similarity can link two records; it can never retire one.
+    const superseded = linkUpdate(store, incoming, neighbor, relations)
+
+    if (!superseded && neighbor) {
       relations.push({ type: RELATIONS.EXTENDS, targetId: neighbor.id })
     }
     return {
       record: { ...incoming, relations: uniqueRelations(relations) },
-      action: canSupersede ? 'supersede' : 'update',
+      action: superseded ? 'supersede' : 'update',
       neighbor,
       diff,
     }
