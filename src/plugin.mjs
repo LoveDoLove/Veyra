@@ -9,7 +9,7 @@
  *   - ctx.tools             — remember / recall / inspect / forget / promote
  *   - ctx.commands          — /veyra
  *   - ctx.webServer         — Network Graph WebUI at /veyra (when the host has HTTP)
- *   - ctx.skills            — bundled `veyra` skill (skills/veyra/SKILL.md)
+ *   - ctx.skills            — bundled skills (skills/veyra, skills/legacy-onboarding)
  *
  * Memory lives under $DSH_HOME/veyra/, never inside the user's repository.
  */

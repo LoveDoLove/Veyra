@@ -1,8 +1,9 @@
 /**
- * Veyra — bundled DSH skill.
+ * Veyra — bundled DSH skills.
  *
- * Ships skills/veyra/SKILL.md and registers it as a native bundled provider
- * so the model-facing `skill` tool can load it. Matches the PMA pattern:
+ * Ships skills/<name>/SKILL.md for each entry in BUNDLED_SKILL_DEFINITIONS
+ * and registers them as a native bundled provider so the model-facing
+ * `skill` tool can load them. Matches the PMA pattern:
  * ctx.skills.registerProvider at rank 600, source "bundled".
  *
  * Also exposes registerRuntimeSkill() for hosts that only have
@@ -38,6 +39,23 @@ export const BUNDLED_SKILL_DEFINITIONS = Object.freeze([
     whenToUse:
       'Earlier-session context, remember/forget/promote requests, durable engineering '
       + 'decisions, or when automatic recall is missing or too thin.',
+  },
+  {
+    name: 'legacy-onboarding',
+    description:
+      'Onboard an unfamiliar, legacy, or not-yet-baselined project into Veyra. Assesses '
+      + 'the existing memory baseline, discovers the repository, chooses a progressive '
+      + 'investigation depth, extracts only durable engineering knowledge grounded in '
+      + 'verifiable evidence, and builds a Project Memory Baseline future agents can '
+      + 'recall. Load it the first time you work in an old or foreign codebase, when '
+      + 'asked "what is this project / how does this work" with no baseline, before '
+      + 'high-risk legacy changes (auth, data, infrastructure, migrations), or when '
+      + 'existing Veyra memory looks stale. Skip for trivial tasks in projects that '
+      + 'already have a good baseline.',
+    whenToUse:
+      'First entry into a new, legacy, or unfamiliar project; a missing or stale Veyra '
+      + 'baseline; high-risk changes to old systems; or an explicit request to onboard '
+      + 'an unfamiliar repository.',
   },
 ])
 

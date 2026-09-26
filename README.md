@@ -15,7 +15,7 @@ Restart `dsh web`. A good boot looks like this:
 ```
 [veyra] plugin loaded (home=...)
 [veyra] registered /veyra
-[veyra] registered skill: veyra
+[veyra] registered skill: veyra, legacy-onboarding
 [veyra] registered tools: veyra_remember, veyra_recall, veyra_inspect, veyra_forget, veyra_promote
 ```
 
@@ -60,7 +60,7 @@ Veyra unifies Engineering Memory (`kind: 'memory'`) and Knowledge Base / RAG doc
 | `/veyra forget <id>` | Soft-forget (leaves recall, stays inspectable) |
 | `/veyra promote <id> canonical` | Mark as project truth — **only this is canonical** |
 
-Tools with the same names (`veyra_remember`, `veyra_recall`, `veyra_inspect`, `veyra_forget`, `veyra_promote`) are available to the agent. Load the bundled `veyra` skill when you need full guidance.
+Tools with the same names (`veyra_remember`, `veyra_recall`, `veyra_inspect`, `veyra_forget`, `veyra_promote`) are available to the agent. Load the bundled `veyra` skill when you need full guidance. The bundled `legacy-onboarding` skill covers the first entry into an unfamiliar, legacy, or not-yet-baselined project: baseline assessment, progressive investigation depth, evidence-first extraction, and building a Project Memory Baseline.
 
 ## Memory rules
 
