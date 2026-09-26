@@ -7,6 +7,10 @@ on:
 
 jobs:
   publish:
+    # NOTE: contains() matches the skip-publish marker anywhere in the WHOLE
+    # commit message (title + body) — including prose that merely quotes it,
+    # which silently skips the run (seen in practice: a commit body that
+    # documented the marker). Keep the literal marker out of commit bodies.
     if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip publish]')
     runs-on: ubuntu-latest
     permissions:
