@@ -68,9 +68,18 @@ export function strengthenMemory(neighbor, candidate, { workspace = null } = {})
   const mergedEvidence = mergeEvidence(neighbor.evidence, candidate.evidence)
   const obsCount = (Number(neighbor.source?.observations) || 1) + 1
 
+  // Test evidence is the CLOSED vocabulary emitted by `understand.mjs`:
+  //   test-passed | test-failed | tests-touched
+  // Matching the whole word "test" (or "spec") here is a false-positive
+  // generator: an unanchored `test|spec` also matches ordinary prose such as
+  // "inspector", "protest" and "aspect", which would let a claim that never ran
+  // a test reach `verified` / `promotion-candidate` — the exact state a human
+  // trusts when deciding a canonical promotion. Anchoring to the enum removes
+  // the forgery without narrowing any genuine signal.
   const hasTestEvidence = mergedEvidence.some((e) => {
     const text = typeof e === 'string' ? e : `${e?.path || ''} ${e?.note || ''}`
-    return /test-passed|tests-touched|test|spec/i.test(text) && !/test-failed/i.test(text)
+    return /(^|[^a-z0-9-])(test-passed|tests-touched)([^a-z0-9-]|$)/i.test(text)
+      && !/(^|[^a-z0-9-])test-failed([^a-z0-9-]|$)/i.test(text)
   })
 
   // Validation tier progression:
@@ -261,10 +270,11 @@ export function promote(store, id, { to = AUTHORITIES.DERIVED, explicit = false 
     authority: to,
     validation: nextValidation,
     kind: existing.kind === KINDS.OBSERVATION ? KINDS.MEMORY : existing.kind,
-    relations: [
-      ...(existing.relations || []),
-      { type: RELATIONS.UPDATES, targetId: existing.id },
-    ],
+    // Promotion is a change of standing, not a relationship. It must not
+    // invent an `updates` edge — least of all one pointing at the record
+    // itself, which is not a fact about any other memory. Existing relations
+    // are carried over untouched.
+    relations: existing.relations || [],
   }, { explicitCanonical: explicit && to === AUTHORITIES.CANONICAL })
   return { ok: true, record: written.record }
 }
