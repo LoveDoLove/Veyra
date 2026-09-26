@@ -7,7 +7,30 @@ versions follow [Semantic Versioning](https://semver.org/) on a pre-1.0 `0.1.x` 
 > **Note on version ranges.** Every push to `main` publishes to npm and patch-bumps
 > automatically, so a change sometimes ships as the version that follows the one in
 > `package.json` at commit time. Entries below are therefore grouped by the version
-> range in which the change actually shipped, not by commit order.
+> range in which the change actually shipped, not by commit order. Each published
+> version also gets a matching GitHub Release (`vX.Y.Z`) created by the publish
+> workflow.
+
+## [0.1.21] - 2026-09-26
+
+Launch-readiness pass: docs, examples and metadata only — no core changes.
+
+### Added
+
+- `CHANGELOG.md`, grouped by the version range each change shipped in.
+- `examples/`: the complete `cordis.patch.yml`, plus `make-demo-output.mjs`, which regenerates `command-output.md` (status, Observatory, recall) from the real `/veyra` command handler against a throwaway demo store.
+
+### Changed
+
+- README rewritten for first-time visitors around the positioning line **Veyra — Engineering Intelligence for Coding Agents**: Install (CLI + GUI + boot-line verification), a 7-step Quick Start, Features/Commands/Skills tables re-verified against the code, an Architecture intro with an aligned diagram, Troubleshooting, Examples and a Compatibility table (verified on DSH `0.1.7-rc.2`). Repo-file links are absolute GitHub URLs so they also resolve on npmjs.
+- `/veyra` help banner now reports the installed package version via `packageVersion()` instead of a hardcoded `v0.1.14`, and uses the positioning line.
+- `package.json`: description aligned with the positioning, extra keywords, `CHANGELOG.md` added to `files`, `engines.node` bounded to `<25.0.0` to match `dsh.compatibility.nodeVersions`, `dshReleases` += live-verified `0.1.7-rc.2`.
+
+### Fixed
+
+- `skills/veyra/SKILL.md`: clones and worktrees do **not** share project memory — `projectIdFor` hashes `gitRoot|remote`, so separate checkouts stay isolated (probe-verified).
+- `docs/architecture-graph.md`: wrong checkpoint date, identity row corrected to `sha256(gitRoot|remote)`, stale "no `dsh.client` bundle" statement removed (`client.js` serves Settings and the sidebar entry).
+- `publish-npm.yml`: stale "this repository is private" provenance comment.
 
 ## [0.1.20] - 2026-09-26
 

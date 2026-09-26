@@ -60,3 +60,34 @@ jobs:
           git add package.json
           git commit -m "chore: bump version to ${{ steps.version.outputs.after }} [skip publish]"
           git push
+
+      # One GitHub Release per published version, tag v<version> on the just-
+      # pushed commit. Notes come from CHANGELOG.md when that version has a
+      # `## [X.Y.Z]` section; otherwise gh generates them from the commits
+      # since the previous release. Tag creation does not re-trigger this
+      # workflow (it only listens to pushes on main), and reruns are idempotent.
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VEYRA_VERSION: ${{ steps.version.outputs.after }}
+        run: |
+          set -euo pipefail
+          tag="v${VEYRA_VERSION}"
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            echo "Release ${tag} already exists; skipping."
+            exit 0
+          fi
+          notes="$(mktemp)"
+          awk -v v="${VEYRA_VERSION}" '
+            BEGIN { esc = v; gsub(/\./, "\\.", esc) }
+            $0 ~ "^## \\[" esc "\\]" { found = 1; next }
+            /^## / && found { exit }
+            found { print }
+          ' CHANGELOG.md > "${notes}" || true
+          if [ -s "${notes}" ]; then
+            gh release create "${tag}" --title "${tag}" --notes-file "${notes}"
+          else
+            rm -f "${notes}"
+            gh release create "${tag}" --title "${tag}" --generate-notes
+          fi
+          echo "Created GitHub release ${tag}"

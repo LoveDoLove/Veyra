@@ -239,6 +239,7 @@ npm run pack:check     # npm pack --dry-run — what would be published
 
 CI runs both on Node 22 and 24 for every push and pull request ([.github/workflows/ci.yml](https://github.com/LoveDoLove/Veyra/blob/main/.github/workflows/ci.yml)).
 Publishing is automatic: every push to `main` publishes to npm (patch-bumped first if the version already exists) unless the commit message contains `[skip publish]`.
+Every published version also gets a matching **GitHub Release** tagged `vX.Y.Z`: release notes come from that version's `## [X.Y.Z]` section in [CHANGELOG](https://github.com/LoveDoLove/Veyra/blob/main/CHANGELOG.md) when present, otherwise `gh` generates them from the commits since the previous release. Re-running the workflow is idempotent — an existing release is never duplicated.
 
 ## Compatibility
 
