@@ -357,13 +357,22 @@ export class MemoryStore {
   }
 
   /**
-   * FTS5 search. Returns matching rows with a `rank` (lower is better).
+   * FTS5 search. Returns matching rows with a `rank` (lower is better) and,
+   * for rows that came from FTS, their zero-based `ftsPosition` in that
+   * ordered result set.
+   *
+   * `ftsPosition` is the position SQLite's own `ORDER BY f.rank` produced, so
+   * it is independent of the raw bm25 magnitude, which is corpus-dependent and
+   * collapses toward zero for common terms in a small store. Rows from the
+   * recency fallback have no FTS position and must not be given one.
+   *
    * Empty / unsafe queries fall back to a recency listing.
    */
   search(query, { limit = 20, includeForgotten = false, recallOnly = false } = {}) {
     const safeLimit = Math.max(1, Math.min(Number(limit) || 20, 100))
     const ftsQuery = toFtsQuery(query)
     let rows
+    let fromFts = false
     if (ftsQuery) {
       const forgottenClause = includeForgotten ? '' : 'AND m.forgotten = 0'
       const sql = `
@@ -376,6 +385,7 @@ export class MemoryStore {
       `
       try {
         rows = this.db.prepare(sql).all(ftsQuery, safeLimit)
+        fromFts = rows.length > 0
       } catch {
         rows = []
       }
@@ -387,8 +397,13 @@ export class MemoryStore {
         `SELECT * FROM memory ${includeForgotten ? '' : 'WHERE forgotten = 0 '}ORDER BY updated_at DESC LIMIT ?`,
       ).all(safeLimit)
     }
-    let records = rows.map(rowToRecord)
-    if (recallOnly) records = records.filter(isRecallEligible)
+    // Position is assigned from the ordered result set BEFORE recallOnly
+    // filtering, so it reflects where FTS actually placed the row.
+    const records = rows.map((row, i) => ({
+      ...rowToRecord(row),
+      ftsPosition: fromFts ? i : undefined,
+    }))
+    if (recallOnly) return records.filter(isRecallEligible)
     return records
   }
 }

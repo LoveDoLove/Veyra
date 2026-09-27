@@ -98,10 +98,19 @@ export function relevanceFromRank(record, index, hasQuery = false) {
   if (typeof record.relevance === 'number') {
     return clamp01(record.relevance)
   }
+  if (typeof record.ftsPosition === 'number') {
+    // Rank-position calibration. SQLite's bm25() magnitude is corpus-dependent:
+    // for a common term in a small memory store it collapses toward ~1e-6, so the
+    // previous abs(rank)/(1+abs(rank)) mapping reported ~0 for a genuine match
+    // and left the 0.32-weight dimension to the substring bonus. Position is the
+    // ordering signal that stays bounded and independent of corpus size.
+    // Reciprocal rank: 0 -> 1, 1 -> 0.5, 2 -> 1/3, 4 -> 0.2.
+    return clamp01(1 / (1 + record.ftsPosition))
+  }
   if (typeof record.rank === 'number') {
-    // FTS5 bm25-style rank: more negative is a stronger match.
-    const r = record.rank < 0 ? -record.rank : Math.abs(record.rank)
-    return clamp01(r / (1 + r))
+    // A rank with no stamped position (an older caller) is treated as the best
+    // FTS result rather than silently discarded.
+    return 1
   }
   if (hasQuery) {
     return 0
