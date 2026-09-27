@@ -21,8 +21,8 @@ import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
 import { GUIDANCE_TEXT, createContextProvider, rememberClaimedPrompt } from './context.mjs'
 import { candidateFromBuffer, newBuffer, observeEvent } from './observe.mjs'
-import { maybeLearn, strengthenMemory } from './learn.mjs'
-import { markStale } from './evolve.mjs'
+import { maybeLearn, reviewCandidate, strengthenMemory } from './learn.mjs'
+import { markStale, sweepStale } from './evolve.mjs'
 import { registerTools } from './tools.mjs'
 import { registerCommand } from './commands.mjs'
 import { registerSkills } from './skills.mjs'
@@ -30,6 +30,40 @@ import { registerWebUi } from './webui.mjs'
 
 export const name = 'veyra'
 export const inject = ['tools']
+
+/**
+ * M5 maintenance cadence. In-memory only: no scheduler, no worker, no
+ * persisted marker, no schema. The counter is module-scoped, so it is shared by
+ * every session in the process and resets when the process restarts.
+ */
+export const MAINTENANCE_EVERY_N_TURNS = 5
+const MAINTENANCE_LIST_LIMIT = 200
+let maintenanceTurns = 0
+
+/** Reset the maintenance cadence. Exported for tests only. */
+export function _resetMaintenanceCounter() {
+  maintenanceTurns = 0
+}
+
+/** Current maintenance turn position. Exported for tests only. */
+export function _maintenanceTurns() {
+  return maintenanceTurns
+}
+
+/**
+ * The one and only implementation of the maintenance cadence. The real
+ * `turn-stopping` handler calls this, and the cadence tests drive the same
+ * function, so there is no second copy of the arithmetic to drift.
+ *
+ * Returns true when a maintenance pass is due, having already reset the
+ * counter for the next window.
+ */
+function dueForMaintenance() {
+  maintenanceTurns += 1
+  if (maintenanceTurns < MAINTENANCE_EVERY_N_TURNS) return false
+  maintenanceTurns = 0
+  return true
+}
 
 /**
  * Accepted `config:` keys (all optional, defaults shown):
@@ -234,6 +268,38 @@ export function apply(ctx, config = {}) {
         }
         if (runtime.learn) {
           markStale(projectStore, { workspace: cwd })
+        }
+
+        // Periodic maintenance (M5). In-memory counter only: no scheduler, no
+        // worker, no persisted marker, no schema. It runs off the existing turn
+        // lifecycle and never from recall(). Losing the counter on restart is
+        // acceptable — the next fifth turn simply re-establishes the cadence.
+        if (runtime.learn && dueForMaintenance()) {
+          const swept = sweepStale(projectStore, { workspace: cwd })
+          const candidates = projectStore
+            .list({ limit: MAINTENANCE_LIST_LIMIT, kind: 'observation' })
+            .concat(projectStore.list({ limit: MAINTENANCE_LIST_LIMIT }))
+            .filter((r) => r && !r.forgotten && r.authority === AUTHORITIES.CANDIDATE)
+
+          let transitioned = 0, unchanged = 0, blocked = 0, skipped = 0, failed = 0
+          for (const candidate of candidates) {
+            try {
+              const r = reviewCandidate(projectStore, candidate, { workspace: cwd })
+              if (r.outcome === 'transitioned') transitioned += 1
+              else if (r.outcome === 'unchanged') unchanged += 1
+              else if (r.outcome === 'blocked') blocked += 1
+              else skipped += 1
+            } catch {
+              failed += 1
+            }
+          }
+
+          runtime.log?.info?.(
+            `[veyra] maintenance examined=${swept.examined} markedStale=${swept.marked} `
+            + `candidatesReviewed=${candidates.length} transitioned=${transitioned} `
+            + `unchanged=${unchanged} blocked=${blocked} skipped=${skipped} failed=${failed}`
+            + (swept.error ? ` staleError=${swept.error}` : ''),
+          )
         }
       } catch {
         // learning is best-effort

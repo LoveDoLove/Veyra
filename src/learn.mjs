@@ -138,6 +138,36 @@ export function strengthenMemory(neighbor, candidate, { workspace = null } = {})
 }
 
 /**
+ * The shared learning guard chain.
+ *
+ * Returns null when the record must not become derived knowledge, otherwise
+ * the record to evolve plus the peers it was compared against.
+ *
+ * This is the ONLY place a candidate is allowed to reach `derived`, for both
+ * the per-turn path (`maybeLearn`) and the maintenance re-review
+ * (`reviewCandidate`). It is deliberately unchanged and deliberately strict:
+ *
+ *   - `looksLikeClaim` is load-bearing. Test evidence is NOT sufficient on its
+ *     own: `evidenceFrom` attaches `test-passed` / `tests-touched` to whatever
+ *     tool activity a turn contained, including harness and conversational
+ *     traffic, so those notes appear on candidates that are not claims.
+ *   - observation count, age, retrieval count, similarity, confidence and
+ *     frequency are never consulted here.
+ */
+function learningGuards(store, candidate, { limit = 60 } = {}) {
+  if (!store || !candidate) return null
+  if (candidate.authority === AUTHORITIES.CANONICAL) return null
+  if (!looksDurable(`${candidate.title}\n${candidate.body}`)) return null
+
+  const hash = contentHash(candidate.title, candidate.body)
+  const existing = store.list({ limit }).filter((r) => !r.forgotten)
+  if (existing.some((r) => r.contentHash === hash && r.authority !== AUTHORITIES.CANDIDATE && r.id !== candidate.id)) {
+    return null
+  }
+  return { hash, existing }
+}
+
+/**
  * After a turn, consider promoting a fresh candidate into derived memory
  * when it looks durable, is grounded, and is not a verbatim duplicate of
  * existing knowledge. If it confirms an existing derived memory, strengthen
@@ -146,15 +176,9 @@ export function strengthenMemory(neighbor, candidate, { workspace = null } = {})
  * Returns the written derived record, or null when nothing new was learned.
  */
 export function maybeLearn(store, candidate, { related = [], workspace = null } = {}) {
-  if (!store || !candidate) return null
-  if (candidate.authority === AUTHORITIES.CANONICAL) return null
-  if (!looksDurable(`${candidate.title}\n${candidate.body}`)) return null
-
-  const hash = contentHash(candidate.title, candidate.body)
-  const existing = store.list({ limit: 60 }).filter((r) => !r.forgotten)
-  if (existing.some((r) => r.contentHash === hash && r.authority !== AUTHORITIES.CANDIDATE && r.id !== candidate.id)) {
-    return null
-  }
+  const guards = learningGuards(store, candidate)
+  if (!guards) return null
+  const { hash, existing } = guards
 
   const seedRelations = []
   for (const other of related) {
@@ -248,6 +272,49 @@ export function remember(store, input, { explicitCanonical = false } = {}) {
     relations: evolved.record.relations,
   }, { explicitCanonical })
   return { ...updated, created: written.created, duplicate: written.duplicate }
+}
+
+/**
+ * Re-review an EXISTING candidate record under the same guard chain the
+ * per-turn path uses.
+ *
+ * This is maintenance, not a second learning rule. It calls `maybeLearn`, so
+ * every guard in `learningGuards` applies unchanged: `looksLikeClaim` first,
+ * then the verbatim-duplicate check, then `evolveAgainst`. Age, observation
+ * count, retrieval count, similarity, confidence and frequency are never
+ * consulted, and test evidence alone can never promote — `evidenceFrom`
+ * attaches those notes to any turn with test-looking tool activity, including
+ * harness traffic.
+ *
+ * The record is only ever candidate -> derived, or left alone, or confirmed
+ * against an existing derived neighbour via the normal strengthening path.
+ * Canonical is unreachable: `maybeLearn` returns null for canonical input and
+ * never calls `promote`.
+ */
+export function reviewCandidate(store, record, { workspace = null } = {}) {
+  if (!store || !record) return { outcome: 'blocked', reason: 'no record' }
+  if (record.authority !== AUTHORITIES.CANDIDATE) {
+    return { outcome: 'skipped', reason: 'not a candidate' }
+  }
+  if (record.forgotten) {
+    return { outcome: 'skipped', reason: 'forgotten' }
+  }
+  if (!looksDurable(`${record.title}\n${record.body}`)) {
+    return { outcome: 'blocked', reason: 'not durable' }
+  }
+
+  // mayLearn writes the derived record in place when the candidate has an id.
+  const before = store.get(record.id)
+  const learned = maybeLearn(store, record, { workspace })
+  const after = store.get(record.id)
+
+  if (after && before && after.authority !== before.authority) {
+    return { outcome: 'transitioned', authority: after.authority, record: after }
+  }
+  if (learned) {
+    return { outcome: 'transitioned', authority: 'derived', record: learned }
+  }
+  return { outcome: 'unchanged', record: after || record }
 }
 
 /**

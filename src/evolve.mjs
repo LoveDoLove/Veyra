@@ -33,6 +33,13 @@ import { DIFF, diffMemory, replacementEvidence, sharesSubject, strongestMatch } 
 
 const STALE_AFTER_MS = 120 * 86_400_000
 
+/**
+ * Row ceiling for a maintenance sweep. Deliberately matches the existing
+ * `store.list` cap so a sweep can enumerate everything currently reachable
+ * without changing the store. Paging is a later phase.
+ */
+const SWEEP_LIST_LIMIT = 200
+
 function uniqueRelations(list) {
   const seen = new Set()
   const out = []
@@ -315,6 +322,73 @@ export function markStale(store, { now = Date.now(), olderThanMs = STALE_AFTER_M
     }
   }
   return changed
+}
+
+/**
+ * Maintenance sweep: apply the SAME stale criteria as `markStale`, but over
+ * the full set reachable through the existing listing boundary instead of a
+ * fixed 80-row window.
+ *
+ * `markStale` orders by `updated_at DESC LIMIT 80`, so on a project with more
+ * than 80 rows the oldest records were never examined at all. This keeps the
+ * criteria identical and only widens what is looked at.
+ *
+ * Phase-1 boundary: "full" means the full set available through `store.list`'s
+ * existing 200-row cap. Paging is deliberately not added yet.
+ *
+ * Authority guards and validation semantics are unchanged: canonical,
+ * forgotten, already-stale/invalid and non-CURRENT records are never touched,
+ * the only write is the monotonic demotion to `validation = stale`, and a
+ * second run over unchanged state writes nothing.
+ */
+export function sweepStale(store, { now = Date.now(), olderThanMs = STALE_AFTER_MS, workspace = null } = {}) {
+  if (!store) return { examined: 0, marked: 0, records: [], error: null }
+  const changed = []
+  let examined = 0
+  try {
+    const rows = store.list({ limit: SWEEP_LIST_LIMIT })
+    for (const rec of rows) {
+      if (!rec || rec.forgotten) continue
+      if (rec.authority === AUTHORITIES.CANONICAL) continue
+      if (rec.validation === VALIDATIONS.STALE || rec.validation === VALIDATIONS.INVALID) continue
+      if (rec.status !== STATUSES.CURRENT) continue
+      examined++
+
+      let isStale = false
+
+      // 1. Evidence health check — identical to markStale.
+      if (workspace) {
+        if (verifyEvidenceHealth(rec, workspace).status === 'broken') isStale = true
+      }
+
+      // 2. Idle time check — identical to markStale.
+      if (!isStale) {
+        const recalled = Date.parse(rec.lastRecalledAt || '')
+        const updated = Date.parse(rec.updatedAt || rec.createdAt || '')
+        const stamp = Math.max(
+          Number.isFinite(recalled) ? recalled : 0,
+          Number.isFinite(updated) ? updated : 0,
+        )
+        if (stamp && now - stamp >= olderThanMs) {
+          isStale = true
+        }
+      }
+
+      if (!isStale) continue
+
+      const written = store.put({ ...rec, validation: VALIDATIONS.STALE })
+      if (written.record) changed.push(written.record)
+    }
+    return { examined, marked: changed.length, records: changed, error: null }
+  } catch (err) {
+    // Surface the failure rather than reporting a successful maintenance run.
+    return {
+      examined,
+      marked: changed.length,
+      records: changed,
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
 }
 
 /**
