@@ -16,10 +16,12 @@ import {
   CONFIDENCES,
   KINDS,
   MAX_MEMORY_BODY_CHARS,
+  PROVENANCE_ORIGINS,
   RELATIONS,
   STATUSES,
   VALIDATIONS,
   isRecallEligible,
+  provenanceOrigins,
 } from './types.mjs'
 import { contentHash } from './ids.mjs'
 import { looksLikeClaim } from './understand.mjs'
@@ -138,6 +140,36 @@ export function strengthenMemory(neighbor, candidate, { workspace = null } = {})
 }
 
 /**
+ * M9 — provenance gate for the automatic learning path.
+ *
+ * Answers only "May this automatically enter the learning pipeline?" —
+ * never "Is this fact true?" (provenance ≠ semantic truth, provenance ≠
+ * claim classification, similarity ≠ authority, classification ≠
+ * lifecycle action).
+ *
+ * Deliberate records (`source.automatic === false`, written by the explicit
+ * `veyra_remember` tool) are never gated here. Every other record reaching
+ * the automatic learning path must prove assistant-only provenance, failing
+ * closed on anything unknown:
+ *
+ *   allowed  origins ["assistant"], ["assistant", "tool"]
+ *   blocked  anything containing "user", ["tool"] alone, provenance absent,
+ *            provenance malformed, origins === [], unknown origin value
+ *
+ * A blocked record is only not learned: it stays exactly as captured — no
+ * deletion, no invalidation, no new status, no provenance rewrite, no
+ * lifecycle effect.
+ */
+export function provenanceAllowsLearning(record) {
+  const source = record?.source
+  if (source && source.automatic === false) return true
+  const origins = provenanceOrigins(source)
+  if (!Array.isArray(origins)) return false
+  if (!origins.every((o) => PROVENANCE_ORIGINS.includes(o))) return false
+  return origins.includes('assistant') && !origins.includes('user')
+}
+
+/**
  * The shared learning guard chain.
  *
  * Returns null when the record must not become derived knowledge, otherwise
@@ -151,11 +183,16 @@ export function strengthenMemory(neighbor, candidate, { workspace = null } = {})
  *     own: `evidenceFrom` attaches `test-passed` / `tests-touched` to whatever
  *     tool activity a turn contained, including harness and conversational
  *     traffic, so those notes appear on candidates that are not claims.
+ *   - provenance (M9) is the first real guard: unless the record is
+ *     deliberate (`source.automatic === false`), `provenanceAllowsLearning`
+ *     must pass first. Automatic records with unknown provenance fail closed
+ *     and never reach evolveAgainst.
  *   - observation count, age, retrieval count, similarity, confidence and
  *     frequency are never consulted here.
  */
 function learningGuards(store, candidate, { limit = 60 } = {}) {
   if (!store || !candidate) return null
+  if (!provenanceAllowsLearning(candidate)) return null
   if (candidate.authority === AUTHORITIES.CANONICAL) return null
   if (!looksDurable(`${candidate.title}\n${candidate.body}`)) return null
 

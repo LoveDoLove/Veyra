@@ -160,7 +160,8 @@ function seedCandidate(store, over = {}) {
   return store.put({
     title: 'a claim worth keeping about sqlite writes', body: CLAIM_BODY,
     evidence: [{ path: 'src/store.mjs' }], authority: AUTHORITIES.CANDIDATE,
-    validation: VALIDATIONS.UNVERIFIED, ...over,
+    validation: VALIDATIONS.UNVERIFIED,
+    source: { automatic: true, provenance: { origins: ['assistant'] } }, ...over,
   }).record
 }
 

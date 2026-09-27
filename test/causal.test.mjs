@@ -95,7 +95,7 @@ test('multi-step troubleshooting turn accumulates complete causal lifecycle', ()
   })
   // 2. Root cause identified and fix applied
   observeEvent(buffer, {}, {
-    type: 'user/message',
+    type: 'assistant/message',
     data: { content: [{ type: 'text', text: 'The root cause is missing PRAGMA busy_timeout. The fix is to add busy_timeout = 5000 in openDatabase.' }] },
   })
   observeEvent(buffer, {}, {

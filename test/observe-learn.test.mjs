@@ -42,7 +42,7 @@ test('learning promotes a persisted candidate in place', () => {
     authority: AUTHORITIES.CANDIDATE,
     tags: ['observation'],
     evidence: [{ path: 'src/store.mjs' }],
-    source: { automatic: true },
+    source: { automatic: true, provenance: { origins: ['assistant'] } },
   })
   assert.equal(isRecallEligible(written.record), false)
   const learned = maybeLearn(store, { ...written.record })
@@ -62,7 +62,7 @@ test('learning promotes durable candidates to derived, never canonical', () => {
     projectId: 'p_test',
     tags: ['observation'],
     evidence: [{ path: 'src/store.mjs' }],
-    source: { automatic: true },
+    source: { automatic: true, provenance: { origins: ['assistant'] } },
   })
   assert.ok(learned)
   assert.equal(learned.authority, AUTHORITIES.DERIVED)

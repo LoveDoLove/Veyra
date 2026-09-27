@@ -200,7 +200,7 @@ test('maybeLearn attaches evolution relations on a durable candidate', () => {
     kind: KINDS.OBSERVATION,
     authority: AUTHORITIES.CANDIDATE,
     evidence: [{ path: 'src/store.mjs' }],
-    source: { automatic: true, signal: 'decision' },
+    source: { automatic: true, signal: 'decision', provenance: { origins: ['assistant'] } },
   })
   const learned = maybeLearn(store, { ...written.record })
   assert.ok(learned)

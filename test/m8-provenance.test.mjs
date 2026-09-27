@@ -300,20 +300,20 @@ test('M8: maybeLearn does not modify provenance on the derived write', () => {
   const store = openEphemeralStore()
   try {
     const candidate = distillBuffer(makeBuffer({
-      user: [USER_TEXT],
-      tools: [EDIT_TOOL],
+      assistant: [ASSISTANT_CLAIM],
+      tools: PASS_TOOLS,
       files: ['src/store.mjs'],
     }), ctx)
-    assert.deepEqual(candidate.source.provenance.origins, ['user'])
+    assert.deepEqual(candidate.source.provenance.origins, ['assistant'])
     const written = store.put(candidate)
     assert.ok(written.record)
 
     const learned = maybeLearn(store, { ...written.record })
     assert.ok(learned, 'candidate passes learning guards')
     assert.equal(learned.authority, AUTHORITIES.DERIVED)
-    assert.deepEqual(learned.source.provenance, { origins: ['user'] }, 'derived write preserves provenance verbatim')
+    assert.deepEqual(learned.source.provenance, { origins: ['assistant'] }, 'derived write preserves provenance verbatim')
     const reread = store.get(learned.id)
-    assert.deepEqual(reread.source.provenance, { origins: ['user'] })
+    assert.deepEqual(reread.source.provenance, { origins: ['assistant'] })
   } finally {
     store.close()
   }

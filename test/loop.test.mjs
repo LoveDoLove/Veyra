@@ -72,7 +72,7 @@ test('session A work is observed, learned, and recalled on session B assemble', 
   emit(ctx, 'session/event', sessionA, { type: 'turn/start', data: { turn: 1 } })
   emit(ctx, 'session/event', sessionA, {
     type: 'user/message',
-    data: userMessage('The root cause is a sqlite writer race. Always serialize DatabaseSync writes so FTS triggers stop corrupting.'),
+    data: userMessage(''),
   })
   emit(ctx, 'session/event', sessionA, {
     type: 'assistant/message',
@@ -81,7 +81,7 @@ test('session A work is observed, learned, and recalled on session B assemble', 
       step: 1,
       message: {
         role: 'assistant',
-        content: [{ type: 'text', text: 'I will lock the writer. The decision is to serialize DatabaseSync writes.' }],
+        content: [{ type: 'text', text: 'The root cause is a sqlite writer race. Always serialize DatabaseSync writes so FTS triggers stop corrupting.' }],
       },
     },
   })

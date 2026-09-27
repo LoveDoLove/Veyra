@@ -21,7 +21,7 @@ import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
 import { GUIDANCE_TEXT, createContextProvider, rememberClaimedPrompt } from './context.mjs'
 import { candidateFromBuffer, newBuffer, observeEvent } from './observe.mjs'
-import { maybeLearn, reviewCandidate, strengthenMemory } from './learn.mjs'
+import { maybeLearn, provenanceAllowsLearning, reviewCandidate, strengthenMemory } from './learn.mjs'
 import { markStale, sweepStale } from './evolve.mjs'
 import { registerTools } from './tools.mjs'
 import { registerCommand } from './commands.mjs'
@@ -262,7 +262,7 @@ export function apply(ctx, config = {}) {
         const written = projectStore.put(candidate)
         if (runtime.learn && written.created) {
           maybeLearn(projectStore, { ...written.record }, { workspace: cwd })
-        } else if (runtime.learn && written.duplicate && written.record?.authority === AUTHORITIES.DERIVED) {
+        } else if (runtime.learn && written.duplicate && written.record?.authority === AUTHORITIES.DERIVED && provenanceAllowsLearning(candidate)) {
           const strengthened = strengthenMemory(written.record, candidate, { workspace: cwd })
           projectStore.put(strengthened)
         }

@@ -62,7 +62,7 @@ test('repeated observation strengthens validation, accumulates evidence, and nev
     kind: KINDS.OBSERVATION,
     authority: AUTHORITIES.CANDIDATE,
     evidence: [{ path: 'src/store.mjs' }],
-    source: { signal: 'decision' },
+    source: { signal: 'decision', provenance: { origins: ['assistant'] } },
   })
 
   const learned1 = maybeLearn(store, candidate1.record)
@@ -80,7 +80,7 @@ test('repeated observation strengthens validation, accumulates evidence, and nev
     kind: KINDS.OBSERVATION,
     authority: AUTHORITIES.CANDIDATE,
     evidence: [{ path: 'src/store.mjs' }, { note: 'test-passed' }],
-    source: { signal: 'decision' },
+    source: { signal: 'decision', provenance: { origins: ['assistant'] } },
   })
   assert.equal(candidate2.created, true)
 
@@ -101,7 +101,7 @@ test('repeated observation strengthens validation, accumulates evidence, and nev
     kind: KINDS.OBSERVATION,
     authority: AUTHORITIES.CANDIDATE,
     evidence: [{ path: 'src/store.mjs' }, { note: 'sym:openDatabase' }],
-    source: { signal: 'decision' },
+    source: { signal: 'decision', provenance: { origins: ['assistant'] } },
   })
   assert.equal(candidate3.created, true)
 
