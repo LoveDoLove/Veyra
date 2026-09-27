@@ -148,13 +148,54 @@ export function lexicalScore(record, query, index = 0) {
 }
 
 /**
+ * Insert spaces at CamelCase boundaries so a compound identifier tokenizes
+ * into its parts.
+ *
+ *   DatabaseSync        -> Database Sync
+ *   applyMirrorRemoval  -> apply Mirror Removal
+ *   MemoryStore         -> Memory Store
+ *
+ * Acronyms are handled conservatively: a run of capitals is kept whole and only
+ * its trailing word is released.
+ *
+ *   HTTPServer   -> HTTP Server        (not H T T P Server)
+ *   XMLParser    -> XML Parser
+ *   FTSPosition  -> FTS Position
+ *
+ * Two boundaries, applied over each run of letters/digits:
+ *   lower|digit -> Upper   : split        (foo|Bar)
+ *   Upper       -> Upper+lower : split    (HT|Server -> HTTP Server)
+ *
+ * Deterministic and purely local: the stored text is unchanged, and this only
+ * affects the strings handed to `semanticSimilarity`. `tokenize()`, the FTS5
+ * tokenizer, candidate discovery, and every other scorer are untouched, so
+ * splitting can never change WHICH records are found — only how strongly an
+ * already-discovered one scores.
+ */
+function splitCamelCase(text) {
+  return String(text || '').replace(
+    /([a-z0-9])([A-Z])|([A-Z]+)([A-Z][a-z])/g,
+    (m, lowerUpper, upperAfterLower, acr, acrTail) => {
+      if (lowerUpper && upperAfterLower) return `${lowerUpper} ${upperAfterLower}`
+      return `${acr} ${acrTail}`
+    },
+  )
+}
+
+/**
  * Token-level semantic overlap and query coverage.
+ *
+ * Both sides pass through `splitCamelCase` first, so a natural-language query
+ * can match a stored identifier. Without it "apply mirror" shares no token with
+ * "applyMirrorRemoval" and scores 0, leaving the correct record sitting at the
+ * same composite as unrelated memory.
  */
 export function semanticSimilarity(query, record) {
   if (!query || !record) return 0
-  const hay = `${record.title || ''} ${record.body || ''} ${(record.tags || []).join(' ')}`
-  const jc = jaccard(query, hay)
-  const overlap = tokenOverlap(hay, query)
+  const hay = splitCamelCase(`${record.title || ''} ${record.body || ''} ${(record.tags || []).join(' ')}`)
+  const q = splitCamelCase(query)
+  const jc = jaccard(q, hay)
+  const overlap = tokenOverlap(hay, q)
   const sim = overlap.ratio * 0.6 + jc * 0.4
   return Number(Math.min(1, Math.max(0, sim)).toFixed(3))
 }
