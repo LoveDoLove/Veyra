@@ -19,7 +19,7 @@ test('extractCausalFacets extracts complete symptom → rootCause → remedy →
     { name: 'edit', arguments: { file_path: 'src/store.mjs' } },
     { name: 'bash:result', preview: '✔ 58 tests passed (110ms)\n[exit code: 0]' },
   ]
-  const facets = extractCausalFacets({ user, tools, files: ['src/store.mjs'] })
+  const { facets } = extractCausalFacets({ user, tools, files: ['src/store.mjs'] })
   assert.ok(facets)
   assert.equal(facets.symptom, 'flaky tests crashing with SQLITE_BUSY')
   assert.equal(facets.rootCause, 'concurrent DatabaseSync calls corrupting FTS triggers')
@@ -29,7 +29,7 @@ test('extractCausalFacets extracts complete symptom → rootCause → remedy →
 
 test('extractCausalFacets handles partial causal records (symptom + rootCause without remedy)', () => {
   const user = 'Investigating test failure: flaky test flaking on database lock. The root cause is missing PRAGMA busy_timeout on open.'
-  const facets = extractCausalFacets({ user, tools: [], files: ['src/store.mjs'] })
+  const { facets } = extractCausalFacets({ user, tools: [], files: ['src/store.mjs'] })
   assert.ok(facets)
   assert.equal(facets.symptom, 'flaky test flaking on database lock')
   assert.equal(facets.rootCause, 'missing PRAGMA busy_timeout on open')
@@ -43,7 +43,7 @@ test('extractCausalFacets handles partial causal records (remedy + verifiedOutco
     { name: 'edit', arguments: { file_path: 'src/store.mjs' } },
     { name: 'bash:result', preview: '✔ all 12 tests pass\n[exit code: 0]' },
   ]
-  const facets = extractCausalFacets({ user, tools, files: ['src/store.mjs'] })
+  const { facets } = extractCausalFacets({ user, tools, files: ['src/store.mjs'] })
   assert.ok(facets)
   assert.equal(facets.rootCause, null)
   assert.equal(facets.remedy, 'serialize DatabaseSync calls with a promise queue')
@@ -154,7 +154,7 @@ test('negative requirement: temporal adjacency alone creates NO causal relations
     { name: 'edit', arguments: { file_path: 'src/store.mjs' } },
     { name: 'bash:result', preview: '✔ all tests pass\n[exit code: 0]' },
   ]
-  const facets = extractCausalFacets({ user, tools, files: ['src/store.mjs'] })
+  const { facets } = extractCausalFacets({ user, tools, files: ['src/store.mjs'] })
   // Invariant: Temporal proximity alone without core causal explanation (rootCause or remedy) yields null
   assert.equal(facets, null)
 })
@@ -167,7 +167,7 @@ test('negative requirement: simultaneous changes do not arbitrarily identify one
     { name: 'edit', arguments: { file_path: 'src/plugin.mjs' } },
     { name: 'bash:result', preview: '✔ 58 tests pass\n[exit code: 0]' },
   ]
-  const facets = extractCausalFacets({
+  const { facets } = extractCausalFacets({
     user,
     tools,
     files: ['src/store.mjs', 'src/ids.mjs', 'src/plugin.mjs'],
@@ -178,7 +178,7 @@ test('negative requirement: simultaneous changes do not arbitrarily identify one
 test('negative requirement: unstructured chatter creates no causal record', () => {
   const user = 'Hey, can you take a look at the project and let me know what you think?'
   const assistant = 'Sure, everything looks organized and ready for development.'
-  const facets = extractCausalFacets({ user, assistant, tools: [], files: [] })
+  const { facets } = extractCausalFacets({ user, assistant, tools: [], files: [] })
   assert.equal(facets, null)
 })
 
@@ -188,7 +188,7 @@ test('negative requirement: a failed remedy is NOT a verified remedy', () => {
     { name: 'edit', arguments: { file_path: 'src/store.mjs' } },
     { name: 'bash:result', preview: 'FAIL test/store.test.mjs: timeout reached\n[exit code: 1]' },
   ]
-  const facets = extractCausalFacets({ user, tools, files: ['src/store.mjs'] })
+  const { facets } = extractCausalFacets({ user, tools, files: ['src/store.mjs'] })
   assert.ok(facets)
   assert.equal(facets.remedy, 'add setTimeout before open')
   assert.equal(facets.verifiedOutcome, 'test-failed') // NOT test-passed!

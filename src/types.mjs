@@ -63,6 +63,15 @@ export const VALID_CONFIDENCES = Object.freeze(Object.values(CONFIDENCES))
 export const VALID_SCOPES = Object.freeze(Object.values(SCOPES))
 export const VALID_RELATIONS = Object.freeze(Object.values(RELATIONS))
 
+/**
+ * M8 capture provenance — canonical origin order for
+ * `source.provenance.origins`: which source streams (user, assistant,
+ * tool) materially contributed text or content to the persisted record.
+ * Capture provenance only — never semantic classification, authority,
+ * or lifecycle state.
+ */
+export const PROVENANCE_ORIGINS = Object.freeze(['user', 'assistant', 'tool'])
+
 export const SCHEMA_VERSION = 1
 
 /** Default number of memories injected into the per-turn context. */
@@ -109,4 +118,21 @@ export function assertAuthorityTransition(from, to, { explicit = false } = {}) {
 export function normalizeEnum(value, allowed, fallback) {
   if (typeof value === 'string' && allowed.includes(value)) return value
   return fallback
+}
+
+/**
+ * Fail-closed reader for M8 capture provenance.
+ *
+ * Returns the record's origin list when provenance is known, `null`
+ * otherwise:
+ *   - legacy / deliberate records without `source.provenance` → unknown
+ *   - malformed provenance (`origins: []` or non-array) → unknown
+ *
+ * Never infers origins from title, body, signal, tags, evidence, or
+ * tool/file/symbol metadata. Provenance ≠ classification.
+ */
+export function provenanceOrigins(source) {
+  const origins = source?.provenance?.origins
+  if (!Array.isArray(origins) || origins.length === 0) return null
+  return origins
 }

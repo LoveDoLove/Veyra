@@ -13,6 +13,7 @@ import {
   CONFIDENCES,
   KINDS,
   MIN_OBSERVATION_CHARS,
+  PROVENANCE_ORIGINS,
   SCOPES,
   STATUSES,
   VALIDATIONS,
@@ -53,7 +54,7 @@ function cleanFacetText(str) {
  */
 export function extractCausalFacets({ user = '', assistant = '', tools = [], files = [], symbols = [] } = {}) {
   const combined = `${user}\n${assistant}`.trim()
-  if (!combined && tools.length === 0) return null
+  if (!combined && tools.length === 0) return { facets: null, toolSymptom: false }
 
   // 1. Root Cause extraction (requires explicit causal attribution)
   let rootCause = null
@@ -77,7 +78,12 @@ export function extractCausalFacets({ user = '', assistant = '', tools = [], fil
   }
 
   // 3. Symptom extraction
+  // `toolSymptom` is internal return metadata: true only when the symptom
+  // text itself came from a tool result preview (not from user/assistant
+  // text). It lets distillBuffer record the `tool` provenance origin without
+  // parsing the rendered body or persisting an extra field.
   let symptom = null
+  let toolSymptom = false
   const symptomMatch = combined.match(/\b(?:the\s+)?(?:symptom|issue|problem|bug|error|failure)(?:\s+(?:is|was|:))?\s*[:\-—]?\s*([^\n.;]+)/i)
     || combined.match(/\b(?:failing\s+with|failed\s+with|crashed\s+with|flaking\s+on)\s*[:\-—]?\s*([^\n.;]+)/i)
     || combined.match(/\b((?:flaky|failing)\s+tests?|sqlite\s+writer\s+race|deadlock|concurrency\s+race|data\s+corruption|memory\s+leak)\b/i)
@@ -91,6 +97,7 @@ export function extractCausalFacets({ user = '', assistant = '', tools = [], fil
         const failLine = prev.split('\n').find((l) => /(?:FAIL|npm ERR!|Error:)\s+(.+)/i.test(l))
         if (failLine) {
           symptom = cleanFacetText(failLine)
+          toolSymptom = Boolean(symptom)
           break
         }
       }
@@ -114,14 +121,17 @@ export function extractCausalFacets({ user = '', assistant = '', tools = [], fil
   const facetCount = [rootCause, remedy, symptom, verifiedOutcome].filter(Boolean).length
 
   if (!hasCoreExplanation || facetCount < 2) {
-    return null
+    return { facets: null, toolSymptom }
   }
 
   return {
-    symptom: symptom || null,
-    rootCause: rootCause || null,
-    remedy: remedy || null,
-    verifiedOutcome: verifiedOutcome || null,
+    facets: {
+      symptom: symptom || null,
+      rootCause: rootCause || null,
+      remedy: remedy || null,
+      verifiedOutcome: verifiedOutcome || null,
+    },
+    toolSymptom,
   }
 }
 
@@ -254,7 +264,7 @@ export function distillBuffer(buffer, { projectId, sessionId } = {}) {
   if (meaningfulTools.length < 1 && user.length < 80 && !hasClaim) return null
   if (!hasClaim && meaningfulTools.length < 2 && user.length < 80) return null
 
-  const causal = extractCausalFacets({ user, assistant, tools, files, symbols })
+  const { facets: causal, toolSymptom } = extractCausalFacets({ user, assistant, tools, files, symbols })
   const signal = classifySignal(combined, causal)
   const title = deriveTitle(user, files, tools, signal, causal)
   const bodyParts = []
@@ -282,6 +292,22 @@ export function distillBuffer(buffer, { projectId, sessionId } = {}) {
   if (body.length < MIN_OBSERVATION_CHARS) return null
 
   const tokens = [...tokenize(`${title}\n${body}`)].slice(0, 24)
+
+  // M8 capture provenance: which source streams materially contributed
+  // text/content to this record. `user`/`assistant` follow stream
+  // non-emptiness (everything each stream contributed went through the
+  // distillation above). `tool` is set only when tool-originated CONTENT is
+  // in the record: a preview-sourced causal symptom line, or an
+  // activity-only record with both role streams empty (body synthesized
+  // from tool activity). Tool/file/symbol names in derived metadata never
+  // add `tool`. Canonical order comes from PROVENANCE_ORIGINS.
+  const toolContent = (!user && !assistant) || (Boolean(causal) && toolSymptom)
+  const origins = PROVENANCE_ORIGINS.filter((origin) => (
+    origin === 'user' ? Boolean(user)
+      : origin === 'assistant' ? Boolean(assistant)
+        : toolContent
+  ))
+
   return {
     kind: KINDS.OBSERVATION,
     status: STATUSES.CURRENT,
@@ -297,6 +323,7 @@ export function distillBuffer(buffer, { projectId, sessionId } = {}) {
     source: {
       sessionId: sessionId || null,
       turn: buffer.turn,
+      provenance: { origins },
       tools: tools.map((t) => t.name),
       files,
       symbols,
