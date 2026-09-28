@@ -20,7 +20,7 @@ import { AUTHORITIES, CONFIDENCES, DEFAULT_RECALL_LIMIT, KINDS, SCOPES, VALIDATI
 import { detectIntent, intentAffinity, intentWeights } from './intent.mjs'
 import { annotateContradictions } from './evolve.mjs'
 import { expandEligibleNeighbors } from './graph.mjs'
-import { jaccard, tokenOverlap, hasNegation } from './text.mjs'
+import { jaccard, tokenOverlap, hasNegation, tokenize } from './text.mjs'
 
 export function evidenceStrength(evidence) {
   if (!evidence) return 0.1
@@ -342,8 +342,95 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
   // fall back to their own composite, so matching-polarity behaviour is
   // byte-identical to before.
   const sortKey = (r) => r.scores.polarity_original_composite ?? r.scores.composite
-  scored.sort((a, b) => (b.scores.composite - a.scores.composite) || (sortKey(b) - sortKey(a)))
+
+  // Query-signal tier: for a non-empty query, a record with NO textual signal
+  // (no FTS position, no substring, no shared token => relevance 0 AND
+  // semantic 0) must not outrank any record that does match the query,
+  // no matter how strong its metadata scores are. Without this, a
+  // zero-signal record with perfect metadata (evidence 1.0, verified,
+  // fresh, high confidence) composes ~0.75 and beats a genuine match that
+  // has weak metadata — contamination by metadata alone.
+  //
+  // Like the polarity cap this is a SORT-ONLY constraint: no score is
+  // mutated, so the dimensional breakdown stays verbatim and every
+  // zero-signal record remains fully recallable (the recency pool is a
+  // deliberate design: when NOTHING matches, all records share tier 0 and
+  // the composite order — recency — is untouched). Empty query: no query
+  // to have signal against, so the tier is inactive by construction.
+  const hasQuery = Boolean(String(query ?? '').trim())
+  const signalTier = (r) => ((r.scores.relevance > 0 || r.scores.semantic > 0) ? 1 : 0)
+  scored.sort((a, b) => {
+    if (hasQuery) {
+      const tier = signalTier(b) - signalTier(a)
+      if (tier !== 0) return tier
+    }
+    return (b.scores.composite - a.scores.composite) || (sortKey(b) - sortKey(a))
+  })
   return scored
+}
+
+// ---------------------------------------------------------------------------
+// Near-duplicate suppression (top-K selection only).
+//
+// Evidence (probe p9): three wordings of one fact occupied 3 of 4 recall
+// slots; nothing in the pipeline ever compared two selected records against
+// each other. Threshold calibrated on probe p15 (8 same-fact rewordings vs
+// 12 different-fact pairs, incl. same-topic pairs): containment >= 0.5 caught
+// 6/8 rewordings with 0/12 false positives (max different-fact containment
+// was 0.429), so 0.5 sits in the measured gap. containment =
+// |A AND B| / min(|A|, |B|) — one claim being (mostly) a subset of the other,
+// which is exactly what "redundant restatement" means; plain Jaccard cannot
+// separate the classes (probe p13).
+//
+// Hard guards, each preserving a semantics this must never break:
+//   - relation-connected pairs are never suppressed (contradiction pairs,
+//     supersession chains, updates/derives all keep both sides visible);
+//   - annotated contradiction partners are never suppressed;
+//   - differing claim negation is never suppressed ("do X" vs "X" are
+//     opposing statements, not duplicates — polarity semantics);
+//   - fewer than 4 shared tokens never suppresses (short claims are too
+//     coarse for containment to be meaningful).
+//
+// Suppression happens BEFORE the top-K slice so freed slots go to the next
+// distinct record. It never mutates scores, never filters lifecycle states,
+// and is deterministic: ranked order drives the greedy keep-first pass.
+// ---------------------------------------------------------------------------
+const REDUNDANCY_CONTAINMENT = 0.5
+const REDUNDANCY_MIN_SHARED = 4
+
+function sharesRelation(a, b) {
+  for (const rel of a.relations || []) if (rel.targetId === b.id) return true
+  for (const rel of b.relations || []) if (rel.targetId === a.id) return true
+  if ((a.contradictions || []).includes(b.id)) return true
+  if ((b.contradictions || []).includes(a.id)) return true
+  return false
+}
+
+function suppressNearDuplicates(records) {
+  const kept = []
+  const keptTokens = []
+  for (const rec of records) {
+    const claim = claimText(rec)
+    const tokens = tokenize(claim)
+    let redundant = false
+    for (let i = 0; i < kept.length && !redundant; i++) {
+      const other = kept[i]
+      if (sharesRelation(rec, other)) continue
+      if (hasNegation(claim) !== hasNegation(claimText(other))) continue
+      const otherTokens = keptTokens[i]
+      const smaller = Math.min(tokens.size, otherTokens.size)
+      if (smaller < REDUNDANCY_MIN_SHARED) continue
+      let shared = 0
+      for (const t of tokens) if (otherTokens.has(t)) shared++
+      if (shared < REDUNDANCY_MIN_SHARED) continue
+      if (shared / smaller >= REDUNDANCY_CONTAINMENT) redundant = true
+    }
+    if (!redundant) {
+      kept.push(rec)
+      keptTokens.push(tokens)
+    }
+  }
+  return kept
 }
 
 /**
@@ -405,7 +492,12 @@ export function hybridRetrieve({
 
   const merged = Array.from(candidateMap.values())
   const ranked = annotateContradictions(rankRecords(merged, { query, intent: detectedIntent, preferProject: true }))
-  const limited = ranked.slice(0, Math.max(0, limit))
+  // Deduplicate before the top-K cut so freed slots go to the next distinct
+  // record; contradiction extras and graph expansion below still see only
+  // what survived, and both sides of a contradiction are relation-connected
+  // so they can never be suppressed.
+  const selected = suppressNearDuplicates(ranked)
+  const limited = selected.slice(0, Math.max(0, limit))
 
   // PMA invariant: never hide one side of a contradiction.
   // Pull opposing recall-eligible records even if search missed them.
