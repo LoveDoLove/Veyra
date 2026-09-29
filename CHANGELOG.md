@@ -11,6 +11,38 @@ versions follow [Semantic Versioning](https://semver.org/) on a pre-1.0 `0.1.x` 
 > version also gets a matching GitHub Release (`vX.Y.Z`) created by the publish
 > workflow.
 
+## [0.1.36] - 2026-09-29
+
+M12 — evidence intelligence, distillation quality gating, and read-only
+consolidation proposals.
+
+### Added
+
+- `src/evidence.mjs`: pure five-state evidence/claim relation classifier
+  (`supports`, `contradicts`, `unrelated`, `insufficient`, `ambiguous`) with
+  subject-compatibility checks; only structured signals count — prose never
+  counts as a test outcome.
+- `src/consolidate.mjs`: read-only consolidation detection over bounded store
+  lists, producing non-authoritative proposals (duplicate, contradiction,
+  outdated, replacement, retirement) — never merges, deletes, or rewrites
+  records.
+- `/veyra observatory consolidation` (aliases: `consolidate`, `proposals`):
+  read-only proposal surface rendering type, why, affected records, evidence,
+  and a review-only action per store while preserving project/reusable
+  isolation. The maintenance log now reports proposal counts.
+
+### Changed
+
+- `src/understand.mjs`: distillation quality gate drops malformed causal facets
+  (regex or truncation artifacts) at the capture boundary — structural
+  validation only, never rewrites or fabricates; raw evidence and prose stay
+  intact.
+- `src/evolve.mjs`: absolute evidence paths are checked as given instead of
+  being joined onto the workspace root (which misreported existing files as
+  missing); `supersedeEligible` exported for reuse.
+
+Adds three M12 suites (63 tests); full suite: 424 passing.
+
 ## [0.1.21] - 2026-09-26
 
 Launch-readiness pass: docs, examples and metadata only — no core changes.

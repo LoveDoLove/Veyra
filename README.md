@@ -112,7 +112,7 @@ Ask the agent to remember something important, or just keep going — automatic 
 | Hybrid Search | One query, several signals: FTS5 BM25 + symbol/path boosts, token-level semantic overlap, intent affinity, relationship graph cohesion — with a full transparent score breakdown. |
 | Unified RAG | `kind: 'knowledge'` records hold project documentation next to engineering memory; both are searched together. |
 | Causal knowledge | Structured `symptom → rootCause → remedy → verifiedOutcome` facets, plus contradiction detection and side-by-side views. |
-| Knowledge Observatory | Read-only text dashboard: overview, search signals, record inspection, causality, relationships, contradictions. |
+| Knowledge Observatory | Read-only text dashboard: overview, search signals, record inspection, causality, relationships, contradictions, and read-only consolidation proposals. |
 | Network Graph | Host-native SVG page at `/veyra` (overview + 1-hop Local Graph), served by the DSH web server; JSON at `/veyra/graph`, `/veyra/record`, `/veyra/search`. |
 | Settings | `Recall limit` and `Include reusable` in the DSH Settings dialog (Veyra section); changes apply from the next turn, no restart. |
 | Project isolation | Memory is keyed by workspace path + git remote. Two unrelated folders never share memory; `scope: 'reusable'` is opt-in. |
@@ -131,6 +131,7 @@ Ask the agent to remember something important, or just keep going — automatic 
 | `/veyra observatory local <id>` | 1-hop Local Graph around a record (default graph view) |
 | `/veyra observatory graph [id]` | Local Graph when an id is given; otherwise the project edge list |
 | `/veyra observatory contradictions` | Active conflicting claims shown side-by-side |
+| `/veyra observatory consolidation` | Detect and propose duplicate / contradiction / replacement candidates — read-only review surface, never changes records |
 | `/veyra recall [query]` | Hybrid search project (+ reusable) memory |
 | `/veyra recent` | Recent records, including candidates |
 | `/veyra inspect <id>` | Read one record with deep provenance and causal facets |

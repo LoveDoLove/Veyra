@@ -13,6 +13,7 @@ import { recall } from './retrieve.mjs'
 import { promote } from './learn.mjs'
 import {
   observatoryCausality,
+  observatoryConsolidation,
   observatoryContradictions,
   observatoryLocalGraph,
   observatoryOverview,
@@ -46,6 +47,7 @@ function helpText() {
     '       observatory graph [id]              local graph if id given, else all edges',
     '       Network Graph WebUI                 /veyra (workspace overview) · /veyra?id=<record> (local graph)',
     '       observatory contradictions          conflicts and opposing claims',
+    '       observatory consolidation            detect -> propose consolidation candidates (read-only)',
     '/veyra recall [q]                          hybrid search project (+ reusable) memory',
     '/veyra recent                              last 8 memories (including candidates)',
     '/veyra inspect <id>                        deep evidence, provenance & causal inspect',
@@ -140,11 +142,16 @@ export function handleVeyraCommand(runtime, invocation) {
       return { kind: 'success', text: res.formatted }
     }
 
+    if (sub === 'consolidation' || sub === 'consolidate' || sub === 'proposals') {
+      const res = observatoryConsolidation({ projectStore, reusableStore, cwd })
+      return { kind: 'success', text: res.formatted }
+    }
+
     return {
       kind: 'error',
       text: [
         `Unknown observatory subcommand: ${sub}`,
-        'Available: overview | search <q> | record <id> | causality | local <id> | graph [id] | relationships | contradictions',
+        'Available: overview | search <q> | record <id> | causality | local <id> | graph [id] | relationships | contradictions | consolidation',
       ].join('\n'),
     }
   }

@@ -23,6 +23,7 @@ import { GUIDANCE_TEXT, createContextProvider, rememberClaimedPrompt } from './c
 import { candidateFromBuffer, newBuffer, observeEvent } from './observe.mjs'
 import { maybeLearn, provenanceAllowsLearning, reviewCandidate, strengthenMemory } from './learn.mjs'
 import { markStale, sweepStale } from './evolve.mjs'
+import { detectConsolidationCandidates } from './consolidate.mjs'
 import { registerTools } from './tools.mjs'
 import { registerCommand } from './commands.mjs'
 import { registerSkills } from './skills.mjs'
@@ -294,11 +295,31 @@ export function apply(ctx, config = {}) {
             }
           }
 
+          // M12 C3: read-only consolidation detection over the same bounded
+          // list (store.list clamps to MAINTENANCE_LIST_LIMIT — not an
+          // unbounded DB scan). Pure proposals only: never merges, deletes, or
+          // mutates a record. Surfaced through this log line and Observatory;
+          // runs on the existing cadence so no scheduler/worker/daemon is
+          // introduced. Duplicate pass is O(n²) in n <= list limit (~156ms at
+          // n=200 worst case), documented in src/consolidate.mjs.
+          let proposals = null
+          try {
+            const allRecords = projectStore.list({ limit: MAINTENANCE_LIST_LIMIT })
+            proposals = detectConsolidationCandidates(allRecords, { workspace: cwd })
+          } catch {
+            // detection is best-effort
+          }
+
           runtime.log?.info?.(
             `[veyra] maintenance examined=${swept.examined} markedStale=${swept.marked} `
             + `candidatesReviewed=${candidates.length} transitioned=${transitioned} `
             + `unchanged=${unchanged} blocked=${blocked} skipped=${skipped} failed=${failed}`
-            + (swept.error ? ` staleError=${swept.error}` : ''),
+            + (swept.error ? ` staleError=${swept.error}` : '')
+            + (proposals
+              ? ` proposals=${proposals.counts.total}(dup=${proposals.counts.duplicate}`
+                + ` con=${proposals.counts.contradiction} out=${proposals.counts.outdated}`
+                + ` rep=${proposals.counts.replacement} ret=${proposals.counts.retirement})`
+              : ''),
           )
         }
       } catch {

@@ -27,7 +27,7 @@
  */
 
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { AUTHORITIES, RELATIONS, STATUSES, VALIDATIONS } from './types.mjs'
 import { DIFF, diffMemory, replacementEvidence, sharesSubject, strongestMatch } from './diff.mjs'
 
@@ -68,7 +68,7 @@ function withRelation(record, type, targetId) {
  * CONFLICT classification is never itself evidence: a plain polarity flip
  * reaches `false` here and therefore never supersedes.
  */
-function supersedeEligible(incoming, neighbor) {
+export function supersedeEligible(incoming, neighbor) {
   if (!incoming || !neighbor) return false
   if (neighbor.authority === AUTHORITIES.CANONICAL) return false
   if (neighbor.status !== STATUSES.CURRENT) return false
@@ -253,7 +253,10 @@ export function verifyEvidenceHealth(record, workspace) {
   const existingPaths = []
   const missingPaths = []
   for (const rel of filePaths) {
-    const full = join(workspace, rel)
+    // An evidence path recorded absolute must be checked as given. `join(ws, abs)`
+    // would fabricate '<ws>/<abs>' and report a file that exists as missing,
+    // which wrongly marks the record broken (-> stale / outdated proposal).
+    const full = isAbsolute(rel) ? rel : join(workspace, rel)
     if (existsSync(full)) {
       existingPaths.push(rel)
     } else {

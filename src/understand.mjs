@@ -42,6 +42,95 @@ function cleanFacetText(str) {
   return s.slice(0, 200)
 }
 
+// ── M12 C2: Distillation Quality Gate ──────────────────────────────────────
+//
+// Deterministic structural validation of a single extracted text facet.
+// Drops malformed facets (regex artifacts, truncated captures, punctuation
+// fragments) WITHOUT ever rewriting or fabricating content. Returns the
+// original string when structurally sound, `null` when it must be dropped.
+//
+// Rules (in order):
+//   R1 non-string / empty
+//   R2 shorter than the extraction floor
+//   R3 must START with an ASCII letter (kills leading punctuation artifacts)
+//   R4 first word must be >=2 chars and not a bare suffix fragment
+//   R6 bracket/quote delimiters must be balanced (kills truncation artifacts)
+//   R7 last word must not be a truncated stub (>=3 chars, or a stop word)
+const VERIFIED_OUTCOMES = new Set(['test-passed', 'test-failed', 'tests-touched'])
+
+// Bare suffix fragments that never begin an English word — a leading token in
+// this set means the capture started mid-word.
+const SUFFIX_FRAGMENTS = new Set([
+  'ing', 'tion', 'sion', 'ness', 'ful', 'less', 'able', 'ible', 'ous',
+  'ive', 'ally', 'ation', 'izing', 'ement',
+])
+
+// Complete short words that may legitimately end a facet.
+const SHORT_END_WORDS = new Set([
+  'a', 'an', 'to', 'in', 'is', 'it', 'of', 'on', 'or', 'up', 'no', 'so',
+  'be', 'we', 'he', 'do', 'if', 'as', 'at', 'by', 'for', 'the', 'via',
+  'per', 'and', 'but', 'not', 'with', 'from', 'into', 'out', 'off',
+])
+
+export function qualityGateFacet(value) {
+  if (typeof value !== 'string') return null
+  const s = value.trim()
+  if (s.length < 5) return null
+
+  // R3: must start with a letter.
+  if (!/^[A-Za-z]/.test(s)) return null
+
+  const words = s.split(/\s+/)
+
+  // R4: first word must be >=2 chars and not a bare suffix fragment.
+  const first = words[0].replace(/[^A-Za-z0-9]/g, '')
+  if (first.length < 2) return null
+  if (SUFFIX_FRAGMENTS.has(first.toLowerCase())) return null
+
+  // R6: balanced brackets and even double-quote count.
+  const openParens = (s.match(/\(/g) || []).length
+  const closeParens = (s.match(/\)/g) || []).length
+  const openBrackets = (s.match(/\[/g) || []).length
+  const closeBrackets = (s.match(/\]/g) || []).length
+  const doubleQuotes = (s.match(/"/g) || []).length
+  if (openParens !== closeParens) return null
+  if (openBrackets !== closeBrackets) return null
+  if (doubleQuotes % 2 !== 0) return null
+
+  // R7: last word must not be a truncated stub.
+  const last = words[words.length - 1].replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, '')
+  if (last.length < 3 && !SHORT_END_WORDS.has(last.toLowerCase())) return null
+
+  return s
+}
+
+/**
+ * Apply the quality gate to a full facet set. Drops invalid text facets
+ * (sets them to null). Never fabricates or rewrites. `verifiedOutcome` is
+ * validated against the closed enum rather than free text.
+ *
+ * @returns {{ facets: object, dropped: string[] }}
+ */
+function qualityGateFacets(raw) {
+  const dropped = []
+  const out = {}
+  for (const key of ['symptom', 'rootCause', 'remedy']) {
+    const val = raw?.[key] ?? null
+    const gated = qualityGateFacet(val)
+    if (val != null && gated === null) dropped.push(key)
+    out[key] = gated
+  }
+  const outcome = raw?.verifiedOutcome ?? null
+  if (outcome != null && !VERIFIED_OUTCOMES.has(outcome)) {
+    dropped.push('verifiedOutcome')
+    out.verifiedOutcome = null
+  } else {
+    out.verifiedOutcome = outcome
+  }
+  return { facets: out, dropped }
+}
+
+
 /**
  * Deterministically extract structured causal facets:
  *   symptom → rootCause → remedy → verifiedOutcome
@@ -113,26 +202,26 @@ export function extractCausalFacets({ user = '', assistant = '', tools = [], fil
     verifiedOutcome = 'test-failed'
   }
 
-  // 5. Invariant & Boundedness Check
+  // 5. M12 C2 — Distillation Quality Gate
+  // Drop malformed facets at the capture boundary. Structural validation only:
+  // never rewrite, never fabricate. Raw evidence (evidence[], source.*) is
+  // preserved unchanged by distillBuffer; only the derived causal lines shrink.
+  const { facets: gated } = qualityGateFacets({ symptom, rootCause, remedy, verifiedOutcome })
+  // If the symptom facet was dropped, a tool-preview symptom no longer contributes.
+  const gatedToolSymptom = gated.symptom == null ? false : toolSymptom
+
+  // 6. Invariant & Boundedness Check (evaluated on GATED facets)
   // Invariant: Temporal adjacency alone is NOT causality.
   // An established causal link requires at least one core explanation (rootCause OR remedy)
   // paired with another facet (symptom, rootCause, remedy, verifiedOutcome).
-  const hasCoreExplanation = Boolean(rootCause || remedy)
-  const facetCount = [rootCause, remedy, symptom, verifiedOutcome].filter(Boolean).length
+  const hasCoreExplanation = Boolean(gated.rootCause || gated.remedy)
+  const facetCount = [gated.rootCause, gated.remedy, gated.symptom, gated.verifiedOutcome].filter(Boolean).length
 
   if (!hasCoreExplanation || facetCount < 2) {
-    return { facets: null, toolSymptom }
+    return { facets: null, toolSymptom: gatedToolSymptom }
   }
 
-  return {
-    facets: {
-      symptom: symptom || null,
-      rootCause: rootCause || null,
-      remedy: remedy || null,
-      verifiedOutcome: verifiedOutcome || null,
-    },
-    toolSymptom,
-  }
+  return { facets: gated, toolSymptom: gatedToolSymptom }
 }
 
 export function looksLikeClaim(text) {

@@ -16,6 +16,7 @@
 import { AUTHORITIES, KINDS, RELATIONS, VALIDATIONS } from './types.mjs'
 import { hybridRetrieve } from './retrieve.mjs'
 import { localGraph } from './graph.mjs'
+import { detectConsolidationCandidates, PROPOSAL_LIMIT } from './consolidate.mjs'
 
 /**
  * High-level knowledge overview projection.
@@ -529,4 +530,67 @@ export function observatoryContradictions({ projectStore, reusableStore = null }
   lines.push('════════════════════════════════════════════════════════════════════════')
 
   return { ok: true, data: pairs, formatted: lines.join('\n') }
+}
+
+
+function formatEvidence(evidence) {
+  const parts = []
+  for (const e of evidence || []) {
+    if (e?.path && e.state) parts.push(`${e.path} (${e.state})`)
+    else if (e?.path) parts.push(e.path)
+    else if (e?.relation) parts.push(`${e.relation} ${e.from} -> ${e.to}`)
+    else if (e?.note) parts.push(e.note)
+    else parts.push(String(e))
+  }
+  return parts.length ? parts.join(' · ') : 'none'
+}
+
+/**
+ * M12 C3 — read-only consolidation proposal surface (detect → propose → surface).
+ *
+ * Runs the pure detector over each store's bounded list and renders every
+ * proposal as detected + why + affected records + relevant evidence + proposed
+ * action. NEVER mutates a record: this view is a review surface, not a
+ * management workflow. Each store is detected separately so project/reusable
+ * isolation is preserved in the output.
+ */
+export function observatoryConsolidation({ projectStore, reusableStore = null, cwd = '' } = {}) {
+  const runs = [
+    { scope: 'project', store: projectStore },
+    ...(reusableStore ? [{ scope: 'reusable', store: reusableStore }] : []),
+  ].filter((r) => r && r.store)
+
+  const lines = [
+    '════════════════════════════════════════════════════════════════════════',
+    ' VEYRA OBSERVATORY — CONSOLIDATION PROPOSALS (read-only, no changes made)',
+    ' Detection is automatic; every proposal below is a suggestion for review.',
+    '════════════════════════════════════════════════════════════════════════',
+  ]
+  const data = []
+
+  for (const run of runs) {
+    const records = run.store.list({ limit: 200 })
+    const det = detectConsolidationCandidates(records, { workspace: cwd || null })
+    data.push({ scope: run.scope, counts: det.counts, truncated: det.truncated })
+    lines.push('')
+    lines.push(`──── ${run.scope.toUpperCase()} STORE — ${det.counts.total} proposal(s) ────`)
+    if (det.counts.total === 0) {
+      lines.push('  No consolidation candidates detected.')
+      continue
+    }
+    for (const c of det.candidates) {
+      lines.push('')
+      lines.push(`  [${c.type.toUpperCase()}] ${c.why}`)
+      lines.push(`    affected:  ${c.records.map((r) => `[${r.id}] "${r.title}"`).join('  ·  ')}`)
+      lines.push(`    evidence:  ${formatEvidence(c.evidence)}`)
+      lines.push(`    action:    ${c.proposedAction}  (review only — record unchanged)`)
+    }
+    if (det.truncated) {
+      lines.push('')
+      lines.push(`  … showing up to ${PROPOSAL_LIMIT} per type; counts above are exact totals.`)
+    }
+  }
+
+  lines.push('════════════════════════════════════════════════════════════════════════')
+  return { ok: true, data, formatted: lines.join('\n') }
 }
