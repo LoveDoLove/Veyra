@@ -2,7 +2,7 @@
  * Real-runtime composition test.
  *
  * Composes Veyra inside a fresh Cordis context together with the REAL host
- * service classes of the installed DeepSeek Harness (0.2.0-rc.1 baseline):
+ * service classes of the installed DeepSeek Harness (0.2.0-rc.2):
  * SystemPrompt, ToolRuntime, CommandRuntime, SkillRegistry and SettingsForms.
  * This verifies every registration seam Veyra uses against actual DSH
  * implementations rather than doubles, with storage isolated to a temp home
@@ -129,10 +129,19 @@ test('Veyra composes against the real DSH host services', { skip }, async () => 
   const visible = [...ctx.tools.view().visible.keys()].sort()
   assert.deepEqual(visible, expected, 'real ToolRuntime view must equal the declared tool set')
 
-  // 2. Prompt seam: real SystemPrompt assembles both Veyra contributions.
+  // 2. Prompt seam: real SystemPrompt assembles both Veyra contributions —
+  // and the agent policy rides in as exactly one static section, re-assembled
+  // by DSH before every model step without duplicating.
   const assembly = await ctx.systemPrompt.assemble({})
-  assert.ok(assembly.sections.some((s) => s.name === 'veyra:guidance'), 'veyra:guidance section missing')
-  assert.ok(assembly.contexts.some((c) => c.name === 'veyra:recall'), 'veyra:recall context missing')
+  const guidanceSections = assembly.sections.filter((s) => s.name === 'veyra:guidance')
+  assert.equal(guidanceSections.length, 1, 'exactly one veyra:guidance section expected per assembly')
+  assert.ok(guidanceSections[0].text.includes('Veyra Agent Policy'), 'assembled veyra:guidance lost the agent policy text')
+  assert.ok(guidanceSections[0].text.includes('Consider retrieval'), 'policy retrieval triggers missing from assembly')
+  assert.ok(guidanceSections[0].text.includes('Consider validation'), 'policy validation triggers missing from assembly')
+  assert.ok(assembly.contexts.filter((c) => c.name === 'veyra:recall').length === 1, 'veyra:recall context missing')
+  const second = await ctx.systemPrompt.assemble({})
+  assert.equal(second.sections.filter((s) => s.name === 'veyra:guidance').length, 1, 're-assembly must not duplicate the policy section')
+  assert.equal(second.sections.find((s) => s.name === 'veyra:guidance').text, guidanceSections[0].text, 'static policy text must be stable across model steps')
 
   // 3. Command seam: real CommandRuntime descriptor for /veyra.
   const command = ctx.commands.list(undefined).find((d) => d.name === 'veyra')

@@ -262,6 +262,65 @@ test('plugin exports name=veyra and wires DSH surfaces', async () => {
   rmSync(dir, { recursive: true, force: true })
 })
 
+test('Veyra Agent Policy is registered as exactly one static system-prompt section', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'veyra-policy-'))
+  const ctx = mockCtx()
+  const dispose = apply(ctx, { home: dir, observe: true })
+  const guidance = ctx._sections.filter((s) => s.name === 'veyra:guidance')
+  assert.equal(guidance.length, 1, 'exactly one veyra:guidance section — no duplicate injection')
+  assert.equal(guidance[0].order, 3050)
+  assert.equal(typeof guidance[0].text, 'string', 'policy is static text, assembled by DSH per model step')
+  assert.equal(guidance[0].text, GUIDANCE_TEXT)
+  const recalls = ctx._contexts.filter((c) => c.name === 'veyra:recall')
+  assert.equal(recalls.length, 1, 'exactly one veyra:recall context')
+  dispose?.()
+  closeAllStores()
+  rmSync(dir, { recursive: true, force: true })
+})
+
+test('Veyra Agent Policy covers availability, triggers, and preserved invariants', () => {
+  // 1. Availability: the agent always knows Veyra exists and what it offers.
+  assert.ok(GUIDANCE_TEXT.includes('Veyra engineering intelligence is available'))
+  assert.ok(GUIDANCE_TEXT.includes('veyra_remember, veyra_recall'))
+  // 2. Retrieval triggers.
+  assert.ok(GUIDANCE_TEXT.includes('Consider retrieval'))
+  assert.ok(GUIDANCE_TEXT.includes('prior project or architecture decisions'))
+  assert.ok(GUIDANCE_TEXT.includes('project constraints and durable implementation conventions'))
+  assert.ok(GUIDANCE_TEXT.includes('troubleshooting outcomes'))
+  assert.ok(GUIDANCE_TEXT.includes('conflicting historical knowledge'))
+  // 3. When NOT to use Veyra: no per-turn obligation, trivial tasks skipped.
+  assert.ok(GUIDANCE_TEXT.includes('never call it every turn'))
+  assert.ok(GUIDANCE_TEXT.includes('typos, formatting-only edits'))
+  assert.ok(GUIDANCE_TEXT.includes('skip the tool call'))
+  // 4. Recording triggers + transient noise rule.
+  assert.ok(GUIDANCE_TEXT.includes('Consider recording'))
+  assert.ok(GUIDANCE_TEXT.includes('durable architecture decisions'))
+  assert.ok(GUIDANCE_TEXT.includes('Transient conversation noise must never become memory'))
+  // 5. Validation triggers for conflicting / obsolete knowledge.
+  assert.ok(GUIDANCE_TEXT.includes('Consider validation'))
+  assert.ok(GUIDANCE_TEXT.includes('conflicts with recalled knowledge'))
+  assert.ok(GUIDANCE_TEXT.includes('remembered knowledge looks obsolete'))
+  // 6. Interpretation: results are evidence/context, verified against the repo.
+  assert.ok(GUIDANCE_TEXT.includes('evidence and context, not repository truth'))
+  assert.ok(GUIDANCE_TEXT.includes('current code, tests, and git history'))
+  // 7. Similarity never raises standing.
+  assert.ok(GUIDANCE_TEXT.includes('Similarity ≠ Authority'))
+  assert.ok(GUIDANCE_TEXT.replace(/\s+/g, ' ').includes("never raise a record's standing"))
+  // 8. No silent merge/overwrite/retire; contradictions stay visible.
+  assert.ok(GUIDANCE_TEXT.includes('Do not silently merge, overwrite, or retire memory'))
+  assert.ok(GUIDANCE_TEXT.includes('Contradictions stay visible'))
+  // 9. Preserved invariants from the original guidance.
+  assert.ok(GUIDANCE_TEXT.includes('Observe ≠ Store'))
+  assert.ok(GUIDANCE_TEXT.includes('Candidate ≠ Truth'))
+  assert.ok(GUIDANCE_TEXT.includes('Memory ≠ Knowledge'))
+  assert.ok(GUIDANCE_TEXT.includes('Knowledge without evidence is not authoritative'))
+  assert.ok(GUIDANCE_TEXT.includes('veyra_promote (canonical)'))
+  assert.ok(GUIDANCE_TEXT.includes('Project isolation is preserved'))
+  assert.ok(GUIDANCE_TEXT.includes('does not replace verification'))
+  // Static policy text must not contain prompt-variable references.
+  assert.ok(!GUIDANCE_TEXT.includes('{{'))
+})
+
 test('tools remember → persist → recall across a fresh harness (session A/B)', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'veyra-loop-'))
   const cwd = process.cwd()

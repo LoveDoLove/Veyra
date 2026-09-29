@@ -11,6 +11,42 @@ versions follow [Semantic Versioning](https://semver.org/) on a pre-1.0 `0.1.x` 
 > version also gets a matching GitHub Release (`vX.Y.Z`) created by the publish
 > workflow.
 
+## [0.1.37] - 2026-09-29
+
+Veyra Agent Policy — the system-prompt guidance becomes a complete agent
+policy present at every DSH model step, plus DSH 0.2.0-rc.2 compatibility
+metadata.
+
+### Changed
+
+- `src/context.mjs` `GUIDANCE_TEXT`: rewritten as the Veyra Agent Policy —
+  availability (five tools, injected recall snapshot), retrieval triggers
+  (`veyra_recall` / `veyra_inspect`), explicit non-retrieval rules (trivial
+  tasks, never every turn, skip the tool call when the injected snapshot
+  already answers), recording triggers (`veyra_remember`) with the rule that
+  transient conversation noise must never become memory, validation triggers
+  for conflicting or obsolete knowledge, and interpretation rules (results are
+  evidence and context, not repository truth; verify important conclusions
+  against current code, tests, and git history; similarity never raises a
+  record's standing; no silent merge/overwrite/retire — contradictions stay
+  visible and the repository wins). All prior invariants are preserved
+  (`Observe ≠ Store`, `Candidate ≠ Truth`, `Similarity ≠ Authority`,
+  `Memory ≠ Knowledge`, canonical only via explicit `veyra_promote`,
+  fail-closed project isolation).
+- The policy stays the single static `veyra:guidance` section (order 3050)
+  re-assembled by DSH `preStep` before every model step — no second injection
+  channel, no per-step dynamic evaluation.
+
+### Added
+
+- `package.json`: `0.2.0-rc.2` declared `compatible` in
+  `dsh.compatibility.dshReleases`.
+- Tests: policy-coverage and single-static-section assertions
+  (`test/plugin.test.mjs`), assembled-policy plus no-duplicate-on-reassembly
+  assertions against the real DSH services (`test/dsh-runtime.test.mjs`), and
+  `0.2.0-rc.2` admitted to the range and release-matrix checks
+  (`test/compatibility.test.mjs`).
+
 ## [0.1.36] - 2026-09-29
 
 M12 — evidence intelligence, distillation quality gating, and read-only

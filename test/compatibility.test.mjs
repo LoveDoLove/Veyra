@@ -73,12 +73,12 @@ function satisfiesIncludePrerelease (version, range) {
 
 const dsh = findDshRoot()
 
-// --- Always-on: the declared compatibility contract must admit DSH 0.2.0-rc.1.
+// --- Always-on: the declared compatibility contract must admit DSH 0.2.0-rc.2.
 
-test('declared ranges admit 0.2.0-rc.1 under DSH\'s prerelease evaluation rule', () => {
+test('declared ranges admit 0.2.0-rc.2 under DSH\'s prerelease evaluation rule', () => {
   assert.equal(typeof PEER_RANGE, 'string', 'peerDependencies["@deepseek-ai/dsh-tools"] must exist')
   for (const [label, range] of [['peer @deepseek-ai/dsh-tools', PEER_RANGE], ['dsh.compatibility.dshVersions', COMPAT.dshVersions]]) {
-    for (const admitted of ['0.2.0-rc.1', '0.2.0', '0.1.7-rc.2', '0.1.2-rc.1']) {
+    for (const admitted of ['0.2.0-rc.2', '0.2.0-rc.1', '0.2.0', '0.1.7-rc.2', '0.1.2-rc.1']) {
       assert.ok(satisfiesIncludePrerelease(admitted, range), `${label} ${range} must admit ${admitted}`)
     }
     for (const rejected of ['0.1.1', '0.3.0-0', '0.3.0-alpha.1']) {
@@ -87,8 +87,9 @@ test('declared ranges admit 0.2.0-rc.1 under DSH\'s prerelease evaluation rule',
   }
 })
 
-test('release matrix records 0.2.0-rc.1 without dropping earlier releases', () => {
+test('release matrix records 0.2.0-rc.2 without dropping earlier releases', () => {
   const releases = COMPAT.dshReleases
+  assert.equal(releases['0.2.0-rc.2'], 'compatible')
   assert.equal(releases['0.2.0-rc.1'], 'compatible')
   assert.equal(releases['0.1.7-rc.2'], 'compatible')
   assert.ok(Object.keys(releases).length >= 8)
