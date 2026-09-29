@@ -38,7 +38,7 @@ It observes real work in the harness, keeps durable lessons and project document
 
 ## Install
 
-Requirements: **Node ≥ 22.5 and < 25** and **DSH ≥ 0.1.2-rc.1** (`< 0.2.0`).
+Requirements: **Node ≥ 22.5 and < 25** and **DSH ≥ 0.1.2-rc.1** (`< 0.3.0`).
 
 ```sh
 dsh plugin --profile web add @lovedolove/veyra
@@ -218,7 +218,7 @@ Real, reproducible examples live in [`examples/`](https://github.com/LoveDoLove/
 
 **Node is too old.** Veyra requires Node ≥ 22.5 and < 25 (`engines.node`), and it uses `node:sqlite`, which first shipped in Node 22.5 — on an older Node the install is rejected or the plugin cannot load. Upgrade Node, then reinstall.
 
-**"Plugin … is incompatible with dsh …" at install.** The package's `dsh.compatibility` range is `>=0.1.2-rc.1 <0.2.0-0`. Update DSH, or accept the risk explicitly with the exact-version exemption DSH prints (`dsh plugin --profile <name> allow-version …`).
+**"Plugin … is incompatible with dsh …" at install.** The package's `dsh.compatibility` range is `>=0.1.2-rc.1 <0.3.0-0`. Update DSH, or accept the risk explicitly with the exact-version exemption DSH prints (`dsh plugin --profile <name> allow-version …`).
 
 **Automatic recall context is empty.** Check three things: (1) `recallLimit` is not `0` — Settings → Veyra; (2) the records you expect are not still `candidate` (candidates are never auto-recalled); (3) you are in the same project — run `/veyra` and confirm the workspace path and project id.
 
@@ -246,8 +246,8 @@ Every published version also gets a matching **GitHub Release** tagged `vX.Y.Z`:
 | | |
 | --- | --- |
 | Node | `>=22.5.0 <25.0.0` |
-| DSH | `>=0.1.2-rc.1 <0.2.0-0` |
-| Verified on | DSH `0.1.7-rc.2` (`web` profile: plugin boot, tools, `/veyra` + `/veyra/graph` HTTP); CI on Node 22 and 24 |
+| DSH | `>=0.1.2-rc.1 <0.3.0-0` |
+| Verified on | DSH `0.1.7-rc.2` (`web` profile: plugin boot, tools, `/veyra` + `/veyra/graph` HTTP); DSH `0.2.0-rc.1` (real compatibility gate + composed-host-service runtime); CI on Node 22 and 24 |
 | Profiles | installed per profile (`web`, `tui`, …); the Settings section and Network Graph need the web surface |
 | Storage | `node:sqlite` + FTS5, one DB per project under the Veyra home |
 | License | MIT |
