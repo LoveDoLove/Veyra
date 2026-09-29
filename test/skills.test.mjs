@@ -73,6 +73,39 @@ test('legacy-onboarding SKILL.md carries the required workflow guidance', () => 
   assert.match(parsed.content, /Veyra has no quarantine state/)
 })
 
+test('memory-review SKILL.md carries the required review guidance', () => {
+  const raw = readFileSync(skillFileFor('memory-review'), 'utf8')
+  const parsed = parseSkillMarkdown(raw, 'memory-review')
+  assert.equal(parsed.name, 'memory-review')
+  assert.equal(stripSkillFrontmatter(raw), parsed.content)
+  assert.ok(parsed.content.startsWith('# Memory Review'))
+
+  // Required sections: trigger, workflow, principles, report, completion,
+  // failure recovery.
+  for (const heading of [
+    '## Trigger and applicability',
+    '## Workflow',
+    '## Principles',
+    '## Review report',
+    '## Completion criteria',
+    '## Failure and recovery',
+  ]) {
+    assert.ok(parsed.content.includes(heading), `missing section: ${heading}`)
+  }
+
+  // Invariants: the skill reviews against existing Veyra tools only, keeps
+  // Candidate/Truth and Similarity/Authority distinct, never stores the whole
+  // conversation, and never grants canonical.
+  for (const tool of ['veyra_recall', 'veyra_inspect', 'veyra_remember']) {
+    assert.ok(parsed.content.includes(tool), `missing tool reference: ${tool}`)
+  }
+  assert.ok(parsed.content.includes('Candidate ≠ Truth'))
+  assert.ok(parsed.content.includes('Similarity ≠ Authority'))
+  assert.match(parsed.content, /Never store the conversation/)
+  assert.match(parsed.content, /Never promote to canonical/)
+  assert.match(parsed.content, /No new mechanisms/)
+})
+
 test('bundled provider lists and loads every bundled skill', async () => {
   const provider = createBundledSkillProvider()
   assert.equal(provider.name, SKILL_PROVIDER_NAME)

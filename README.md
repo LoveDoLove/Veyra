@@ -50,7 +50,7 @@ Then restart `dsh web`. A healthy boot prints these lines (the async ones can ap
 [veyra] plugin loaded (home=/home/you/.dsh/veyra)
 [veyra] registered /veyra
 [veyra] Network Graph WebUI at /veyra
-[veyra] registered skill: veyra, legacy-onboarding
+[veyra] registered skill: veyra, legacy-onboarding, memory-review
 [veyra] registered tools: veyra_remember, veyra_recall, veyra_inspect, veyra_forget, veyra_promote
 ```
 
@@ -145,12 +145,13 @@ Load the bundled `veyra` skill for full guidance on when to call them.
 
 ## Skills
 
-Two skills ship inside the package and register automatically (no separate install):
+Three skills ship inside the package and register automatically (no separate install):
 
 | Skill | Use it when |
 | --- | --- |
 | `veyra` | You need Veyra's own guidance: tool usage, candidate/derived/canonical, causal facets, hybrid search semantics, and the rule that repo truth wins. |
 | `legacy-onboarding` | First entry into an unfamiliar, legacy, or not-yet-baselined project: baseline assessment, progressive investigation depth, evidence-first extraction, and building a Project Memory Baseline. |
+| `memory-review` | You want to review this conversation for durable engineering memory: what is already recorded, what is missing, what looks stale or conflicting — and a short report of evidence-backed updates. |
 
 ## Memory rules
 

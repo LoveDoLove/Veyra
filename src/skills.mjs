@@ -57,6 +57,21 @@ export const BUNDLED_SKILL_DEFINITIONS = Object.freeze([
       + 'baseline; high-risk changes to old systems; or an explicit request to onboard '
       + 'an unfamiliar repository.',
   },
+  {
+    name: 'memory-review',
+    description:
+      'Review the current conversation for durable engineering memory worth keeping and '
+      + 'check whether Veyra already recorded it. Extracts a small set of evidence-backed '
+      + 'engineering facts from this session, recalls the existing memory, classifies each '
+      + 'fact as already recorded, missing, or stale/conflicting, updates only '
+      + 'evidence-backed gaps through existing Veyra tools, and ends with a short review '
+      + 'report. Load when the user asks to review memory, audit what this session '
+      + 'stored, check whether something from this conversation was recorded, or '
+      + 'reconcile conversation findings with Veyra.',
+    whenToUse:
+      'End-of-session or mid-session memory audits, "did we record that" questions, '
+      + "and reconciling this conversation's findings against existing Veyra memory.",
+  },
 ])
 
 export const BUNDLED_SKILLS_DIR = existsSync(join(REPO_ROOT, 'skills'))
