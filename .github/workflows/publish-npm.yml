@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,6 +26,9 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Upgrade npm to >=11.15.0 (required for npm stage publish)
+        run: npm install -g npm@latest
+
       - run: npm test
 
       # Every push to main publishes. npm versions are immutable, so if
@@ -32,8 +36,6 @@ jobs:
       # and commit the new version back (marked [skip publish] to avoid a loop).
       - name: Ensure unpublished version
         id: version
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           pkg="$(node -p "require('./package.json').name")"
@@ -48,12 +50,8 @@ jobs:
           echo "before=${before}" >> "$GITHUB_OUTPUT"
           echo "after=${after}" >> "$GITHUB_OUTPUT"
 
-      # Provenance is omitted: it would need `permissions: id-token: write`
-      # plus `npm publish --provenance`. The repository is public now, so
-      # that can be enabled later; the release path is left unchanged here.
-      - run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish to npm
+        run: npm stage publish --access public
 
       - name: Commit bumped version
         if: steps.version.outputs.before != steps.version.outputs.after
