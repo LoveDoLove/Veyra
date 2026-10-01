@@ -28,6 +28,10 @@ import { registerTools } from './tools.mjs'
 import { registerCommand } from './commands.mjs'
 import { registerSkills } from './skills.mjs'
 import { registerWebUi } from './webui.mjs'
+import { CodeIntelligenceEngine } from './code/engine.mjs'
+import { RepositoryWatcher } from './code/watcher.mjs'
+import { findAffectedMemories, buildStaleReviewCandidate } from './code/linking.mjs'
+import { FRESHNESS_STATUS } from './code/types.mjs'
 
 export const name = 'veyra'
 export const inject = ['tools']
@@ -112,6 +116,12 @@ function loggerOf(ctx) {
 }
 
 function createRuntime(ctx, config = {}) {
+  const log = loggerOf(ctx)
+  const codeEngine = new CodeIntelligenceEngine({
+    exePath: config.codebaseMemoryBin,
+    defaultPort: config.codebaseMemoryPort,
+    log,
+  })
   return {
     veyraHome: resolveVeyraHome(config),
     recallLimit: normalizeRecallLimit(config.recallLimit),
@@ -119,7 +129,9 @@ function createRuntime(ctx, config = {}) {
     observe: config.observe !== false,
     learn: config.learn !== false,
     fallbackCwd: process.cwd(),
-    log: loggerOf(ctx),
+    codeEngine,
+    codebaseWatch: config.codebaseWatch !== false,
+    log,
   }
 }
 
@@ -145,6 +157,43 @@ export function apply(ctx, config = {}) {
 
   const runtime = createRuntime(ctx, { ...DEFAULT_CONFIG, ...config })
   const buffers = new WeakMap()
+  const watchers = new Map()
+
+  const ensureWatcher = (cwd) => {
+    if (!runtime.codebaseWatch || !cwd || watchers.has(cwd)) return
+    try {
+      const watcher = new RepositoryWatcher(cwd, {
+        onBatchChanges: async (events) => {
+          try {
+            const changedFiles = events.map((e) => e.relativePath)
+            runtime.log?.debug?.(`[veyra] code changes in ${cwd}: ${changedFiles.join(', ')}`)
+            await runtime.codeEngine.indexRepository(cwd, { mode: 'incremental' }).catch(() => {})
+            const projectId = projectIdFor(cwd)
+            const projectStore = openProjectStore(runtime.veyraHome, projectId)
+            const memories = projectStore.list({ limit: 500 })
+            const affected = findAffectedMemories(cwd, changedFiles, memories)
+            for (const item of affected) {
+              if (item.freshness === FRESHNESS_STATUS.POTENTIALLY_STALE || item.freshness === FRESHNESS_STATUS.INVALID) {
+                const candidate = buildStaleReviewCandidate(
+                  item.record,
+                  item.affectedAnchors[0]?.path || 'modified code',
+                  item.freshness,
+                )
+                projectStore.put(candidate)
+              }
+            }
+          } catch (err) {
+            runtime.log?.debug?.(`[veyra] watcher batch error: ${err.message}`)
+          }
+        },
+      })
+      watcher.start()
+      watchers.set(cwd, watcher)
+    } catch {
+      // safe fallback
+    }
+  }
+  runtime.ensureWatcher = ensureWatcher
 
   const registerPrompt = (scope) => {
     if (!scope?.systemPrompt) return
@@ -260,6 +309,7 @@ export function apply(ctx, config = {}) {
         const buffer = buffers.get(session)
         if (!buffer) return
         const cwd = resolveWorkspace(agent) || runtime.fallbackCwd
+        ensureWatcher(cwd)
         const projectId = projectIdFor(cwd)
         const projectStore = openProjectStore(runtime.veyraHome, projectId)
         const candidate = candidateFromBuffer(buffer, {
@@ -336,13 +386,21 @@ export function apply(ctx, config = {}) {
     if (typeof offStopping === 'function') ctx.effect(() => offStopping)
   }
 
-  ctx.effect?.(() => () => {
+  const cleanup = () => {
+    for (const w of watchers.values()) {
+      try { w.stop?.() } catch {}
+      try { w.close?.() } catch {}
+    }
+    watchers.clear()
+    try { runtime.codeEngine?.dispose() } catch {}
     closeAllStores()
-  })
+  }
+
+  ctx.effect?.(() => cleanup)
 
   runtime.log.info(`[veyra] plugin loaded (home=${runtime.veyraHome})`)
   return () => {
-    closeAllStores()
+    cleanup()
   }
 }
 

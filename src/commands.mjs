@@ -21,6 +21,9 @@ import {
   observatoryRelationships,
   observatorySearch,
 } from './observatory.mjs'
+import { CodeIntelligenceEngine } from './code/engine.mjs'
+import { FRESHNESS_STATUS } from './code/types.mjs'
+import { checkRecordFreshness, findAffectedMemories } from './code/linking.mjs'
 
 /** Installed version, read from package.json; 'dev' outside the package. */
 export function packageVersion() {
@@ -49,6 +52,11 @@ function helpText() {
     '       observatory contradictions          conflicts and opposing claims',
     '       observatory consolidation            detect -> propose consolidation candidates (read-only)',
     '/veyra recall [q]                          hybrid search project (+ reusable) memory',
+    '/veyra code [subcommand]                   code intelligence & graph',
+    '       code status                         index status & memory freshness',
+    '       code index                          trigger repository reindexing',
+    '       code trace <symbol>                 trace call graph for symbol',
+    '       code impact                         check memory impact against changed code',
     '/veyra recent                              last 8 memories (including candidates)',
     '/veyra inspect <id>                        deep evidence, provenance & causal inspect',
     '/veyra forget <id>                         soft-forget a record',
@@ -198,6 +206,10 @@ export function handleVeyraCommand(runtime, invocation) {
     return { kind: 'success', text: `Forgot ${arg}` }
   }
 
+  if (verb === 'code') {
+    return handleCodeCommand(runtime, projectStore, cwd, arg)
+  }
+
   if (verb === 'promote') {
     const [id, toRaw] = arg.split(/\s+/)
     const existing = projectStore.get(id) || reusableStore.get(id)
@@ -210,6 +222,91 @@ export function handleVeyraCommand(runtime, invocation) {
   }
 
   return { kind: 'error', text: helpText() }
+}
+
+async function handleCodeCommand(runtime, projectStore, cwd, arg) {
+  const [sub, ...subRest] = arg.split(/\s+/)
+  const subArg = subRest.join(' ').trim()
+  const engine = runtime.codeEngine || new CodeIntelligenceEngine()
+
+  if (!sub || sub === 'status') {
+    const status = await engine.getStatus(cwd)
+    const projectRecords = projectStore.list({ limit: 500 })
+    let freshCount = 0
+    let staleCount = 0
+    let invalidCount = 0
+    for (const mem of projectRecords) {
+      const f = checkRecordFreshness(mem, cwd)
+      if (f.status === FRESHNESS_STATUS.FRESH) freshCount++
+      else if (f.status === FRESHNESS_STATUS.POTENTIALLY_STALE) staleCount++
+      else if (f.status === FRESHNESS_STATUS.INVALID) invalidCount++
+    }
+    const lines = [
+      `Code Intelligence Status for ${cwd}:`,
+      `  Status: ${status?.status || 'unindexed'}`,
+      `  Degraded: ${status?.degraded ? `YES (${status?.message || 'service unavailable'})` : 'NO'}`,
+      `  Memories: ${freshCount} fresh, ${staleCount} potentially stale, ${invalidCount} invalid`,
+    ]
+    if (engine.client?.serverInfo?.version) {
+      lines.splice(2, 0, `  Binary: ${engine.client.serverInfo.name || 'codebase-memory-mcp'} v${engine.client.serverInfo.version}`)
+    }
+    if (status?.degraded) {
+      lines.push(
+        '  Guidance: Install codebase-memory-mcp into ~/.local/bin via:',
+        '    curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash',
+        '    or set CBM_EXE=/path/to/codebase-memory-mcp'
+      )
+    }
+    return {
+      kind: 'success',
+      text: lines.join('\n'),
+    }
+  }
+
+  if (sub === 'index') {
+    const res = await engine.indexRepository(cwd, { mode: 'full' })
+    return {
+      kind: res.ok ? 'success' : 'error',
+      text: res.ok ? `Successfully indexed repository at ${cwd}` : `Indexing failed: ${res.message}`,
+    }
+  }
+
+  if (sub === 'trace') {
+    if (!subArg) return { kind: 'error', text: 'Usage: /veyra code trace <symbol>' }
+    const res = await engine.traceCallPath(cwd, { symbol: subArg })
+    return {
+      kind: res.ok ? 'success' : 'error',
+      text: res.raw || res.message || 'No trace result',
+    }
+  }
+
+  if (sub === 'impact') {
+    const files = subArg ? subArg.split(/[,\s]+/).filter(Boolean) : null
+    const projectRecords = projectStore.list({ limit: 500 })
+    if (files && files.length > 0) {
+      const affected = findAffectedMemories(cwd, files, projectRecords)
+      if (affected.length === 0) {
+        return { kind: 'success', text: `No memories affected by changes to: ${files.join(', ')}` }
+      }
+      const lines = affected.map((a) => `- [${a.record.id}] ${a.record.title} (${a.freshness})`)
+      return { kind: 'success', text: `Memories affected by ${files.join(', ')}:\n${lines.join('\n')}` }
+    }
+    const affected = []
+    for (const mem of projectRecords) {
+      const f = checkRecordFreshness(mem, cwd)
+      if (f.status !== FRESHNESS_STATUS.FRESH) {
+        affected.push(`- [${mem.id}] ${mem.title} (${f.status})`)
+      }
+    }
+    return {
+      kind: 'success',
+      text: affected.length > 0
+        ? `Memories with non-fresh code anchors:\n${affected.join('\n')}`
+        : 'All memory code anchors are fresh and verified against repository.',
+    }
+  }
+
+  return { kind: 'error', text: 'Usage: /veyra code [status|index|trace|impact]' }
 }
 
 export function registerCommand(ctx, runtime, scope) {

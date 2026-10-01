@@ -37,6 +37,7 @@ import {
 } from './types.mjs'
 import { contentHash, newRecordId, projectDbPath, reusableDbPath } from './ids.mjs'
 import { scrub } from './redact.mjs'
+import { closeAllWatchers } from './code/watcher.mjs'
 
 const SCHEMA_DDL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -453,6 +454,7 @@ export function openReusableStore(veyraHome) {
 export function closeAllStores() {
   for (const store of storeCache.values()) store.close()
   storeCache.clear()
+  closeAllWatchers()
 }
 
 /** Test helper: open an isolated in-memory / temp store that is not cached. */

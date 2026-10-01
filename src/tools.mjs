@@ -28,6 +28,9 @@ import { projectIdFor, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
 import { inspect, recall, summarizeForPrompt } from './retrieve.mjs'
 import { promote, remember } from './learn.mjs'
+import { CodeIntelligenceEngine } from './code/engine.mjs'
+import { FRESHNESS_STATUS } from './code/types.mjs'
+import { checkRecordFreshness } from './code/linking.mjs'
 
 function loadDefineTool() {
   try {
@@ -394,6 +397,270 @@ export function buildToolDefinitions(runtime) {
         return payload
       },
       presentCall: (args) => ({ card: 'generic', title: 'Promote', kind: 'other', rawInput: `${args.id} → ${args.to || 'derived'}` }),
+    },
+    {
+      name: 'cbm_projects',
+      description: 'List all projects currently indexed in codebase-memory-mcp.',
+      parameters: {
+        reason: { type: 'string', required: true, description: 'Brief explanation of why you are calling this tool' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            ok: { type: 'boolean' },
+            degraded: { type: 'boolean' },
+            message: { type: 'string' },
+            projects: { type: 'array' },
+          },
+        },
+        render: (_args, value) => {
+          if (value?.degraded) return textBlocks(`Code Intelligence Degraded: ${value?.message || 'Service unavailable'}`)
+          if (!value?.projects || value.projects.length === 0) return textBlocks('No projects indexed.')
+          return textBlocks(JSON.stringify(value.projects, null, 2))
+        },
+      },
+      async execute(args, exec) {
+        const cwd = resolveWorkspace(exec?.agent) || runtime.fallbackCwd
+        const engine = runtime.codeEngine || new CodeIntelligenceEngine()
+        return await engine.listProjects()
+      },
+      presentCall: (args) => ({ card: 'generic', title: 'Code Projects', kind: 'read', rawInput: args.reason }),
+    },
+    {
+      name: 'cbm_search',
+      description: 'Search the code knowledge graph for symbols, functions, classes, or files. Filter by name_pattern, label (Function, Class, Interface, File), or degree.',
+      parameters: {
+        name_pattern: { type: 'string', description: 'Regex/substring to filter node names (e.g. ".*auth.*").' },
+        label: { type: 'string', description: 'Node label filter: Function | Class | Interface | File' },
+        file_path_pattern: { type: 'string', description: 'Regex to filter by file path.' },
+        limit: { type: 'number', description: 'Maximum results to return (default 50).' },
+        project: { type: 'string', description: 'Project name (e.g. C-repos-myproject). Defaults to current repo.' },
+        repo: { type: 'string', description: 'Repository root path as fallback if project name not known.' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            ok: { type: 'boolean' },
+            degraded: { type: 'boolean' },
+            message: { type: 'string' },
+            raw: { type: 'string' },
+          },
+        },
+        render: (_args, value) => {
+          if (value?.degraded) return textBlocks(`Code Intelligence Degraded: ${value?.message || 'Service unavailable'}`)
+          return textBlocks(value?.raw || (value?.ok ? 'No matching symbols found.' : value?.message || 'Search failed.'))
+        },
+      },
+      async execute(args, exec) {
+        const cwd = resolveWorkspace(exec?.agent) || runtime.fallbackCwd
+        const targetRepo = args.repo || cwd
+        const engine = runtime.codeEngine || new CodeIntelligenceEngine()
+        return await engine.searchSymbols(targetRepo, args)
+      },
+      presentCall: (args) => ({ card: 'generic', title: 'Search Symbols', kind: 'read', rawInput: args.name_pattern || args.label || '' }),
+    },
+    {
+      name: 'cbm_snippet',
+      description: 'Fetch the exact source code snippet for a qualified symbol or function from codebase-memory.',
+      parameters: {
+        qualified_name: { type: 'string', required: true, description: 'Full qualified name of the symbol (e.g. "app.auth.login").' },
+        file_path: { type: 'string', description: 'File path containing the symbol.' },
+        start_line: { type: 'number', description: 'Start line (1-based, optional).' },
+        end_line: { type: 'number', description: 'End line (optional).' },
+        project: { type: 'string', description: 'Project name.' },
+        repo: { type: 'string', description: 'Repository root path.' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            ok: { type: 'boolean' },
+            degraded: { type: 'boolean' },
+            message: { type: 'string' },
+            snippet: { type: 'string' },
+          },
+        },
+        render: (_args, value) => {
+          if (value?.degraded) return textBlocks(`Code Intelligence Degraded: ${value?.message || 'Service unavailable'}`)
+          return textBlocks(value?.snippet || (value?.ok ? 'No snippet returned.' : value?.message || 'Snippet retrieval failed.'))
+        },
+      },
+      async execute(args, exec) {
+        const cwd = resolveWorkspace(exec?.agent) || runtime.fallbackCwd
+        const targetRepo = args.repo || cwd
+        const engine = runtime.codeEngine || new CodeIntelligenceEngine()
+        return await engine.getCodeSnippet(targetRepo, args)
+      },
+      presentCall: (args) => ({ card: 'generic', title: 'Code Snippet', kind: 'read', rawInput: args.qualified_name }),
+    },
+    {
+      name: 'cbm_trace',
+      description: 'Trace inbound/outbound call paths through the knowledge graph from a specific symbol.',
+      parameters: {
+        symbol: { type: 'string', required: true, description: 'Target symbol or function name to trace from.' },
+        direction: { type: 'string', description: 'Trace direction (default "both"): inbound | outbound | both' },
+        max_depth: { type: 'number', description: 'Maximum hop depth (default 3).' },
+        project: { type: 'string', description: 'Project name.' },
+        repo: { type: 'string', description: 'Repository root path.' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            ok: { type: 'boolean' },
+            degraded: { type: 'boolean' },
+            message: { type: 'string' },
+            raw: { type: 'string' },
+          },
+        },
+        render: (_args, value) => {
+          if (value?.degraded) return textBlocks(`Code Intelligence Degraded: ${value?.message || 'Service unavailable'}`)
+          return textBlocks(value?.raw || (value?.ok ? 'No call paths found.' : value?.message || 'Trace failed.'))
+        },
+      },
+      async execute(args, exec) {
+        const cwd = resolveWorkspace(exec?.agent) || runtime.fallbackCwd
+        const targetRepo = args.repo || cwd
+        const engine = runtime.codeEngine || new CodeIntelligenceEngine()
+        return await engine.traceCallPath(targetRepo, args)
+      },
+      presentCall: (args) => ({ card: 'generic', title: 'Trace Calls', kind: 'read', rawInput: args.symbol }),
+    },
+    {
+      name: 'cbm_arch',
+      description: 'Get an architectural summary of a directory: key components, entry points, and dependencies.',
+      parameters: {
+        directory: { type: 'string', description: 'Subdirectory to analyze (relative to repo root).' },
+        depth: { type: 'number', description: 'Analysis depth (default 2).' },
+        project: { type: 'string', description: 'Project name.' },
+        repo: { type: 'string', description: 'Repository root path.' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            ok: { type: 'boolean' },
+            degraded: { type: 'boolean' },
+            message: { type: 'string' },
+            raw: { type: 'string' },
+          },
+        },
+        render: (_args, value) => {
+          if (value?.degraded) return textBlocks(`Code Intelligence Degraded: ${value?.message || 'Service unavailable'}`)
+          return textBlocks(value?.raw || (value?.ok ? 'No architectural summary available.' : value?.message || 'Arch query failed.'))
+        },
+      },
+      async execute(args, exec) {
+        const cwd = resolveWorkspace(exec?.agent) || runtime.fallbackCwd
+        const targetRepo = args.repo || cwd
+        const engine = runtime.codeEngine || new CodeIntelligenceEngine()
+        return await engine.getArchitecture(targetRepo, args)
+      },
+      presentCall: (args) => ({ card: 'generic', title: 'Architecture Summary', kind: 'read', rawInput: args.directory || '' }),
+    },
+    {
+      name: 'cbm_search_code',
+      description: 'Fast textual regex search over indexed repository files in codebase-memory.',
+      parameters: {
+        query: { type: 'string', required: true, description: 'Search term or regex pattern.' },
+        file_pattern: { type: 'string', description: 'Glob/regex to restrict file paths.' },
+        limit: { type: 'number', description: 'Maximum results (default 50).' },
+        project: { type: 'string', description: 'Project name.' },
+        repo: { type: 'string', description: 'Repository root path.' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            ok: { type: 'boolean' },
+            degraded: { type: 'boolean' },
+            message: { type: 'string' },
+            results: { type: 'string' },
+          },
+        },
+        render: (_args, value) => {
+          if (value?.degraded) return textBlocks(`Code Intelligence Degraded: ${value?.message || 'Service unavailable'}`)
+          return textBlocks(value?.results || (value?.ok ? 'No matches found.' : value?.message || 'Search failed.'))
+        },
+      },
+      async execute(args, exec) {
+        const cwd = resolveWorkspace(exec?.agent) || runtime.fallbackCwd
+        const targetRepo = args.repo || cwd
+        const engine = runtime.codeEngine || new CodeIntelligenceEngine()
+        return await engine.searchCodeText(targetRepo, args)
+      },
+      presentCall: (args) => ({ card: 'generic', title: 'Search Code Text', kind: 'read', rawInput: args.query }),
+    },
+    {
+      name: 'veyra_code_status',
+      description: 'Inspect Veyra repository code index status, freshness, and affected memories.',
+      parameters: {
+        repo: { type: 'string', description: 'Repository root path (defaults to current workspace).' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            ok: { type: 'boolean' },
+            status: { type: 'string' },
+            degraded: { type: 'boolean' },
+            message: { type: 'string' },
+            freshMemories: { type: 'number' },
+            staleMemories: { type: 'number' },
+            invalidMemories: { type: 'number' },
+          },
+        },
+        render: (_args, value) => {
+          const lines = [
+            `Index Status: ${value?.status || 'unknown'} (degraded: ${Boolean(value?.degraded)})`,
+          ]
+          if (value?.message) lines.push(`Message: ${value.message}`)
+          if (typeof value?.freshMemories === 'number') {
+            lines.push(`Memories: ${value.freshMemories} fresh, ${value.staleMemories} stale, ${value.invalidMemories} invalid`)
+          }
+          return textBlocks(lines.join('\n'))
+        },
+      },
+      async execute(args, exec) {
+        const cwd = resolveWorkspace(exec?.agent) || runtime.fallbackCwd
+        const targetRepo = args.repo || cwd
+        const engine = runtime.codeEngine || new CodeIntelligenceEngine()
+        const status = await engine.getStatus(targetRepo)
+
+        const projectId = projectIdFor(targetRepo)
+        const projectStore = openProjectStore(runtime.veyraHome, projectId)
+        const memories = projectStore ? projectStore.list({ limit: 500 }) : []
+        let freshCount = 0
+        let staleCount = 0
+        let invalidCount = 0
+
+        for (const mem of memories) {
+          const f = checkRecordFreshness(mem, targetRepo)
+          if (f.status === FRESHNESS_STATUS.FRESH) freshCount++
+          else if (f.status === FRESHNESS_STATUS.POTENTIALLY_STALE) staleCount++
+          else if (f.status === FRESHNESS_STATUS.INVALID) invalidCount++
+        }
+
+        return {
+          ok: true,
+          status: status?.status || 'unindexed',
+          degraded: Boolean(status?.degraded),
+          message: status?.message || null,
+          freshMemories: freshCount,
+          staleMemories: staleCount,
+          invalidMemories: invalidCount,
+        }
+      },
+      presentCall: (args) => ({ card: 'generic', title: 'Code Status', kind: 'read', rawInput: args.repo || '' }),
     },
   ]
 }

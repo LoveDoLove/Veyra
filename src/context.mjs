@@ -12,6 +12,7 @@ import { DEFAULT_RECALL_LIMIT, RELATIONS } from './types.mjs'
 import { extractText, projectIdFor, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
 import { recall } from './retrieve.mjs'
+import { checkRecordFreshness } from './code/linking.mjs'
 
 /** Evidence items rendered per record before the rest are summarised as a count. */
 export const CONTEXT_EVIDENCE_LIMIT = 3
@@ -117,7 +118,7 @@ function renderEvidenceItem(item) {
  * column, or table is introduced. This is a read-time projection, not a
  * subsystem.
  */
-export function composeAgentContext(records, { stores = [] } = {}) {
+export function composeAgentContext(records, { stores = [], workspace = null } = {}) {
   if (!Array.isArray(records) || records.length === 0) return []
   const sup = resolveSupersession(records, stores)
   return records.map((rec) => {
@@ -126,6 +127,12 @@ export function composeAgentContext(records, { stores = [] } = {}) {
       .filter(Boolean)
     const shown = evidence.slice(0, CONTEXT_EVIDENCE_LIMIT)
     const extra = evidence.length - shown.length
+    let codeFreshness = null
+    if (workspace) {
+      try {
+        codeFreshness = checkRecordFreshness(rec, workspace)
+      } catch {}
+    }
     return {
       record: rec,
       status: rec.status,
@@ -134,6 +141,7 @@ export function composeAgentContext(records, { stores = [] } = {}) {
       replacedBy: sup.replacedBy(rec),
       evidence: shown,
       evidenceOverflow: extra > 0 ? extra : 0,
+      codeFreshness,
     }
   })
 }
@@ -163,6 +171,12 @@ export function renderAgentContext(composed, { heading = 'Veyra recalled enginee
     }
     const kindTag = rec.kind === 'knowledge' ? ' [KNOWLEDGE]' : ''
     lines.push(`- [${rec.id}] (${scope}/${auth}${statusTag}/${rec.validation}/${rec.confidence}${contra})${kindTag} ${rec.title}`)
+
+    if (entry.codeFreshness?.status === 'potentially_stale') {
+      lines.push('  • ⚠️ [CODE EVIDENCE STALE: anchored file was modified]')
+    } else if (entry.codeFreshness?.status === 'invalid') {
+      lines.push('  • ⚠️ [CODE EVIDENCE INVALID: anchored file missing or symbol unresolvable]')
+    }
 
     if (entry.replaces) {
       const title = entry.replaces.title ? ` — ${entry.replaces.title}` : ''
@@ -241,6 +255,15 @@ export const GUIDANCE_TEXT = [
   '- Project isolation is preserved. Do not treat reusable experience as',
   '  this project\'s architecture.',
   '- Memory assists engineering; it does not replace verification.',
+  '',
+  'Codebase Memory Policy — Structural Code Intelligence is available in this session.',
+  'Tools: cbm_projects, cbm_search, cbm_snippet, cbm_trace, cbm_arch, cbm_search_code, veyra_code_status.',
+  '- Repository code is authoritative truth. Codebase Memory reflects this truth.',
+  '- Prefer cbm_trace for caller/callee relationships, hierarchies, and blast-radius analysis.',
+  '- Prefer cbm_search for AST symbol discovery (functions, classes, interfaces).',
+  '- Prefer cbm_snippet to retrieve exact symbol definitions without whole-file overhead.',
+  '- Prefer cbm_arch for directory component dependencies and architecture overview.',
+  '- Veyra memory provides historical context; if memory contradicts code, code wins.',
 ].join('\n')
 
 // Claimed inbox text is gone from inbox and not yet on deriveMessages()
@@ -324,7 +347,7 @@ export function buildRecallContext({ veyraHome, cwd, query = '', limit = DEFAULT
   if (reusableStore) reusableStore.touch(records.filter((r) => r.scope === 'reusable').map((r) => r.id))
   // M6 Phase-1: compose the engineering-aware view (lifecycle, evidence,
   // inbound supersession) before rendering. Read-time projection only.
-  return renderAgentContext(composeAgentContext(records, { stores: [projectStore, reusableStore] }))
+  return renderAgentContext(composeAgentContext(records, { stores: [projectStore, reusableStore], workspace }))
 }
 
 export function createContextProvider(runtime) {
@@ -332,6 +355,7 @@ export function createContextProvider(runtime) {
     try {
       const agent = assembleContext?.agent
       const cwd = resolveWorkspace(agent) || runtime.fallbackCwd
+      runtime.ensureWatcher?.(cwd)
       const query = queryFromAssemble(assembleContext)
       return buildRecallContext({
         veyraHome: runtime.veyraHome,

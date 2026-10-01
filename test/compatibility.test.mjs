@@ -127,11 +127,11 @@ test('real DSH compatibility gate accepts the Veyra manifest', { skip: gateSkip 
 
 const defineToolSkip = resolveDshPackage('@deepseek-ai/dsh-tools') ? false : 'no DSH install found (set DSH_INSTALL to run)'
 
-test('all five tool definitions compile under the real defineTool', { skip: defineToolSkip }, async () => {
+test('all tool definitions compile under the real defineTool', { skip: defineToolSkip }, async () => {
   const tools = await loadDshPackage('@deepseek-ai/dsh-tools')
   assert.ok(tools && typeof tools.defineTool === 'function', '@deepseek-ai/dsh-tools did not export defineTool')
   const defs = buildToolDefinitions({ veyraHome: '/tmp/veyra-compat-test-home', fallbackCwd: '/tmp' })
-  assert.equal(defs.length, 5)
+  assert.equal(defs.length, 12)
   for (const def of defs) {
     const compiled = tools.defineTool(def)
     assert.ok(compiled, `defineTool rejected ${def.name}`)

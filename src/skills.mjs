@@ -41,6 +41,17 @@ export const BUNDLED_SKILL_DEFINITIONS = Object.freeze([
       + 'decisions, or when automatic recall is missing or too thin.',
   },
   {
+    name: 'codebase-memory',
+    description:
+      'Use Codebase Memory for structural code intelligence, AST-level navigation, call-graph tracing, '
+      + 'and knowledge-graph code search. Prefer cbm_trace for caller/callee analysis, cbm_search for '
+      + 'symbol discovery, cbm_snippet for exact definitions, and cbm_arch for component dependency overview. '
+      + 'Provides precise structural graph vs noisy text search.',
+    whenToUse:
+      'Understanding repository structure, finding symbol definitions, tracing call hierarchies, '
+      + 'analyzing blast radius / impact of code changes, or directory component architecture.',
+  },
+  {
     name: 'legacy-onboarding',
     description:
       'Onboard an unfamiliar, legacy, or not-yet-baselined project into Veyra. Assesses '
