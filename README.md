@@ -2,17 +2,35 @@
 
 > **Veyra — Engineering Intelligence for Coding Agents**
 
-Veyra is a plugin for [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness) (DSH) that gives your coding agent a persistent engineering memory.
-It observes real work in the harness, keeps durable lessons and project documentation, and recalls them — with evidence — in later sessions and later projects.
+Veyra is a plugin for [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness) (DSH) that gives your coding agent a persistent, evidence-backed engineering memory **and** a structural code intelligence layer — the Dual-Brain architecture.
 
 [![npm](https://img.shields.io/npm/v/@lovedolove/veyra)](https://www.npmjs.com/package/@lovedolove/veyra)
 [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/LoveDoLove/Veyra/blob/main/LICENSE)
 [![CI](https://github.com/LoveDoLove/Veyra/actions/workflows/ci.yml/badge.svg)](https://github.com/LoveDoLove/Veyra/actions/workflows/ci.yml)
 
-- **Memory, not guesses.** Every record carries evidence anchors, a validation state, and an authority level. Your repository stays authoritative; Veyra never writes into it.
-- **Hybrid Search over memory *and* documentation.** Lexical (SQLite FTS5 BM25 + exact symbols), semantic, causal-intent, and relationship signals in one ranked result with a transparent score breakdown.
+---
+
+## The Dual-Brain architecture
+
+Veyra runs two complementary layers that answer different questions:
+
+| Brain | What it holds | Source of truth |
+| --- | --- | --- |
+| **Veyra Memory** | Engineering lessons, root causes, decisions, constraints, and causal chains (`symptom → rootCause → remedy → verifiedOutcome`) — with evidence anchors, validation states, and authority levels | Epistemic state that accumulates across sessions |
+| **Code Intelligence** | AST-level structural facts: symbols, files, call graphs, class hierarchies — always derived from the live repository | The repository itself, via `codebase-memory-mcp` |
+
+**These are not the same thing.** A Veyra memory record that says "the login function was refactored to use JWTs" is an engineering lesson; the call graph of `login()` today is structural truth. Code Intelligence can mark a memory *potentially stale* when files it references have changed — it never silently overwrites Veyra memory.
+
+---
+
+## What Veyra does
+
+- **Persistent engineering memory.** Every record carries evidence anchors, a validation state (`unverified → reviewed → verified`), an authority level (`candidate → derived → canonical`), and causal facets. Your repository stays authoritative; Veyra never writes into it.
+- **Hybrid search.** One query, several signals: FTS5 BM25 + symbol/path boosts, token-level semantic overlap, intent affinity (why / how / what-changed), and relationship graph cohesion — with a transparent score breakdown.
+- **Code Intelligence.** When `codebase-memory-mcp` is installed, seven agent tools give structural call-graph tracing, AST-level symbol search, file/component architecture summaries, and code-grounded search. When it is not installed, Veyra Memory runs normally without interruption.
+- **Memory freshness.** Code Intelligence watches changed files, flags memories whose evidence anchors point to modified or deleted code, and applies retrieval penalties to stale records.
 - **Human surfaces.** `/veyra` slash commands, a read-only Knowledge Observatory, and an interactive Network Graph at `/veyra` in DSH Web.
-- **Nothing to babysit.** Automatic capture, learning, and recall are on by default. You only intervene when you want to remember, forget, or promote something explicitly.
+- **Zero runtime npm dependencies.** The package is pure ESM, ~130 kB packed.
 
 ---
 
@@ -21,6 +39,7 @@ It observes real work in the harness, keeps durable lessons and project document
 - [Install](#install)
 - [Quick Start](#quick-start)
 - [How memory works](#how-memory-works)
+- [Code Intelligence](#code-intelligence)
 - [Features](#features)
 - [Commands](#commands)
 - [Tools](#tools)
@@ -28,7 +47,6 @@ It observes real work in the harness, keeps durable lessons and project document
 - [Memory rules](#memory-rules)
 - [Configuration](#configuration)
 - [Architecture](#architecture)
-- [Examples](#examples)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
 - [Compatibility](#compatibility)
@@ -38,121 +56,170 @@ It observes real work in the harness, keeps durable lessons and project document
 
 ## Install
 
-Requirements: **Node ≥ 22.5 and < 25** and **DSH ≥ 0.1.2-rc.1** (`< 0.3.0`).
-
 ```sh
 dsh plugin --profile web add @lovedolove/veyra
 ```
 
-Then restart `dsh web`. A healthy boot prints these lines (the async ones can appear in any order):
+Restart DSH (or reload the profile) — Veyra activates automatically. No API keys, no external services, no configuration required to start using memory.
 
-```
-[veyra] plugin loaded (home=/home/you/.dsh/veyra)
-[veyra] registered /veyra
-[veyra] Network Graph WebUI at /veyra
-[veyra] registered skill: veyra, legacy-onboarding, memory-review
-[veyra] registered tools: veyra_remember, veyra_recall, veyra_inspect, veyra_forget, veyra_promote
-```
-
-Prefer the GUI? In DSH Web open **Settings → Plugins → Add plugin** and paste the package name `@lovedolove/veyra` — the dialog uses the same package name as the `dsh plugin add` command above.
-
-Memory is stored under `$DSH_HOME/veyra/` (default `~/.dsh/veyra/`), never inside your repository. `VEYRA_HOME` overrides the storage root.
+---
 
 ## Quick Start
 
-Goal: go from a fresh install to useful recalled context in a few minutes.
-
-1. **Install and restart** (above), confirm the `[veyra]` boot lines.
-2. **Work normally.** Do a couple of real turns in a project — fix something, run tests, make a decision. Veyra observes the session, and at the end of a turn distills it into a *candidate*; durable, grounded lessons become *derived* memory.
-3. **Check what it learned:**
+1. **Do real work in DSH.** Veyra observes session events automatically.
+2. **At end of turn**, Veyra distills what happened into a candidate memory. Durable lessons become *derived* memory linked to neighbors.
+3. **Check what was stored:**
 
    ```
-   /veyra
+   /veyra recent
    ```
 
-   You get the project id, workspace, memory counts by authority, and health counts:
+4. **Ask for it back.** In a later session in the same project, automatic recall injects the most relevant records into the turn — each marked `not repository truth`. Or search explicitly:
 
    ```
-   Veyra project p_2d599165fe7aa1a7
-   workspace: /home/you/projects/my-project
-   home: /home/you/.dsh/veyra
-   project memories: 3 (derived: 2, canonical: 0, candidate: 1)
-   health: 1 verified, 2 reviewed
-   reusable memories: 0
+   /veyra recall sqlite wal
    ```
 
-4. **Ask for it back.** Start a new session in the same project and ask the agent something like *"what do you already remember about this project's test setup?"* — or just ask a normal question: automatic recall injects the most relevant records into the turn, each with a `not repository truth` disclaimer.
-5. **Inspect and curate:**
+5. **Inspect, curate, and promote:**
 
    ```
-   /veyra recent                 # last records, candidates included
-   /veyra recall sqlite wal      # hybrid search across project + reusable memory
-   /veyra inspect vey_…          # full evidence, provenance, causal facets
-   /veyra promote vey_… canonical   # only ever explicit, only ever on your word
+   /veyra inspect vey_…           deep evidence, provenance, causal facets
+   /veyra forget vey_…            soft-forget (leaves recall, stays inspectable)
+   /veyra promote vey_… canonical only ever explicit, only ever on your word
    ```
 
-6. **See it as a graph.** Open `/veyra` in the DSH Web address bar (or the **Veyra Network Graph** sidebar entry): a bounded overview of this workspace's records; hover → click → search, and `/veyra?id=<record>` centers the 1-hop Local Graph.
-7. **First time in an unfamiliar repo?** Load the bundled `legacy-onboarding` skill — it builds a Project Memory Baseline instead of re-investigating next time.
+6. **See it as a graph.** Open `/veyra` in the DSH Web address bar — a bounded workspace overview; `/veyra?id=<record>` centers the 1-hop Local Graph.
 
-That is the whole loop: **work → remember → recall → verify against the repo.**
+7. **Unfamiliar repo?** Load the bundled `legacy-onboarding` skill — it builds a Project Memory Baseline from evidence before your first change.
+
+---
 
 ## How memory works
 
-1. **Do engineering in DSH as usual.** Veyra observes session activity without touching your files.
-2. **End of a turn:** Veyra distills the turn into a candidate — files, symbols, test outcomes, claim signal, and structured causal facets `symptom → rootCause → remedy → verifiedOutcome`. Durable, grounded lessons become *derived* memory and are linked to neighbors: extended, updated, or contradicted. Near-duplicates are not cloned — repeated observations and verified test outcomes strengthen existing knowledge (`unverified → reviewed → verified`) and accumulate evidence anchors. Nothing is merged silently.
-3. **Later sessions:** relevant memory and RAG knowledge are recalled automatically via **Hybrid Search**. Contradictions stay visible on both sides. Superseded, repository-drifted, and long-idle unverified memories drop out of ambient recall. Canonical is never assigned automatically.
+1. Veyra observes session activity without touching your files.
+2. End of a turn: Veyra distills the turn into a candidate — files, symbols, test outcomes, claim signal, and structured causal facets. Durable, grounded lessons become *derived* memory and are linked to neighbors (extended, updated, or contradicted). Near-duplicates are not cloned; repeated observations and verified outcomes strengthen existing records rather than adding new ones.
+3. Automatic recall injects the top-N most relevant records into the agent's system-prompt context at the start of each turn, with a clear `not repository truth` notice.
+4. Validation advances (`unverified → reviewed → verified`) as the same lesson is confirmed across sessions and test outcomes. **Nothing becomes `canonical` without an explicit human instruction.**
 
-Ask the agent to remember something important, or just keep going — automatic recall is already on.
+---
+
+## Code Intelligence
+
+Code Intelligence is an **optional** structural layer powered by the external [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) native daemon. Veyra does not bundle a native binary.
+
+### Install the native engine
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash
+```
+
+The upstream installer places the binary in `~/.local/bin` on Linux/macOS and `%LOCALAPPDATA%\Programs\codebase-memory-mcp\` on Windows. See the [upstream README](https://github.com/DeusData/codebase-memory-mcp) for supported platforms and verification details.
+
+Or set `CBM_EXE=/path/to/codebase-memory-mcp` to point to a pre-existing binary.
+
+### When the binary is absent
+
+Code Intelligence enters **degraded mode**: all seven `cbm_*` tools and `veyra_code_status` return a structured error with installation guidance. All Veyra Memory tools, Observatory, slash commands, and hybrid search continue working without any interruption.
+
+### What Code Intelligence provides
+
+| Tool | What it does |
+| --- | --- |
+| `cbm_projects` | List indexed projects |
+| `cbm_search` | Find symbols, functions, classes, files by name/label |
+| `cbm_snippet` | Retrieve exact symbol definition with line context |
+| `cbm_trace` | Trace inbound/outbound call graph from a symbol |
+| `cbm_arch` | Directory-level component dependency overview |
+| `cbm_search_code` | Regex search over indexed repository files |
+| `veyra_code_status` | Index status and memory freshness report |
+
+### /veyra code commands
+
+| Command | What it does |
+| --- | --- |
+| `/veyra code status` | Index status and per-memory freshness (`FRESH / POTENTIALLY_STALE / INVALID`) |
+| `/veyra code index` | Trigger repository reindexing |
+| `/veyra code trace <symbol>` | Trace call graph for a symbol |
+| `/veyra code impact` | Check which memories reference recently changed code |
+
+### Code truth vs. Veyra memory
+
+The distinction matters:
+
+- **Code Intelligence** reports structural facts from the live AST: who calls `login()`, what `AuthService` exposes. These are authoritative for the current state of the repository.
+- **Veyra Memory** records engineering knowledge: why `login()` was changed, what the failure mode was, what the constraint is for future callers. These persist *across* refactors — and Code Intelligence will flag them as potentially stale when the referenced file changes, so you know to verify them.
+
+Neither brain replaces the other.
+
+---
 
 ## Features
 
-| Area | What Veyra does |
+| Feature | Description |
 | --- | --- |
-| Ambient memory loop | Observes session events, distills turns into candidates, learns durable lessons, strengthens repeats, and marks drifted knowledge stale. |
-| Hybrid Search | One query, several signals: FTS5 BM25 + symbol/path boosts, token-level semantic overlap, intent affinity, relationship graph cohesion — with a full transparent score breakdown. |
+| Ambient memory loop | Observes session events, distills turns into candidates, learns durable lessons, strengthens repeats, marks drifted knowledge stale. |
+| Hybrid Search | FTS5 BM25 + symbol/path boosts, token-level semantic overlap, intent affinity, relationship graph cohesion — with a transparent score breakdown. |
 | Unified RAG | `kind: 'knowledge'` records hold project documentation next to engineering memory; both are searched together. |
-| Causal knowledge | Structured `symptom → rootCause → remedy → verifiedOutcome` facets, plus contradiction detection and side-by-side views. |
-| Knowledge Observatory | Read-only text dashboard: overview, search signals, record inspection, causality, relationships, contradictions, and read-only consolidation proposals. |
+| Causal knowledge | Structured `symptom → rootCause → remedy → verifiedOutcome` facets, contradiction detection, and side-by-side conflict views. |
+| Code freshness | Evidence anchors track files and symbols; changed or deleted files mark memory `POTENTIALLY_STALE` or `INVALID` and apply retrieval penalties. |
+| Knowledge Observatory | Read-only text dashboard: overview, search signals, record inspection, causality, relationships, contradictions, and consolidation proposals. |
 | Network Graph | Host-native SVG page at `/veyra` (overview + 1-hop Local Graph), served by the DSH web server; JSON at `/veyra/graph`, `/veyra/record`, `/veyra/search`. |
 | Settings | `Recall limit` and `Include reusable` in the DSH Settings dialog (Veyra section); changes apply from the next turn, no restart. |
 | Project isolation | Memory is keyed by workspace path + git remote. Two unrelated folders never share memory; `scope: 'reusable'` is opt-in. |
-| Redaction | Secrets are redacted before anything is stored. |
+| Secret redaction | Secrets are redacted before anything is stored. |
+
+---
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
 | `/veyra` | Status and memory counts for this workspace |
-| `/veyra observatory` | Knowledge Observatory overview: aggregate knowledge & health counts |
+| `/veyra observatory` | Knowledge Observatory overview |
 | `/veyra observatory search <query>` | Inspect hybrid search signals and score breakdowns |
-| `/veyra observatory record <id>` | Deep inspection answering the 6 questions (What, Why, Where, When, Evidence, Validation) |
-| `/veyra observatory causality` | Causal knowledge map (`symptom → rootCause → remedy → verifiedOutcome`) |
+| `/veyra observatory record <id>` | Deep inspection (What, Why, Where, When, Evidence, Validation) |
+| `/veyra observatory causality` | Causal knowledge map |
 | `/veyra observatory relationships [id]` | Directed graph projection of knowledge links |
-| `/veyra observatory local <id>` | 1-hop Local Graph around a record (default graph view) |
-| `/veyra observatory graph [id]` | Local Graph when an id is given; otherwise the project edge list |
-| `/veyra observatory contradictions` | Active conflicting claims shown side-by-side |
-| `/veyra observatory consolidation` | Detect and propose duplicate / contradiction / replacement candidates — read-only review surface, never changes records |
+| `/veyra observatory local <id>` | 1-hop Local Graph around a record |
+| `/veyra observatory contradictions` | Active conflicting claims side-by-side |
+| `/veyra observatory consolidation` | Consolidation candidates — read-only, never changes records |
 | `/veyra recall [query]` | Hybrid search project (+ reusable) memory |
 | `/veyra recent` | Recent records, including candidates |
 | `/veyra inspect <id>` | Read one record with deep provenance and causal facets |
-| `/veyra forget <id>` | Soft-forget (leaves recall, stays inspectable) |
+| `/veyra forget <id>` | Soft-forget |
 | `/veyra promote <id> [derived\|canonical]` | Change standing — **canonical only on explicit user request** |
-| Network Graph WebUI | Host page at `/veyra` — bounded workspace overview; `/veyra?id=<record>` centers the 1-hop Local Graph |
+| `/veyra code status` | Code Intelligence index status and memory freshness |
+| `/veyra code index` | Trigger repository reindexing |
+| `/veyra code trace <symbol>` | Trace call graph for a symbol |
+| `/veyra code impact` | Check memories affected by changed code |
+| Network Graph | `/veyra` in DSH Web; `/veyra?id=<record>` centers the 1-hop view |
+
+---
 
 ## Tools
 
-The agent gets the same operations as tools: `veyra_remember`, `veyra_recall`, `veyra_inspect`, `veyra_forget`, `veyra_promote`.
-Load the bundled `veyra` skill for full guidance on when to call them.
+**Memory tools** (always available):
+`veyra_remember`, `veyra_recall`, `veyra_inspect`, `veyra_forget`, `veyra_promote`
+
+**Code Intelligence tools** (require `codebase-memory-mcp` binary; degrade gracefully when absent):
+`cbm_projects`, `cbm_search`, `cbm_snippet`, `cbm_trace`, `cbm_arch`, `cbm_search_code`, `veyra_code_status`
+
+Load the bundled `veyra` skill for full guidance on when to call each tool and how they interact.
+
+---
 
 ## Skills
 
-Three skills ship inside the package and register automatically (no separate install):
+Four skills ship inside the package and register automatically (no separate install):
 
 | Skill | Use it when |
 | --- | --- |
 | `veyra` | You need Veyra's own guidance: tool usage, candidate/derived/canonical, causal facets, hybrid search semantics, and the rule that repo truth wins. |
-| `legacy-onboarding` | First entry into an unfamiliar, legacy, or not-yet-baselined project: baseline assessment, progressive investigation depth, evidence-first extraction, and building a Project Memory Baseline. |
-| `memory-review` | You want to review this conversation for durable engineering memory: what is already recorded, what is missing, what looks stale or conflicting — and a short report of evidence-backed updates. |
+| `codebase-memory` | You are using Code Intelligence tools (`cbm_*`): when to prefer `cbm_trace` vs. grep, how to navigate from a symbol to its call graph, and how Code Intelligence and Veyra Memory complement each other. |
+| `legacy-onboarding` | First entry into an unfamiliar or legacy repo: baseline assessment, progressive investigation depth, evidence-first extraction, and building a Project Memory Baseline. |
+| `memory-review` | You want to audit this conversation for durable engineering memory: what is already recorded, what is missing, what looks stale or conflicting. |
+
+---
 
 ## Memory rules
 
@@ -162,13 +229,15 @@ Three skills ship inside the package and register automatically (no separate ins
 | Remembered / learned lesson | `derived` | yes |
 | Explicitly promoted truth | `canonical` | yes |
 
-Canonical is never assigned automatically. Repo files stay authoritative. Similarity is not identity — overlapping memories are linked, not merged. Secrets are redacted. Projects are isolated; reusable memory is opt-in.
+Canonical is never assigned automatically. Repository files stay authoritative — Veyra never writes into your repo. Similarity is not identity: overlapping memories are linked, not merged. Secrets are redacted. Projects are isolated; reusable memory is opt-in.
+
+---
 
 ## Configuration
 
-DSH Settings exposes **Recall limit** and **Include reusable** under a dedicated **Veyra** section. The Settings dialog writes through the shared DSH settings document, the Host re-validates against Veyra's schema, and the plugin remounts — a saved change applies from the next turn, no restart.
+DSH Settings exposes **Recall limit** and **Include reusable** under a dedicated **Veyra** section. A saved change applies from the next turn, no restart.
 
-`recallLimit: 0` disables *automatic recalled-memory context only* — tools, `/veyra`, the Observatory, and stored memory all stay available.
+`recallLimit: 0` disables automatic recall context only — tools, `/veyra`, Observatory, and stored memory all stay available.
 
 Everything else is configured in the profile `cordis.patch.yml`:
 
@@ -176,14 +245,17 @@ Everything else is configured in the profile `cordis.patch.yml`:
 - id: veyra
   name: '@lovedolove/veyra'
   config:
-    recallLimit: 5    # 0 = no automatic recall context (also settable in Settings)
+    recallLimit: 5       # 0 = no automatic recall context (also settable in Settings)
     includeReusable: true
-    observe: true      # capture session activity
-    learn: true        # promote durable observations
-    home: "~/.dsh/veyra"   # storage root (yaml-only)
+    observe: true        # capture session activity
+    learn: true          # promote durable observations
+    codebaseWatch: true  # watch repo for file changes to flag stale memories
+    home: "~/.dsh/veyra" # storage root (yaml-only)
 ```
 
-`observe` / `learn` / `home` stay yaml-only, and `VEYRA_HOME` overrides the storage root from the environment.
+`observe` / `learn` / `home` / `codebaseWatch` are yaml-only. `VEYRA_HOME` overrides the storage root from the environment.
+
+---
 
 ## Architecture
 
@@ -191,57 +263,65 @@ Everything else is configured in the profile `cordis.patch.yml`:
   DSH host — Cordis plugin (src/plugin.mjs)
   session events ──► observe ──► candidate ──► learn ──► derived memory
                                                       │
-  ┌───────────────────────────────────────────────────┼────────────────────────────────────────┐
-  │  SQLite store  ~/.dsh/veyra/  (node:sqlite + FTS5, one DB per project)                     │
-  └───────────────────────────────────────────────────┼────────────────────────────────────────┘
-        projections (read-only)                      │
-  ┌───┬─────────────────────┬─────────────────────────┬───────────────────┬────────────────────┐
-      ▼                     ▼                         ▼                   ▼
-      Hybrid Search         Local Graph (1-hop)       Agent context       Human surfaces
-      recall / tools        derived, bounded          systemPrompt        /veyra commands
-      observatory search    src/graph.mjs             section + context   Observatory text
-                                                      (fail-closed)       Network Graph /veyra
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │  SQLite store  ~/.dsh/veyra/  (node:sqlite + FTS5, one DB per project)  │
+  └──────────────────────────────────────────────────────────────────────────┘
+        projections (read-only)
+  ┌───────────────┬────────────────┬─────────────────┬────────────────────────┐
+  ▼               ▼                ▼                 ▼
+  Hybrid Search   Local Graph      Agent context     Human surfaces
+  recall/tools    (1-hop, bounded) systemPrompt      /veyra commands
+  observatory     src/graph.mjs    (fail-closed)     Observatory / Network Graph
+
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │  Code Intelligence  src/code/  (optional — requires codebase-memory-mcp)│
+  │                                                                          │
+  │  stdio JSON-RPC 2.0 ──► cbm_* tools ──► freshness checks ──► retrieval  │
+  │  client.mjs  engine.mjs  discovery.mjs  linking.mjs  watcher.mjs        │
+  │                                                                          │
+  │  Degraded when binary absent: memory layer unaffected                   │
+  └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-The graph is a **derived projection, not a second store**; recall expands a bounded 1-hop of recall-eligible neighbors; agent context injection is fail-closed (empty string if recall throws).
-Full write-up, including the external-comparison notes: [docs/architecture-graph.md](https://github.com/LoveDoLove/Veyra/blob/main/docs/architecture-graph.md).
+The local graph is a **derived projection, not a second store**. Code Intelligence is an **optional layer** communicating with an external native daemon over stdio; it never modifies Veyra Memory directly.
 
-## Examples
+Full write-up: [docs/architecture-graph.md](https://github.com/LoveDoLove/Veyra/blob/main/docs/architecture-graph.md)
 
-Real, reproducible examples live in [`examples/`](https://github.com/LoveDoLove/Veyra/tree/main/examples/):
-
-- [`examples/cordis.patch.yml`](https://github.com/LoveDoLove/Veyra/blob/main/examples/cordis.patch.yml) — the plugin entry with every config key.
-- [`examples/command-output.md`](https://github.com/LoveDoLove/Veyra/blob/main/examples/command-output.md) — captured `/veyra` output (status, recall, search, record) from a throwaway demo store.
-- [`examples/make-demo-output.mjs`](https://github.com/LoveDoLove/Veyra/blob/main/examples/make-demo-output.mjs) — regenerates that file with the real command handler: `node examples/make-demo-output.mjs`.
+---
 
 ## Troubleshooting
 
-**No `[veyra]` lines at boot.** The plugin was installed into a different profile than the one you booted. `dsh plugin --profile web add …` installs into `web`; booting `dsh tui` (or another profile) will not have it. Also check **Settings → Plugins** that the plugin is enabled, not just installed.
+**No `[veyra]` lines at boot.** The plugin was installed into a different profile than the one you booted. `dsh plugin --profile web add …` installs into `web`; booting `dsh tui` will not have it. Also check **Settings → Plugins**.
 
-**Node is too old.** Veyra requires Node ≥ 22.5 and < 25 (`engines.node`), and it uses `node:sqlite`, which first shipped in Node 22.5 — on an older Node the install is rejected or the plugin cannot load. Upgrade Node, then reinstall.
+**Node is too old.** Veyra requires Node ≥ 22.5 and < 25 (`engines.node`). It uses `node:sqlite`, which first shipped in Node 22.5. Upgrade Node, then reinstall.
 
-**"Plugin … is incompatible with dsh …" at install.** The package's `dsh.compatibility` range is `>=0.1.2-rc.1 <0.3.0-0`. Update DSH, or accept the risk explicitly with the exact-version exemption DSH prints (`dsh plugin --profile <name> allow-version …`).
+**"Plugin … is incompatible with dsh …"** The package's compatibility range is `>=0.1.2-rc.1 <0.3.0-0`. Update DSH, or accept the risk with the exact-version exemption DSH prints.
 
-**Automatic recall context is empty.** Check three things: (1) `recallLimit` is not `0` — Settings → Veyra; (2) the records you expect are not still `candidate` (candidates are never auto-recalled); (3) you are in the same project — run `/veyra` and confirm the workspace path and project id.
+**Automatic recall context is empty.** Check: (1) `recallLimit` is not `0` — Settings → Veyra; (2) records you expect are not still `candidate` (candidates are never auto-recalled); (3) you are in the same project — run `/veyra` and confirm the workspace path and project id.
 
-**The Veyra section is missing from Settings.** The section is served by the plugin's server half in the profile you booted. If the plugin is disabled or installed elsewhere, the dialog shows nothing — the rest of DSH Settings is unaffected.
+**Code Intelligence shows "degraded".** The `codebase-memory-mcp` binary is not on your PATH and `CBM_EXE` is not set. Install via the curl command above or set `CBM_EXE=/path/to/binary`. All Veyra Memory tools continue working.
 
-**The Network Graph page looks empty.** Either the workspace really has no records yet (`/veyra recent`), or the page is resolving a different workspace than you expect — `/veyra` prints the workspace path it uses, and the sidebar entry passes the current workspace via `?cwd=`.
+**`/veyra code status` reports stale memories.** The referenced files changed since the memory was recorded. Verify the memory against the current repo (`/veyra inspect <id>`), update it with `veyra_remember`, or forget it if it no longer applies.
+
+**The Network Graph page looks empty.** Either the workspace has no records yet (`/veyra recent`), or the page resolves a different workspace — `/veyra` prints the workspace path it uses.
 
 **Where is my data / how do I reset.** `$DSH_HOME/veyra/` (default `~/.dsh/veyra/`), or `$VEYRA_HOME` if set. Delete a project's store to start over; nothing is stored in your repository.
 
 **Something wrote wrong memory.** `/veyra forget <id>` soft-forgets (inspectable, out of recall). Nothing becomes `canonical` without you running `/veyra promote <id> canonical`.
 
+---
+
 ## Development
 
 ```sh
-npm test               # node --test test/*.test.mjs
+npm test               # node --test test/*.test.mjs  (456 tests)
 npm run pack:check     # npm pack --dry-run — what would be published
 ```
 
-CI runs both on Node 22 and 24 for every push and pull request ([.github/workflows/ci.yml](https://github.com/LoveDoLove/Veyra/blob/main/.github/workflows/ci.yml)).
-Publishing is automatic: every push to `main` publishes to npm (patch-bumped first if the version already exists) unless the commit message contains `[skip publish]`.
-Every published version also gets a matching **GitHub Release** tagged `vX.Y.Z`: release notes come from that version's `## [X.Y.Z]` section in [CHANGELOG](https://github.com/LoveDoLove/Veyra/blob/main/CHANGELOG.md) when present, otherwise `gh` generates them from the commits since the previous release. Re-running the workflow is idempotent — an existing release is never duplicated.
+CI runs both on Node 22 and 24 for every push and pull request.
+Publishing is automatic: every push to `main` publishes to npm (patch-bumped first if the version already exists) unless the commit message contains `[skip publish]`. Every published version gets a matching GitHub Release tagged `vX.Y.Z`.
+
+---
 
 ## Compatibility
 
@@ -249,13 +329,18 @@ Every published version also gets a matching **GitHub Release** tagged `vX.Y.Z`:
 | --- | --- |
 | Node | `>=22.5.0 <25.0.0` |
 | DSH | `>=0.1.2-rc.1 <0.3.0-0` |
-| Verified on | DSH `0.1.7-rc.2` (`web` profile: plugin boot, tools, `/veyra` + `/veyra/graph` HTTP); DSH `0.2.0-rc.1` (real compatibility gate + composed-host-service runtime); CI on Node 22 and 24 |
-| Profiles | installed per profile (`web`, `tui`, …); the Settings section and Network Graph need the web surface |
+| Verified on | DSH `0.1.7-rc.2` (plugin boot, tools, `/veyra` + `/veyra/graph`); DSH `0.2.0-rc.1` (real compatibility gate + composed-host-service runtime); CI on Node 22 and 24 |
+| Profiles | Installed per profile (`web`, `tui`, …); Settings section and Network Graph require the web surface |
 | Storage | `node:sqlite` + FTS5, one DB per project under the Veyra home |
+| Code Intelligence | Optional; requires external `codebase-memory-mcp` binary (MIT, DeusData) |
 | License | MIT |
 
-Veyra is on a pre-1.0 `0.1.x` line — see the [CHANGELOG](https://github.com/LoveDoLove/Veyra/blob/main/CHANGELOG.md) for what shipped (the npm badge above shows the published version). APIs and command surface may still change between minor versions.
+Veyra is on a pre-1.0 `0.1.x` line — see the [CHANGELOG](https://github.com/LoveDoLove/Veyra/blob/main/CHANGELOG.md) for what shipped. APIs and command surface may still change between minor versions.
+
+---
 
 ## License
 
 MIT — see [LICENSE](https://github.com/LoveDoLove/Veyra/blob/main/LICENSE).
+
+Third-party attributions — see [THIRD_PARTY.md](https://github.com/LoveDoLove/Veyra/blob/main/THIRD_PARTY.md).
