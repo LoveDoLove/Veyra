@@ -199,13 +199,16 @@ export function createBundledSkillProvider() {
  * Prefers registerProvider (catalog + on-demand load). Falls back to
  * register() with the body already loaded. Returns the registered names.
  */
-export async function registerSkills(ctx, log) {
+export async function registerSkills(ctx, log, scope) {
   const skills = ctx?.skills
   if (!skills) return []
 
   if (typeof skills.registerProvider === 'function') {
     const provider = createBundledSkillProvider()
-    skills.registerProvider(() => provider)
+    const effect = scope && typeof scope.effect === 'function' ? scope.effect.bind(scope) : null
+    const register = () => skills.registerProvider(() => provider)
+    if (effect) effect(register)
+    else register()
     return provider.list().then((candidates) => candidates.map((c) => c.name))
   }
 

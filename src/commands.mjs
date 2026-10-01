@@ -212,14 +212,17 @@ export function handleVeyraCommand(runtime, invocation) {
   return { kind: 'error', text: helpText() }
 }
 
-export function registerCommand(ctx, runtime) {
+export function registerCommand(ctx, runtime, scope) {
   if (!ctx?.commands || typeof ctx.commands.register !== 'function') return false
-  ctx.commands.register({
+  const effect = scope && typeof scope.effect === 'function' ? scope.effect.bind(scope) : null
+  const register = () => ctx.commands.register({
     name: 'veyra',
     description: 'Inspect and administer Veyra engineering memory & observatory',
     input: { hint: '[status|observatory|recall|recent|inspect|forget|promote]', attachments: false },
     handler: (invocation) => handleVeyraCommand(runtime, invocation),
   })
+  if (effect) effect(register)
+  else register()
   return true
 }
 

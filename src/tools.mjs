@@ -398,7 +398,7 @@ export function buildToolDefinitions(runtime) {
   ]
 }
 
-export async function registerTools(ctx, runtime) {
+export async function registerTools(ctx, runtime, scope) {
   if (!ctx?.tools || typeof ctx.tools.register !== 'function') return []
   let defineTool
   try {
@@ -407,11 +407,14 @@ export async function registerTools(ctx, runtime) {
     defineTool = null
   }
   if (typeof defineTool !== 'function') defineTool = fallbackDefineTool
+  const effect = scope && typeof scope.effect === 'function' ? scope.effect.bind(scope) : null
   const registered = []
   const failures = []
   for (const def of buildToolDefinitions(runtime)) {
     try {
-      ctx.tools.register(defineTool(def))
+      const register = () => ctx.tools.register(defineTool(def))
+      if (effect) effect(register)
+      else register()
       registered.push(def.name)
     } catch (err) {
       failures.push(`${def.name}: ${err instanceof Error ? err.message : String(err)}`)

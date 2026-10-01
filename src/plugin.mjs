@@ -148,21 +148,26 @@ export function apply(ctx, config = {}) {
 
   const registerPrompt = (scope) => {
     if (!scope?.systemPrompt) return
+    const effect = typeof scope.effect === 'function' ? scope.effect.bind(scope) : null
     try {
-      scope.systemPrompt.section({
+      const register = () => scope.systemPrompt.section({
         name: 'veyra:guidance',
         order: 3050,
         text: GUIDANCE_TEXT,
       })
+      if (effect) effect(register)
+      else register()
     } catch (err) {
       runtime.log.warn(`[veyra] section register failed: ${err instanceof Error ? err.message : String(err)}`)
     }
     try {
-      scope.systemPrompt.context({
+      const register = () => scope.systemPrompt.context({
         name: 'veyra:recall',
         order: 200,
         text: createContextProvider(runtime),
       })
+      if (effect) effect(register)
+      else register()
     } catch (err) {
       runtime.log.warn(`[veyra] context register failed: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -179,7 +184,7 @@ export function apply(ctx, config = {}) {
   }
 
   if (ctx.tools && typeof ctx.tools.register === 'function') {
-    void registerTools(ctx, runtime).then((names) => {
+    void registerTools(ctx, runtime, ctx).then((names) => {
       if (names.length) runtime.log.info(`[veyra] registered tools: ${names.join(', ')}`)
     }).catch((err) => {
       runtime.log.warn(`[veyra] tool register failed: ${err instanceof Error ? err.message : String(err)}`)
@@ -187,7 +192,7 @@ export function apply(ctx, config = {}) {
   }
 
   const registerSkillSurface = (scope) => {
-    void registerSkills(scope, runtime.log).then((names) => {
+    void registerSkills(scope, runtime.log, scope).then((names) => {
       if (names.length) runtime.log.info(`[veyra] registered skill: ${names.join(', ')}`)
     }).catch((err) => {
       runtime.log.warn(`[veyra] skill register failed: ${err instanceof Error ? err.message : String(err)}`)
@@ -207,14 +212,14 @@ export function apply(ctx, config = {}) {
   if (typeof ctx.inject === 'function') {
     try {
       ctx.inject(['commands'], (scope) => {
-        if (registerCommand(scope, runtime)) {
+        if (registerCommand(scope, runtime, scope)) {
           runtime.log.info('[veyra] registered /veyra')
         }
       })
     } catch {
-      if (registerCommand(ctx, runtime)) runtime.log.info('[veyra] registered /veyra')
+      if (registerCommand(ctx, runtime, ctx)) runtime.log.info('[veyra] registered /veyra')
     }
-  } else if (registerCommand(ctx, runtime)) {
+  } else if (registerCommand(ctx, runtime, ctx)) {
     runtime.log.info('[veyra] registered /veyra')
   }
 
@@ -223,17 +228,18 @@ export function apply(ctx, config = {}) {
   }
 
   if (typeof ctx.on === 'function') {
-    ctx.on('agent/inbox/claimed', ({ agent, message } = {}) => {
+    const offClaimed = ctx.on('agent/inbox/claimed', ({ agent, message } = {}) => {
       try {
         rememberClaimedPrompt(agent, message)
       } catch {
         // recall query is best-effort
       }
     })
+    if (typeof offClaimed === 'function') ctx.effect(() => offClaimed)
   }
 
   if (typeof ctx.on === 'function' && runtime.observe) {
-    ctx.on('session/event', (session, event) => {
+    const offEvent = ctx.on('session/event', (session, event) => {
       try {
         let buffer = buffers.get(session)
         if (!buffer) {
@@ -245,8 +251,9 @@ export function apply(ctx, config = {}) {
         // observation is best-effort and must never break the agent loop
       }
     })
+    if (typeof offEvent === 'function') ctx.effect(() => offEvent)
 
-    ctx.on('agent/turn-stopping', ({ agent } = {}) => {
+    const offStopping = ctx.on('agent/turn-stopping', ({ agent } = {}) => {
       try {
         const session = agent?.session
         if (!session) return
@@ -326,6 +333,7 @@ export function apply(ctx, config = {}) {
         // learning is best-effort
       }
     })
+    if (typeof offStopping === 'function') ctx.effect(() => offStopping)
   }
 
   ctx.effect?.(() => () => {

@@ -110,7 +110,7 @@ test('Veyra composes against the real DSH host services', { skip }, async () => 
   ctx.plugin(CommandRuntime)
   ctx.plugin(ToolRuntime)
   ctx.plugin(SettingsForms)
-  ctx.plugin(veyra, { home: tmpHome, recallLimit: 3 })
+  const fiber = ctx.plugin(veyra, { home: tmpHome, recallLimit: 3 })
 
   const expected = buildToolDefinitions({ veyraHome: tmpHome, fallbackCwd: '/tmp' }).map((d) => d.name).sort()
   assert.equal(expected.length, 5)
@@ -163,11 +163,50 @@ test('Veyra composes against the real DSH host services', { skip }, async () => 
   // defer rather than crash (the live DSH Web service is never involved).
   assert.equal(ctx.get('webServer'), undefined)
 
-  // 7. Real event dispatch: agent/turn-stopping must persist only into the
+  // 7. Skill resolution: the real SkillRegistry resolves Veyra's bundled
+  // skills through the provider contract (list + get with locator/resourceBase).
+  const veyraSkill = await ctx.skills.get('veyra')
+  assert.ok(veyraSkill, 'skills.get("veyra") must resolve through the real SkillRegistry')
+  assert.equal(veyraSkill.name, 'veyra')
+  assert.ok(veyraSkill.content.includes('Candidate'), 'skill content must be loaded from SKILL.md')
+  assert.ok(veyraSkill.path.endsWith('skills/veyra/SKILL.md'))
+
+  const onboardingSkill = await ctx.skills.get('legacy-onboarding')
+  assert.ok(onboardingSkill, 'skills.get("legacy-onboarding") must resolve')
+  assert.ok(onboardingSkill.content.includes('Legacy Project Onboarding'))
+
+  // 8. Real event dispatch: agent/turn-stopping must persist only into the
   // isolated home, never into the operator's live store.
   ctx.emit('agent/turn-stopping', { agent: { session: { id: 'runtime-test-session' }, cwd: ws } })
   assert.ok(await until(() => existsSync(join(tmpHome, 'projects'))), 'isolated project store was not created under the temp home')
   assert.deepEqual(snapshot(liveDir), liveBefore, 'live ~/.dsh/veyra must stay untouched')
+
+  // 9. Disposal: disposing the plugin context must unregister everything.
+  // This is the core lifecycle contract — registrations must not leak.
+  fiber.dispose()
+  await new Promise((resolve) => setImmediate(resolve))
+
+  const visibleAfter = ctx.tools?.view()?.visible
+  if (visibleAfter) {
+    for (const name of expected) {
+      assert.ok(!visibleAfter.has(name), `tool ${name} must be unregistered after ctx.dispose()`)
+    }
+  }
+  assert.ok(
+    !ctx.commands.list(undefined).some((d) => d.name === 'veyra'),
+    '/veyra command must be unregistered after ctx.dispose()',
+  )
+  const assemblyAfter = await ctx.systemPrompt.assemble({})
+  assert.equal(
+    assemblyAfter.sections.filter((s) => s.name === 'veyra:guidance').length,
+    0,
+    'veyra:guidance section must be unregistered after ctx.dispose()',
+  )
+  assert.equal(
+    assemblyAfter.sections.filter((s) => s.name === 'veyra:recall').length,
+    0,
+    'veyra:recall context must be unregistered after ctx.dispose()',
+  )
 })
 
 test('real defineTool output is accepted by the real ToolRuntime', { skip }, async () => {
