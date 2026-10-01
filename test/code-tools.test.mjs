@@ -140,3 +140,79 @@ test('veyra_code_status inspects memory freshness against repository workspace',
     rmSync(tmpRepo, { recursive: true, force: true })
   }
 })
+
+test('veyra_code_status message is never null when engine returns no message field', async () => {
+  const tmpHome = mkdtempSync(join(tmpdir(), 'veyra-status-nullmsg-'))
+  const tmpRepo = mkdtempSync(join(tmpdir(), 'veyra-status-nullmsg-repo-'))
+  try {
+    // Simulate NOT_INDEXED path: engine returns object with no `message` field
+    const engine = new CodeIntelligenceEngine({ exePath: '/nonexistent/bin' })
+    engine.getStatus = async () => ({ status: 'not_indexed', degraded: false, ok: false })
+
+    const runtime = { veyraHome: tmpHome, fallbackCwd: tmpRepo, codeEngine: engine }
+    const tools = new Map(buildToolDefinitions(runtime).map((t) => [t.name, t]))
+    const statusTool = tools.get('veyra_code_status')
+    const result = await statusTool.execute({ repo: tmpRepo }, {})
+
+    assert.equal(result.ok, true)
+    // DSH validates the JSON-serialised output against the schema. null serialises as null
+    // (fails type:string); undefined serialises as absent (passes). Verify via the wire value.
+    const wire = JSON.parse(JSON.stringify(result))
+    assert.notEqual(wire.message, null, 'message must not be null in JSON output (DSH schema: type string)')
+    if ('message' in wire) {
+      assert.equal(typeof wire.message, 'string', 'message must be string when present in JSON output')
+    }
+  } finally {
+    closeAllStores()
+    rmSync(tmpHome, { recursive: true, force: true })
+    rmSync(tmpRepo, { recursive: true, force: true })
+  }
+})
+
+test('cbm_projects render uses value.raw text, not value.projects array', async () => {
+  const tmpHome = mkdtempSync(join(tmpdir(), 'veyra-cbm-projects-'))
+  try {
+    // Simulate upstream MCP returning project-list text in raw field
+    const engine = new CodeIntelligenceEngine({ exePath: '/nonexistent/bin' })
+    engine.listProjects = async () => ({ ok: true, raw: 'projects:\n  - home-user-myrepo\n  - home-user-another' })
+
+    const runtime = { veyraHome: tmpHome, fallbackCwd: process.cwd(), codeEngine: engine }
+    const tools = new Map(buildToolDefinitions(runtime).map((t) => [t.name, t]))
+    const projectsTool = tools.get('cbm_projects')
+    const result = await projectsTool.execute({ reason: 'test' }, {})
+
+    assert.equal(result.ok, true)
+    assert.ok(result.raw)
+    const rendered = projectsTool.output.render({}, result)
+    assert.match(rendered[0].text, /home-user-myrepo/, 'render should surface the raw project list text')
+    assert.match(rendered[0].text, /home-user-another/)
+  } finally {
+    closeAllStores()
+    rmSync(tmpHome, { recursive: true, force: true })
+  }
+})
+
+test('cbm_arch render uses value.overview, not value.raw', async () => {
+  const tmpHome = mkdtempSync(join(tmpdir(), 'veyra-cbm-arch-'))
+  const tmpRepo = mkdtempSync(join(tmpdir(), 'veyra-cbm-arch-repo-'))
+  try {
+    // Simulate engine returning overview field (the real engine behavior)
+    const engine = new CodeIntelligenceEngine({ exePath: '/nonexistent/bin' })
+    engine.getArchitecture = async () => ({ ok: true, overview: 'Key components:\n- src/main.js: entry point\n- src/lib/: shared utilities' })
+
+    const runtime = { veyraHome: tmpHome, fallbackCwd: tmpRepo, codeEngine: engine }
+    const tools = new Map(buildToolDefinitions(runtime).map((t) => [t.name, t]))
+    const archTool = tools.get('cbm_arch')
+    const result = await archTool.execute({ repo: tmpRepo }, {})
+
+    assert.equal(result.ok, true)
+    assert.ok(result.overview)
+    const rendered = archTool.output.render({}, result)
+    assert.match(rendered[0].text, /Key components/, 'render should surface the overview field')
+    assert.match(rendered[0].text, /src\/main\.js/)
+  } finally {
+    closeAllStores()
+    rmSync(tmpHome, { recursive: true, force: true })
+    rmSync(tmpRepo, { recursive: true, force: true })
+  }
+})

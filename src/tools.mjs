@@ -417,8 +417,9 @@ export function buildToolDefinitions(runtime) {
         },
         render: (_args, value) => {
           if (value?.degraded) return textBlocks(`Code Intelligence Degraded: ${value?.message || 'Service unavailable'}`)
-          if (!value?.projects || value.projects.length === 0) return textBlocks('No projects indexed.')
-          return textBlocks(JSON.stringify(value.projects, null, 2))
+          const text = value?.raw?.trim()
+          if (!text || text === 'No projects indexed.') return textBlocks('No projects indexed.')
+          return textBlocks(text)
         },
       },
       async execute(args, exec) {
@@ -554,7 +555,7 @@ export function buildToolDefinitions(runtime) {
         },
         render: (_args, value) => {
           if (value?.degraded) return textBlocks(`Code Intelligence Degraded: ${value?.message || 'Service unavailable'}`)
-          return textBlocks(value?.raw || (value?.ok ? 'No architectural summary available.' : value?.message || 'Arch query failed.'))
+          return textBlocks(value?.overview || value?.raw || (value?.ok ? 'No architectural summary available.' : value?.message || 'Arch query failed.'))
         },
       },
       async execute(args, exec) {
@@ -654,7 +655,7 @@ export function buildToolDefinitions(runtime) {
           ok: true,
           status: status?.status || 'unindexed',
           degraded: Boolean(status?.degraded),
-          message: status?.message || null,
+          message: status?.message || undefined,
           freshMemories: freshCount,
           staleMemories: staleCount,
           invalidMemories: invalidCount,
