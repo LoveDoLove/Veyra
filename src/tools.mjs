@@ -655,7 +655,9 @@ export function buildToolDefinitions(runtime) {
           ok: true,
           status: status?.status || 'unindexed',
           degraded: Boolean(status?.degraded),
-          message: status?.message || undefined,
+          // Omit message entirely when absent: an own key set to `undefined` is
+          // not lossless JSON and DSH rejects the raw tool value before render.
+          ...(status?.message ? { message: status.message } : {}),
           freshMemories: freshCount,
           staleMemories: staleCount,
           invalidMemories: invalidCount,

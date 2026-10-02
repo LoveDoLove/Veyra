@@ -169,6 +169,44 @@ test('veyra_code_status message is never null when engine returns no message fie
   }
 })
 
+test('veyra_code_status raw output is lossless JSON when engine has no message field', async () => {
+  // Regression: execute() used `message: status?.message || undefined`, creating an own
+  // key with value `undefined` on the live not_indexed path. DSH snapshots the RAW value
+  // (dsh-util-values snapshotJsonValue) before render/JSON round-trip, rejects it, and
+  // fails with: tool "veyra_code_status" returned invalid output: value is not lossless JSON
+  const tmpHome = mkdtempSync(join(tmpdir(), 'veyra-status-lossless-'))
+  const tmpRepo = mkdtempSync(join(tmpdir(), 'veyra-status-lossless-repo-'))
+  try {
+    const engine = new CodeIntelligenceEngine({ exePath: '/nonexistent/bin' })
+    // Actual getStatus() payload for a non-degraded, unindexed repo — no `message` key.
+    engine.getStatus = async () => ({ status: 'not_indexed', degraded: false, lastIndexedAt: null, filesCount: 0 })
+
+    const runtime = { veyraHome: tmpHome, fallbackCwd: tmpRepo, codeEngine: engine }
+    const tools = new Map(buildToolDefinitions(runtime).map((t) => [t.name, t]))
+    const statusTool = tools.get('veyra_code_status')
+    const raw = await statusTool.execute({ repo: tmpRepo }, {})
+
+    // The exact offending type: own enumerable key holding `undefined`.
+    assert.equal(Object.hasOwn(raw, 'message'), false, 'message key must be absent, not undefined')
+    // Full-output losslessness, checked the way DSH does: no JSON round-trip first.
+    assert.deepEqual(JSON.parse(JSON.stringify(raw)), raw, 'raw tool value must be lossless JSON')
+
+    // Degraded path still carries its string message.
+    engine.getStatus = async () => ({ status: 'degraded', degraded: true, message: 'Code intelligence binary unavailable; running in degraded mode' })
+    const degraded = await statusTool.execute({ repo: tmpRepo }, {})
+    assert.equal(degraded.message, 'Code intelligence binary unavailable; running in degraded mode')
+    assert.deepEqual(JSON.parse(JSON.stringify(degraded)), degraded, 'degraded raw value must be lossless JSON')
+
+    // Render still works for both shapes.
+    assert.ok(statusTool.output.render({}, raw)[0].text.includes('not_indexed'))
+    assert.ok(statusTool.output.render({}, degraded)[0].text.includes('degraded'))
+  } finally {
+    closeAllStores()
+    rmSync(tmpHome, { recursive: true, force: true })
+    rmSync(tmpRepo, { recursive: true, force: true })
+  }
+})
+
 test('cbm_projects render uses value.raw text, not value.projects array', async () => {
   const tmpHome = mkdtempSync(join(tmpdir(), 'veyra-cbm-projects-'))
   try {
