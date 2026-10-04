@@ -1,942 +1,1440 @@
-# Goal: Integrate Code Intelligence into Veyra
+# Veyra — dsh-memory Capability Integration
 
-## Objective
+## 1. Goal
 
-Directly integrate the useful, production-ready core implementation from the upstream `codebase-memory-mcp` project into Veyra.
-
-The goal is to make Veyra understand both:
-
-* **Code** — repository structure, files, symbols, relationships, dependencies, search, and change impact.
-* **Engineering Memory** — decisions, observations, evidence, validation state, and historical context.
-
-Do **not** integrate the separate `dsh-codebase-memory-mcp` plugin.
-
-Use the upstream `codebase-memory-mcp` source at:
-
-`/home/lovedolove/projects/refs/codebase-memory-mcp`
-
-as the primary implementation reference.
-
-For DSH integration, use the **official DeepSeek Harness documentation** at:
-
-`/home/lovedolove/projects/refs/deepseek-harness/docs`
-
-as the authoritative reference.
-
-Do not use unrelated third-party DSH plugins as the API/design source when official documentation provides the relevant mechanism.
-
----
-
-# Core Architecture
-
-Veyra should evolve toward:
+Study and selectively absorb the strongest engineering-memory capabilities from:
 
 ```text
-Veyra
-├── Code Intelligence
-│   ├── Repository Ingestion
-│   ├── File Discovery / Filtering
-│   ├── Index Lifecycle
-│   ├── Parsing
-│   ├── Symbols
-│   ├── Relationships
-│   ├── Dependency / Call Graph
-│   ├── Data Flow
-│   ├── Semantic / Structural Search
-│   ├── Similarity / Clone Detection
-│   └── Change Impact
-│
-├── Engineering Memory
-│   ├── Memory
-│   ├── Evidence
-│   ├── Validation
-│   └── Relations
-│
-├── Unified Retrieval
-│
-└── DSH Integration
+/home/lovedolove/projects/refs/dsh-memory
 ```
 
-The exact set of Code Intelligence features included in the first production release must be determined from the upstream implementation and feasibility analysis.
+into Veyra.
 
-Do not blindly import every upstream feature.
+The goal is **not** to copy dsh-memory wholesale, replace Veyra's architecture, or turn Veyra into a generic cognitive-agent operating system.
 
----
+The goal is to evolve Veyra's existing engineering-memory lifecycle using proven ideas from dsh-memory while preserving Veyra's core identity and invariants.
 
-# 1. Upstream Code Intelligence Analysis
+Veyra remains:
 
-Inspect the complete upstream implementation before designing equivalent Veyra code.
+> **Engineering Intelligence for Coding Agents**
 
-Focus on:
-
-* repository discovery
-* file filtering
-* indexing pipeline
-* incremental indexing
-* background watcher
-* Tree-sitter parsing
-* symbol extraction
-* symbol resolution
-* LSP/type resolution
-* call relationships
-* dependency relationships
-* graph construction
-* data-flow analysis
-* semantic search
-* structural/full-text search
-* vector search
-* clone/similarity detection
-* cross-service/cross-repository relationships
-* change impact analysis
-* persistent storage
-* query execution
-* index lifecycle
-* error recovery
-* performance characteristics
-
-For every major upstream component, determine whether it should be:
-
-* reused directly
-* copied and adapted
-* wrapped behind a Veyra abstraction
-* replaced by existing Veyra functionality
-* deferred
-
-Do not reimplement mature functionality without a concrete reason.
-
-Do not copy the upstream MCP server/client integration merely because it exists.
+with repository truth, evidence, validation, authority, project isolation, and engineering context as first-class concerns.
 
 ---
 
-# 2. Code Intelligence Boundary
+# 2. Core Direction
 
-Code Intelligence and Engineering Memory must remain separate concepts.
+dsh-memory should be treated as a **reference implementation and source of engineering ideas**, not as Veyra's target architecture.
 
-Code Intelligence answers:
+The desired evolution is:
 
 ```text
-What exists in the repository?
-Where is it?
-How is it connected?
-What depends on it?
-What changed?
-What may be affected?
+Current:
+
+Observe
+  ↓
+Store
+  ↓
+Retrieve
+
+
+Target:
+
+Observe
+  ↓
+Decide
+  ↓
+Remember
+  ↓
+Validate
+  ↓
+Establish Authority
+  ↓
+Retrieve
+  ↓
+Check Applicability
+  ↓
+Check Temporal Validity
+  ↓
+Apply as Evidence
+  ↓
+Verify Against Repository Truth
+  ↓
+Update / Supersede / Invalidate
+  ↓
+Maintain Memory Health
 ```
 
-Engineering Memory answers:
+The central idea is:
 
-```text
-What did we learn?
-What decision was made?
-Why was it made?
-What happened previously?
-What evidence supports it?
-How was it validated?
-Is it still trustworthy?
-```
-
-Do not convert every code entity, symbol, or relationship into a Veyra memory row.
-
-Code index data should have its own representation and lifecycle.
+> **Memory is a lifecycle, not merely a database record.**
 
 ---
 
-# 3. Repository Ingestion
+# 3. Reference Repository
 
-Implement a controlled repository ingestion layer.
-
-It must:
-
-* operate only within the authorized Veyra project/workspace scope
-* normalize repository paths
-* safely handle symlinks
-* avoid path traversal
-* identify supported source files
-* ignore irrelevant files/directories
-* avoid indexing secrets
-* avoid unnecessary binary/generated/build artifacts
-
-The implementation must explicitly consider common exclusions such as:
+Primary reference:
 
 ```text
-.git
-node_modules
-vendor
-dist
-build
-coverage
-.cache
-temporary files
-binary files
-generated output
+/home/lovedolove/projects/refs/dsh-memory
 ```
 
-Do not hard-code an incomplete universal exclusion list if the upstream implementation already provides a mature filtering mechanism.
+The reference implementation must be studied at source-code level.
 
-Prefer the upstream implementation where practical.
+Do not rely only on README documentation.
+
+Inspect relevant:
+
+* source code;
+* data models;
+* memory lifecycle;
+* write/decision logic;
+* retrieval;
+* ranking;
+* semantic/unification logic;
+* causal memory;
+* temporal handling;
+* forgetting;
+* identity/provenance;
+* metacognition;
+* memory health;
+* safety mechanisms;
+* hooks;
+* tests;
+* mutation tests;
+* corruption/recovery tests;
+* release gates;
+* recent fixes and regressions.
+
+When the reference contains a mature implementation that is useful to Veyra, prefer adapting or copying the relevant implementation into Veyra and modifying it to fit Veyra's architecture rather than unnecessarily reimplementing the same mechanism.
+
+Before copying code:
+
+* verify licensing;
+* verify architectural compatibility;
+* verify dependency impact;
+* preserve Veyra's semantics;
+* avoid importing unrelated reference architecture.
 
 ---
 
-# 4. Index Lifecycle
+# 4. Veyra Identity
 
-Code indexing must have an explicit lifecycle.
+Veyra is not:
 
-At minimum support:
+* a generic chatbot memory system;
+* a generic personal memory system;
+* a generic cognitive-agent OS;
+* a generic multi-agent orchestration framework;
+* a second graph database;
+* a documentation-generation system;
+* a passive project-memory archive.
 
-```text
-Not Indexed
-    ↓
-Initial Index
-    ↓
-Ready
-    ↓
-Incremental Update
-    ↓
-Ready
-```
+Veyra is:
 
-Also handle:
+> **Automation-first engineering intelligence for coding agents.**
 
-```text
-Index Failure
-    ↓
-Recover / Retry
-    ↓
-Previous Valid Index
-```
+Its purpose is to automatically discover, validate, maintain, retrieve, and deliver useful engineering memory while remaining grounded in repository truth.
 
-and:
-
-```text
-Large Repository Change
-    ↓
-Rebuild / Recovery Index
-```
-
-The agent must never be given a silently corrupted or obviously partial index.
-
-If an incremental update fails, preserve the last known-good index where possible.
+Manual documentation maintenance must not become the primary mechanism for maintaining Veyra memory.
 
 ---
 
-# 5. Persistent Index Storage
+# 5. Existing Veyra Foundation
 
-Use the most appropriate mature storage mechanism from the upstream implementation or existing Veyra architecture.
-
-Do not introduce another database without demonstrating why existing storage cannot satisfy the requirement.
-
-The index must support:
-
-* persistence across DSH sessions
-* project isolation
-* deterministic project identity
-* index versioning
-* schema/version migration
-* safe update/rebuild
-* recovery from failed indexing
-* corruption detection where practical
-
-Index schema changes must not silently invalidate existing Veyra Memory data.
-
-Keep Code Intelligence storage logically distinguishable from canonical Memory storage.
-
----
-
-# 6. Incremental Indexing and Watcher
-
-Reuse the upstream incremental indexing and background watcher implementation where practical.
-
-The system should detect:
-
-* file creation
-* file modification
-* file deletion
-* rename/move where detectable
-
-and update only the affected index data.
-
-Avoid full repository re-indexing for ordinary small changes.
-
-The watcher must:
-
-* debounce bursts of changes
-* avoid duplicate work
-* avoid blocking normal DSH interaction
-* recover from watcher errors
-* respect project boundaries
-* expose its current state
-
-A manual/full rebuild must remain available for recovery or large repository changes.
-
----
-
-# 7. Code Intelligence Capabilities
-
-The integrated subsystem should support the following capabilities where the upstream implementation can provide them reliably:
-
-### Repository structure
-
-* files
-* modules
-* packages
-* services
-
-### Symbols
-
-* functions
-* classes
-* methods
-* interfaces
-* types
-* variables
-* other supported language symbols
-
-### Relationships
-
-* definitions
-* references
-* calls
-* imports
-* dependencies
-* inheritance/implementation where supported
-
-### Advanced analysis
-
-Where practical and production-ready:
-
-* data flow
-* semantic relationships
-* code similarity
-* clone detection
-* cross-service relationships
-* cross-repository relationships
-* change impact
-
-### Search
-
-Support the strongest useful combination of:
-
-* structural search
-* lexical/full-text search
-* symbol search
-* semantic search
-* graph-aware retrieval
-
-Do not add expensive capabilities solely because the upstream project supports them.
-
-Prioritize correctness and useful agent retrieval over feature count.
-
----
-
-# 8. Unified Retrieval
-
-Extend Veyra retrieval so an agent can retrieve:
+Preserve and strengthen Veyra's existing concepts:
 
 ```text
-Code Intelligence
-+
-Engineering Memory
-+
-Evidence
-+
-Validation
-```
-
-A query such as:
-
-> How does authentication work?
-
-should be able to retrieve relevant:
-
-* files
-* symbols
-* definitions
-* references
-* dependencies
-* implementation details
-* engineering memories
-* evidence
-* validation state
-
-The retrieval layer should preserve provenance.
-
-Every returned result should remain distinguishable as:
-
-```text
-Code
+Observation
 Memory
+Knowledge
 Evidence
-Validation
+
+Candidate
+Derived
+Canonical
+
+Unverified
+Reviewed
+Verified
+Stale
+Invalid
+
+Updates
+Extends
+Derives
+Contradicts
+Supersedes
 ```
 
-Do not flatten everything into indistinguishable text.
+Causal structure:
 
-Do not create an unrelated second retrieval architecture if the existing Veyra retrieval system can be extended cleanly.
+```text
+symptom
+  ↓
+rootCause
+  ↓
+remedy
+  ↓
+verifiedOutcome
+```
+
+Canonical storage remains:
+
+```text
+Project SQLite
+  +
+FTS5
+  +
+Veyra relations
+```
+
+Do not introduce a competing canonical storage layer.
 
 ---
 
-# 9. Code ↔ Memory / Evidence Linking
+# 6. Non-Negotiable Invariants
 
-Create explicit links between Code Intelligence entities and Veyra Memory/Evidence.
+All work must preserve these invariants.
+
+```text
+Observe ≠ Store
+
+Candidate ≠ Truth
+
+Similarity ≠ Authority
+
+Similarity ≠ Applicability
+
+Automatic behavior never becomes canonical by itself
+
+No silent merge
+
+Contradictions remain visible
+
+Repository truth is authoritative
+
+Historical memory ≠ Current truth
+
+Attribution ≠ Authority
+
+Memory ≠ Executable Instruction
+
+Project isolation is fail-closed
+
+Workspace isolation is fail-closed
+
+Reusable-memory isolation is fail-closed
+
+Secrets are scrubbed
+```
+
+Any proposed feature that violates these invariants must be rejected or redesigned.
+
+---
+
+# 7. P0 — Core Capabilities to Absorb
+
+## 7.1 Memory Write Gate
+
+Introduce an explicit decision layer between observation and memory persistence.
+
+Target:
+
+```text
+Observation
+    ↓
+Write Gate
+    ↓
+ACCEPT
+MERGE
+DROP
+DEFER
+    ↓
+Candidate / Evidence / Negative / Unresolved
+```
+
+The write gate should evaluate factors such as:
+
+* relevance;
+* novelty;
+* duplication;
+* project scope;
+* evidence;
+* provenance;
+* contradiction;
+* confidence;
+* applicability;
+* temporal context;
+* safety.
+
+The write gate must not directly create canonical truth.
+
+### Required behavior
+
+Veyra should be able to explain:
+
+```text
+Why was this stored?
+Why was it merged?
+Why was it rejected?
+Why was it deferred?
+```
+
+---
+
+# 8. Negative Memory
+
+Introduce first-class negative engineering memory.
+
+Examples:
+
+```text
+attempted solution
+failed fix
+rejected approach
+known-bad configuration
+disproven assumption
+previous failed experiment
+```
+
+Negative memory is historical evidence.
+
+It is not automatically authoritative.
+
+Example:
+
+```text
+Attempt:
+Use approach X.
+
+Result:
+Failed because Y.
+
+Status:
+Negative.
+```
+
+Future retrieval should be able to surface this information to prevent repeated mistakes.
+
+---
+
+# 9. Unresolved / Known-Unknown Memory
+
+Represent problems that have been investigated but remain unresolved.
+
+Distinguish:
+
+```text
+No known memory
+```
+
+from:
+
+```text
+Known unresolved investigation
+```
+
+Example:
+
+```text
+Symptom:
+Deployment fails after step 4.
+
+Known:
+Failure consistently occurs at step 4.
+
+Unknown:
+Root cause has not been established.
+
+Status:
+UNRESOLVED
+```
+
+Unresolved knowledge must never be promoted to canonical knowledge merely because it is repeatedly retrieved.
+
+---
+
+# 10. Multi-Channel Retrieval
+
+Strengthen Veyra retrieval using multiple complementary signals.
+
+Existing:
+
+```text
+FTS5 / BM25
+Token overlap
+Intent
+Relations
+```
+
+Potential additional channels:
+
+```text
+Causal relevance
+Evidence strength
+Negative history
+Temporal validity
+Applicability
+Failure history
+Provenance
+```
+
+The system should combine these signals through a deterministic rank-fusion mechanism such as RRF where appropriate.
+
+Do not introduce embeddings merely for feature parity.
+
+---
+
+# 11. Retrieval Explainability
+
+Retrieval should be inspectable.
+
+A result should be explainable in terms of signals such as:
+
+```text
+lexical: high
+intent: medium
+relation: high
+causal: high
+evidence: verified
+temporal: current
+applicability: strong
+negative-history: relevant
+```
+
+The exact scoring model may evolve.
+
+The important requirement is that retrieval does not become an opaque ranking mechanism.
+
+---
+
+# 12. Applicability-Aware Retrieval
+
+A similar memory is not necessarily an applicable memory.
+
+Capture context such as:
+
+```text
+project
+workspace
+repository
+environment
+OS
+runtime
+toolchain
+package manager
+version
+configuration
+task type
+```
+
+Target behavior:
+
+```text
+Similarity
++
+Context compatibility
++
+Evidence
++
+Temporal validity
+```
+
+Core invariant:
+
+```text
+Similarity ≠ Applicability
+```
+
+An incompatible memory must not outrank a directly applicable memory merely because its text is more similar.
+
+---
+
+# 13. Temporal Validity
+
+Strengthen Veyra's stale and supersession semantics.
+
+Potential fields:
+
+```text
+observed_at
+valid_from
+valid_until
+superseded_at
+```
+
+Potential states:
+
+```text
+current
+historical
+superseded
+stale
+invalid
+```
+
+Historical knowledge should remain available when useful while no longer being presented as current truth.
+
+Example:
+
+```text
+Old API:
+valid_until = 2026-09-30
+
+New API:
+valid_from = 2026-10-01
+supersedes = old memory
+```
+
+---
+
+# 14. Causal Memory
+
+Veyra already has a strong causal model.
+
+Do not replace it.
+
+Strengthen it using relevant dsh-memory ideas.
+
+Target:
+
+```text
+Symptom
+  ↓
+Root Cause
+  ↓
+Remedy
+  ↓
+Verified Outcome
+```
+
+Causal retrieval should prioritize verified historical cause/effect chains for recurring engineering problems.
+
+Example:
+
+```text
+Symptom:
+DSH tool unavailable.
+
+Root Cause:
+Incorrect provider registration.
+
+Remedy:
+Correct provider registration.
+
+Verified Outcome:
+Tool became callable in live DSH Web.
+```
+
+The causal chain should remain connected to its evidence and verification history.
+
+---
+
+# 15. Provenance
+
+Strengthen provenance across the entire memory lifecycle.
+
+Useful dimensions:
+
+```text
+project
+repository
+workspace
+session
+agent
+source
+timestamp
+evidence
+validation state
+```
+
+Do not confuse provenance with authority.
+
+An agent-generated observation remains an observation until validated.
+
+---
+
+# 16. Memory Provenance Chain
+
+Where practical, preserve the lifecycle chain:
+
+```text
+Observation
+  ↓
+Evidence
+  ↓
+Candidate
+  ↓
+Validation
+  ↓
+Promotion
+  ↓
+Retrieval
+  ↓
+Application
+  ↓
+Verification
+  ↓
+Update / Supersession / Invalidation
+```
+
+This should allow Veyra to answer:
+
+> Where did this memory come from, why was it trusted, and what happened when it was used?
+
+---
+
+# 17. Evidence Strength
+
+Study and selectively absorb dsh-memory's handling of evidence quality.
+
+Veyra should be able to distinguish between:
+
+```text
+single observation
+repeated observation
+independent evidence
+repository evidence
+test evidence
+verified outcome
+```
+
+Evidence strength must remain separate from authority.
 
 For example:
 
 ```text
-Code Entity
-    ↓
-Evidence
-    ↓
-Memory
-    ↓
-Validation
+High confidence
+≠
+Canonical authority
 ```
 
-Example:
-
-```text
-Code:
-src/payment/stripe.ts
-symbol: createCheckoutSession
-
-Evidence:
-source location + symbol identity + relevant content/version
-
-Memory:
-"Payment uses Stripe Checkout."
-
-Validation:
-verified
-```
-
-The link should preserve enough provenance to determine:
-
-* which repository
-* which file
-* which symbol
-* which relevant code relationship
-* which indexed revision/version
-* when it was observed
-
-Avoid relying only on raw text paths.
+Repository truth and validation rules remain authoritative.
 
 ---
 
-# 10. Code Change → Memory Maintenance
+# 18. Deduplication and Merge Quality
 
-Use code change information to identify potentially affected Memory/Evidence.
-
-Example:
+Improve the quality of:
 
 ```text
-Existing Memory:
-"Project uses Stripe only."
+ACCEPT
+MERGE
+DROP
+DEFER
+```
 
-Code Change:
-src/payment/paypal.ts added.
+particularly around duplicate or overlapping memories.
+
+Detect:
+
+```text
+exact duplicates
+semantic duplicates
+updates
+extensions
+contradictions
+supersessions
+```
+
+Never silently merge contradictory information.
+
+When two memories conflict, preserve the contradiction and its evidence.
+
+---
+
+# 19. Memory Feedback Loop
+
+Memory should learn from actual engineering outcomes.
+
+Target:
+
+```text
+Retrieve
+  ↓
+Apply
+  ↓
+Verify
+  ↓
+Success / Failure
+  ↓
+Feedback
+  ↓
+Update Memory
+```
+
+For example:
+
+```text
+Memory recommended approach X.
+
+Agent applied X.
+
+Tests failed.
 
 Result:
-Potential contradiction / stale-memory candidate.
+memory reliability decreased / failure history updated.
 ```
 
-The system should identify:
-
-* affected code entities
-* affected evidence
-* memories depending on affected evidence
-* potentially stale memories
-* potential contradictions
-
-But:
-
-```text
-Potential Change
-≠
-Automatic Invalidation
-```
-
-Do not automatically:
-
-* invalidate Memory
-* promote a candidate
-* change authority
-* merge memories
-* declare a contradiction as truth
-
-Veyra's existing validation model remains authoritative.
+A successful verified outcome should strengthen useful engineering knowledge.
 
 ---
 
-# 11. Evidence Freshness
+# 20. Repeated Failure / Recurrence Detection
 
-Code-backed evidence must be version-aware.
+Detect recurring engineering problems.
 
-When possible, associate evidence with:
-
-* repository/project identity
-* normalized path
-* symbol/entity identity
-* indexed revision or content fingerprint
-* observation time
-
-When the referenced code changes, the evidence may become:
+Potential patterns:
 
 ```text
-fresh
-potentially stale
+recurring symptom
+recurring root cause
+recurring failed approach
+recurring remedy
+recurring regression
+```
+
+This can enable Veyra to discover higher-value engineering knowledge automatically.
+
+Example:
+
+```text
+Same dependency issue
+→ 4 incidents
+→ same root cause
+→ same verified remedy
+```
+
+This should become a candidate for stronger engineering knowledge.
+
+---
+
+# 21. Memory Health
+
+Introduce automated memory-health signals.
+
+Potential categories:
+
+```text
+verified
+reviewed
+unverified
+stale
 invalid
+contradicted
+unresolved
+negative
+protected
 ```
 
-according to Veyra's existing validation semantics.
-
-Do not infer semantic invalidity merely from a file modification.
-
-A changed file should normally produce a candidate for review, not automatic invalidation.
-
----
-
-# 12. Veyra Invariants
-
-Preserve all existing Veyra invariants:
-
-* `Observe ≠ Store`
-* `Candidate ≠ Truth`
-* `Similarity ≠ Authority`
-* automatic behavior never becomes canonical silently
-* no silent merge
-* contradictions remain visible
-* repository/code truth is authoritative
-* project/workspace/reusable isolation fails closed
-* secrets are scrubbed
-
-Code Intelligence must not weaken any of these rules.
-
----
-
-# 13. DSH Integration
-
-Integrate with DeepSeek Harness using the official documentation under:
-
-`/home/lovedolove/projects/refs/deepseek-harness/docs`
-
-First inspect the official documentation and current source where necessary.
-
-Use the documented DSH mechanisms for:
-
-* plugin registration
-* `inject`
-* services/providers
-* `ctx.tools`
-* tool registration
-* tool execution
-* Skills
-* skill providers/consumers
-* commands
-* injection
-* lifecycle
-* disposal
-* scoped registration
-* session/agent integration
-
-The official documentation explicitly defines service dependencies through `inject` and exposes services such as `ctx.tools`; the tool system also separates registration/schema from execution. Follow those documented contracts rather than inventing another integration layer.
-
-For Skills, follow the official skill registry/provider/consumer model rather than treating Skills as arbitrary prompt files.
-
-The integration must also behave correctly across plugin lifecycle and disposal/hot-reload where supported by DSH.
-
-Do not invent undocumented DSH APIs.
-
-Do not use an unrelated plugin implementation as the authority for DSH behavior.
-
----
-
-# 14. DSH Agent Experience
-
-The agent should be able to use Veyra naturally without manually understanding the internal index implementation.
-
-Expose only the necessary model-facing capabilities.
-
-Avoid exposing unnecessary low-level indexing internals as agent tools.
-
-The agent should be able to:
+Memory health should identify:
 
 ```text
-discover relevant code
-→ retrieve structural context
-→ retrieve related memory
-→ inspect evidence
-→ reason about changes
-→ validate conclusions
+new contradictions
+stale knowledge
+unresolved investigations
+repeated failures
+unverified high-value candidates
+memories requiring revalidation
 ```
 
-The system should prefer progressive disclosure rather than injecting the entire index into every prompt.
+The `/memory-review` capability should evolve toward automated memory maintenance rather than manual database inspection.
 
 ---
 
-# 15. Performance and Resource Control
+# 22. Forgetting and Invalidation
 
-Production indexing must not make DSH unusable.
+Do not treat forgetting as unconditional deletion.
 
-Measure and control:
-
-* initial indexing time
-* incremental indexing time
-* memory usage
-* disk usage
-* query latency
-* watcher overhead
-* large-repository behavior
-
-Indexing should run asynchronously/backgrounded where the architecture supports it.
-
-Normal DSH requests should not wait unnecessarily for a complete re-index.
-
-For large repositories:
-
-* process incrementally
-* avoid unnecessary duplicate parsing
-* avoid unbounded memory growth
-* avoid loading the entire repository into every query
-
-Reuse upstream performance optimizations where they are mature and compatible.
-
----
-
-# 16. Failure and Degraded Modes
-
-Define safe behavior when:
-
-* a parser does not support a language
-* a file cannot be read
-* an index operation fails
-* the watcher fails
-* the index database is unavailable
-* semantic indexing fails
-* a repository is too large
-* a project is deleted/moved
-* a DSH service is unavailable
-
-A partial Code Intelligence failure must not corrupt or silently alter canonical Memory.
-
-Where possible:
+Where appropriate, preserve historical metadata:
 
 ```text
-Code Intelligence unavailable
-        ↓
-Memory remains available
-        ↓
-Agent receives explicit degraded-state information
+what was invalidated
+when
+why
+what contradicted it
+what replaced it
 ```
 
-Do not report indexing as successful without evidence.
-
----
-
-# 17. Observability
-
-Expose enough state for production diagnosis.
-
-At minimum track:
-
-* index status
-* last successful index
-* current indexing operation
-* changed files
-* indexed file/symbol counts where available
-* indexing errors
-* watcher status
-* index version
-* repository/project identity
-
-Errors must be actionable.
-
-Do not claim an index is ready when indexing actually failed or remains incomplete.
-
----
-
-# 18. Security and Isolation
-
-Every Code Intelligence operation must respect Veyra's existing isolation model.
-
-Never allow:
-
-* cross-project index leakage
-* workspace leakage
-* reusable-store leakage
-* unauthorized filesystem access
-* arbitrary indexing outside the authorized project scope
-* secrets entering persistent indexes
-
-Verify:
-
-* project identity
-* path normalization
-* symlink behavior
-* filesystem boundaries
-* secret scrubbing
-* stored source/provenance data
-
-Treat repository content as untrusted input.
-
----
-
-# 19. Licensing and Attribution
-
-The upstream project is MIT licensed.
-
-If upstream source code is copied or substantially adapted:
-
-* preserve the required license/notice
-* retain required attribution
-* identify reused upstream components where appropriate
-* keep Veyra's own licensing boundaries clear
-
-Do not copy upstream code without preserving its licensing obligations.
-
----
-
-# 20. Tests
-
-Add production-level tests for:
-
-### Indexing
-
-* initial repository indexing
-* incremental indexing
-* file creation
-* file modification
-* file deletion
-* rename/move where supported
-* rebuild/recovery
-
-### Code Intelligence
-
-* file discovery
-* symbol extraction
-* references
-* calls
-* dependencies
-* graph relationships
-* code search
-* semantic search where integrated
-* impact analysis where integrated
-
-### Memory integration
-
-* Code → Evidence linking
-* Evidence → Memory linking
-* stale evidence detection
-* potential contradiction detection
-* no automatic canonicalization
-* no silent invalidation
-
-### Isolation
-
-* project isolation
-* workspace isolation
-* reusable isolation
-* path traversal protection
-* symlink boundary behavior
-* secret scrubbing
-
-### DSH integration
-
-Verify against the official DSH implementation:
-
-* plugin registration
-* required `inject` dependencies
-* service availability
-* tool registration
-* tool schema visibility
-* tool execution
-* Skill registration/invocation where used
-* lifecycle/disposal
-* scoped behavior
-* reload behavior where supported
-
-### Regression
-
-All existing Veyra tests must continue passing.
-
----
-
-# 21. Implementation Order
-
-Implement in controlled stages.
-
-## Stage 1 — Upstream Integration Foundation
-
-* inspect upstream architecture
-* identify reusable components
-* preserve upstream license
-* integrate repository ingestion
-* integrate core indexing
-* integrate persistent index
-* establish Veyra project isolation
-
-## Stage 2 — Code Intelligence
-
-* parsing
-* symbols
-* relationships
-* code search
-* graph queries
-* incremental indexing
-
-## Stage 3 — Production Lifecycle
-
-* watcher
-* debounce
-* recovery
-* rebuild
-* migrations
-* observability
-* performance controls
-
-## Stage 4 — Memory Integration
-
-* Code entity references
-* evidence provenance
-* freshness tracking
-* affected-memory detection
-* contradiction/stale candidates
-
-## Stage 5 — Unified Retrieval
-
-* code + memory retrieval
-* provenance-preserving results
-* ranking/query planning
-* semantic search where appropriate
-
-## Stage 6 — DSH Integration
-
-* official plugin lifecycle
-* tools
-* skills
-* providers/services
-* injection
-* agent-facing retrieval
-* actual DSH verification
-
-Do not move to later stages while the previous foundation is demonstrably broken.
-
----
-
-# 22. Scope Control
-
-Do **not**:
-
-* integrate the existing `dsh-codebase-memory-mcp` plugin
-* replace Veyra Memory with `codebase-memory-mcp`
-* replace Veyra's validation model
-* introduce another graph database without demonstrated need
-* blindly copy the entire upstream repository
-* reimplement mature upstream indexing unnecessarily
-* create a human-managed documentation/export workflow as the primary feature
-* silently change Veyra architecture
-* weaken project/workspace/reusable isolation
-* invent undocumented DSH APIs
-* expose unnecessary low-level index internals to the model
-* automatically invalidate or canonicalize Memory from code changes
-* block normal DSH requests on avoidable full-repository indexing
-* claim completion without test/evidence verification
-
-Do not expand scope into unrelated Veyra features.
-
----
-
-# 23. Completion Criteria
-
-The goal is complete only when:
-
-1. Veyra contains a working Code Intelligence subsystem.
-2. Mature upstream indexing/parsing/search functionality has been reused where practical.
-3. Veyra understands repository structure, symbols, and relationships.
-4. Initial indexing works reliably.
-5. Incremental indexing works reliably.
-6. Background change detection works without disrupting normal DSH usage.
-7. Failed indexing preserves a usable last-known-good state where possible.
-8. Index storage supports versioning/migration/recovery.
-9. Code search provides useful structural/lexical results.
-10. Semantic search is integrated where proven useful and production-safe.
-11. Code entities have stable provenance.
-12. Code changes can identify affected evidence.
-13. Potentially stale/contradictory memories can be surfaced.
-14. Code changes never silently change Memory authority or validation state.
-15. Code and Memory participate in unified retrieval.
-16. Retrieval preserves source/provenance distinctions.
-17. DSH integration follows official documented mechanisms.
-18. Tools/Skills/providers/lifecycle behavior are verified in a real DSH environment.
-19. Project/workspace/reusable isolation is verified.
-20. Security and secret-scrubbing behavior is verified.
-21. Performance is measured on representative repositories.
-22. Failure/degraded behavior is explicitly tested.
-23. Production observability exists for indexing state and failures.
-24. Existing Veyra functionality and tests remain intact.
-25. Upstream license/attribution requirements are preserved.
-26. No unrelated architecture or feature expansion was introduced.
-
----
-
-# Final Product Direction
-
-Veyra should evolve from:
+Support:
 
 ```text
-Engineering Memory
+invalidate
+supersede
+forget
+tombstone
 ```
 
-into:
+while keeping obsolete knowledge out of active retrieval.
+
+---
+
+# 23. Memory Protection
+
+Study dsh-memory's memory-protection mechanisms.
+
+Introduce protection selectively for important memories.
+
+Protection must not override:
 
 ```text
-Code Intelligence
-+
-Engineering Memory
-+
-Evidence
-+
-Validation
-+
-Automatic Maintenance
+repository truth
+verified contradiction
+security requirements
+invalid state
 ```
 
-The distinction remains:
+A protected memory can still become invalid or superseded.
+
+---
+
+# 24. Memory Safety
+
+Treat all memory as untrusted evidence.
+
+Memory must never automatically become executable instructions.
+
+Protect against:
 
 ```text
-Code Intelligence
-= What the repository currently contains
-  and how the code is connected.
-
-Engineering Memory
-= What the engineering process learned,
-  decided, observed, and verified.
-
-Evidence
-= What supports those claims.
-
-Validation
-= How trustworthy/current those claims are.
+prompt injection
+malicious repository content
+malicious documentation
+unsafe commands
+secret persistence
+instruction laundering
+corrupted memory
 ```
 
-The final system should allow a coding agent to move from:
+Target:
 
 ```text
-Question
-  ↓
-Relevant Code
-  ↓
-Relevant Memory
+Memory
   ↓
 Evidence
   ↓
 Validation
   ↓
-Action
-  ↓
-Code Change
-  ↓
-Incremental Re-index
-  ↓
-Affected Evidence / Memory Detection
+Agent Context
 ```
 
-This is the intended production direction for Veyra's Code Intelligence integration.
+Not:
+
+```text
+Memory
+  ↓
+Execute
+```
+
+---
+
+# 25. Corruption and Recovery
+
+Study dsh-memory's corruption and UTF-8 hardening work.
+
+Apply equivalent principles where appropriate to Veyra.
+
+Consider:
+
+```text
+corrupted records
+unreadable records
+partial writes
+invalid states
+rollback
+recovery
+fail-closed behavior
+```
+
+A corrupted memory must not silently become authoritative.
+
+---
+
+# 26. Mutation and Regression Testing
+
+Memory systems require stronger regression discipline than ordinary CRUD systems.
+
+Add tests for:
+
+```text
+write decisions
+merge decisions
+contradictions
+negative memory
+unresolved memory
+retrieval ranking
+temporal validity
+applicability
+causal retrieval
+invalidations
+forgetting
+corruption
+isolation
+security
+```
+
+Where valuable, use mutation testing to verify that tests actually protect lifecycle invariants.
+
+---
+
+# 27. P1 — Advanced Capabilities
+
+Study and selectively absorb:
+
+```text
+Reflection
+Feedback loops
+Advanced memory maintenance
+Metacognition
+Memory self-state
+Memory prediction
+Goal-directed retrieval
+Multi-agent attribution
+```
+
+Only implement these when there is a concrete engineering-memory use case.
+
+Do not add them merely because dsh-memory has them.
+
+---
+
+# 28. Explicitly Do Not Import
+
+## 28.1 Markdown Cognitive Graph
+
+Do not make Markdown cognitive graph storage a second Veyra source of truth.
+
+Veyra remains:
+
+```text
+SQLite
++
+FTS5
++
+Veyra relations
+```
+
+The graph visualization layer may continue to exist, but canonical memory storage must remain Veyra's existing model.
+
+---
+
+## 28.2 Hive / Swarm Architecture
+
+Do not turn Veyra into a generic multi-agent orchestration framework.
+
+Agent/session attribution is useful.
+
+Hive orchestration is not a current Veyra requirement.
+
+---
+
+## 28.3 Large Generic Tool Surface
+
+Do not copy dsh-memory's entire tool surface.
+
+Prefer strengthening:
+
+```text
+veyra_remember
+veyra_recall
+veyra_inspect
+veyra_forget
+veyra_promote
+```
+
+Add tools only when a concrete engineering-memory workflow requires them.
+
+---
+
+## 28.4 Generic Cognitive-Agent OS
+
+Do not import unrelated:
+
+```text
+identity systems
+generic self-models
+general-purpose prediction
+generic personal memory
+agent personality
+task orchestration
+```
+
+unless a future Veyra requirement clearly justifies them.
+
+---
+
+# 29. Phased Implementation Roadmap
+
+Implementation must proceed incrementally.
+
+Do not perform one large dsh-memory-to-Veyra rewrite.
+
+---
+
+## Phase 0 — Reference Baseline
+
+### Goal
+
+Understand dsh-memory and establish a precise Veyra gap analysis.
+
+### Tasks
+
+Inspect:
+
+```text
+/home/lovedolove/projects/refs/dsh-memory
+```
+
+Map:
+
+* memory lifecycle;
+* write gate;
+* deduplication;
+* merge;
+* negative memory;
+* unresolved memory;
+* retrieval;
+* ranking;
+* RRF/fusion;
+* applicability;
+* temporal semantics;
+* causal memory;
+* provenance;
+* feedback;
+* recurrence;
+* forgetting;
+* protection;
+* health;
+* safety;
+* corruption handling;
+* mutation/regression testing.
+
+### Deliverable
+
+A capability matrix:
+
+```text
+Capability
+→ dsh-memory implementation
+→ current Veyra implementation
+→ gap
+→ Veyra integration point
+→ priority
+→ relevant tests
+```
+
+### Exit Criteria
+
+No implementation is based solely on assumptions or README-level behavior.
+
+---
+
+# Phase 1 — Memory Decision Layer
+
+Implement:
+
+```text
+Observation
+  ↓
+Write Gate
+  ↓
+ACCEPT / MERGE / DROP / DEFER
+```
+
+Integrate with Veyra's existing:
+
+```text
+Candidate
+Evidence
+Validation
+Authority
+```
+
+Add focused regression tests.
+
+### Exit Criteria
+
+Veyra can explain why an observation was accepted, merged, rejected, or deferred.
+
+---
+
+# Phase 2 — Negative and Unresolved Memory
+
+Implement:
+
+```text
+Negative
+Unresolved
+```
+
+Ensure retrieval can distinguish:
+
+```text
+Known solution
+Known failed solution
+Known unresolved investigation
+No known history
+```
+
+### Exit Criteria
+
+Agents can avoid repeating known failed approaches and can recognize known unknowns.
+
+---
+
+# Phase 3 — Retrieval Fusion
+
+Strengthen retrieval with:
+
+```text
+FTS5 / BM25
+Token overlap
+Intent
+Relations
+Causal
+Evidence
+Negative
+Temporal
+Applicability
+```
+
+Introduce RRF or equivalent deterministic fusion where beneficial.
+
+### Exit Criteria
+
+Retrieval quality improves without requiring unnecessary vector infrastructure.
+
+---
+
+# Phase 4 — Applicability and Temporal Semantics
+
+Implement contextual applicability and temporal validity.
+
+### Exit Criteria
+
+Veyra can independently answer:
+
+```text
+Is this memory relevant?
+Is it applicable here?
+Is it still valid?
+```
+
+---
+
+# Phase 5 — Causal and Provenance Strengthening
+
+Strengthen:
+
+```text
+Symptom
+→ Root Cause
+→ Remedy
+→ Verified Outcome
+```
+
+and provenance:
+
+```text
+project
+repository
+session
+agent
+source
+timestamp
+evidence
+validation
+```
+
+### Exit Criteria
+
+Recurring engineering problems can reuse verified causal knowledge.
+
+---
+
+# Phase 6 — Feedback and Recurrence
+
+Implement:
+
+```text
+Retrieve
+→ Apply
+→ Verify
+→ Feedback
+→ Update
+```
+
+Add recurring failure/root-cause detection where justified.
+
+### Exit Criteria
+
+Actual engineering outcomes can improve memory quality automatically.
+
+---
+
+# Phase 7 — Memory Health and Maintenance
+
+Strengthen `/memory-review` and automated maintenance.
+
+Surface:
+
+```text
+stale
+contradicted
+unresolved
+negative
+unverified
+repeated failures
+revalidation candidates
+```
+
+### Exit Criteria
+
+Veyra can automatically identify memory-quality problems without requiring manual documentation maintenance.
+
+---
+
+# Phase 8 — Forgetting and Protection
+
+Implement safe:
+
+```text
+invalidate
+supersede
+forget
+tombstone
+protect
+```
+
+with historical reasoning preserved where useful.
+
+### Exit Criteria
+
+Obsolete memory leaves active retrieval without destroying useful lifecycle history.
+
+---
+
+# Phase 9 — Safety and Reliability Hardening
+
+Harden:
+
+```text
+prompt injection
+secret scrubbing
+corruption
+recovery
+rollback
+fail-closed isolation
+invalid state handling
+```
+
+Add regression and mutation coverage.
+
+### Exit Criteria
+
+Untrusted, corrupted, stale, or malicious memory cannot silently become authoritative engineering behavior.
+
+---
+
+# Phase 10 — Advanced Capabilities
+
+Only after Phases 1–9 are stable.
+
+Evaluate:
+
+```text
+metacognition
+self-state
+prediction
+goal-directed retrieval
+advanced reflection
+multi-agent attribution
+```
+
+Every capability requires:
+
+```text
+clear engineering use case
+measurable benefit
+Veyra-native implementation
+regression coverage
+no scope violation
+```
+
+---
+
+# Phase 11 — Benchmark and Final Hardening
+
+Measure:
+
+```text
+write precision
+duplicate suppression
+false memory rate
+negative-memory recall
+unresolved-memory recall
+retrieval relevance
+applicability accuracy
+temporal correctness
+causal retrieval quality
+contradiction detection
+stale-memory detection
+feedback effectiveness
+recurrence detection
+memory safety
+project isolation
+```
+
+Use:
+
+```text
+unit tests
+integration tests
+retrieval fixtures
+lifecycle fixtures
+contradiction cases
+corruption cases
+mutation tests where useful
+```
+
+Remove features that increase complexity without measurable benefit or meaningful invariant improvement.
+
+---
+
+# 30. Recommended Execution Order
+
+```text
+Phase 0
+  ↓
+Phase 1 — Write Gate
+  ↓
+Phase 2 — Negative / Unresolved
+  ↓
+Phase 3 — Retrieval Fusion
+  ↓
+Phase 4 — Applicability / Temporal
+  ↓
+Phase 5 — Causal / Provenance
+  ↓
+Phase 6 — Feedback / Recurrence
+  ↓
+Phase 7 — Memory Health
+  ↓
+Phase 8 — Forgetting / Protection
+  ↓
+Phase 9 — Safety / Reliability
+  ↓
+Phase 10 — Advanced Capabilities
+  ↓
+Phase 11 — Benchmark / Hardening
+```
+
+Do not skip directly to advanced cognitive capabilities.
+
+---
+
+# 31. Phase Completion Rules
+
+Every phase must leave Veyra in a working state.
+
+For each phase:
+
+1. Inspect the current Veyra implementation.
+2. Inspect the corresponding dsh-memory implementation.
+3. Identify the smallest Veyra-native change.
+4. Implement it.
+5. Add focused regression tests.
+6. Run the relevant test suite.
+7. Verify Veyra invariants.
+8. Verify project/workspace/reusable isolation.
+9. Verify safety behavior.
+10. Record the resulting behavior.
+11. Only then proceed.
+
+Avoid broad cross-phase refactors.
+
+---
+
+# 32. Implementation Rules
+
+* Prefer minimal changes.
+* Preserve existing Veyra architecture.
+* Reuse mature reference code when appropriate.
+* Do not duplicate existing Veyra functionality unnecessarily.
+* Do not introduce a second canonical storage system.
+* Do not silently change memory semantics.
+* Do not silently merge contradictions.
+* Do not weaken authority rules.
+* Do not weaken isolation.
+* Do not treat memory as executable instructions.
+* Do not introduce embeddings without a concrete requirement.
+* Do not add generic agent functionality.
+* Do not expand the tool surface without a clear use case.
+* Do not perform unrelated refactoring.
+* Add regression tests for new behavior.
+* Verify existing tests remain passing.
+* Prefer automated memory discovery and maintenance over manual documentation workflows.
+
+---
+
+# 33. Success Criteria
+
+The integration is successful when Veyra can:
+
+* automatically decide whether an observation should become memory;
+* reject or defer low-value observations;
+* merge legitimate updates without silently hiding contradictions;
+* remember failed and rejected engineering approaches;
+* explicitly represent unresolved engineering questions;
+* retrieve memories using multiple complementary signals;
+* distinguish similarity from applicability;
+* distinguish current knowledge from historical knowledge;
+* retrieve verified causal engineering knowledge;
+* preserve full useful provenance;
+* understand evidence strength;
+* learn from successful and failed memory applications;
+* detect recurring engineering failures;
+* identify stale, conflicting, invalid, and unresolved memory;
+* safely invalidate and forget obsolete memory;
+* protect important memory without overriding repository truth;
+* treat memory as untrusted evidence rather than executable instructions;
+* survive corrupted or invalid memory states safely;
+* continuously maintain memory quality without manual documentation maintenance.
+
+---
+
+# 34. Final Definition of Done
+
+The final system should evolve from:
+
+```text
+Observe
+→ Store
+→ Retrieve
+```
+
+toward:
+
+```text
+Observe
+→ Decide
+→ Remember
+→ Validate
+→ Establish Authority
+→ Retrieve
+→ Check Applicability
+→ Check Temporal Validity
+→ Apply as Evidence
+→ Verify Against Repository Truth
+→ Learn From Outcome
+→ Detect Recurrence
+→ Update / Supersede / Invalidate
+→ Maintain Memory Health
+```
+
+while remaining:
+
+> **Veyra — Engineering Intelligence for Coding Agents**
+
+The outcome must be a stronger Veyra, not a Veyra-shaped fork of dsh-memory.
