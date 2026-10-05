@@ -311,6 +311,37 @@ export function causalRelevance(query, record) {
   return Number(Math.min(1, Math.max(0, ratio * quality)).toFixed(3))
 }
 
+/** Goal-term coverage weight — the surviving leg of the reference formula. */
+export const GOAL_WEIGHT = 0.7
+
+/**
+ * Goal-directed retrieval affinity (GOAL.md Phase 10).
+ *
+ * Adapted from dsh-memory `md_cg/mdcos.py:1411` `_path_goal`:
+ *     score = min(1.0, 0.7·goal_term_coverage + 0.3·domain_affinity)
+ * Only the first leg survives the copy. `routing.big_domain_score_weighted`
+ * has no Veyra counterpart — Veyra has no `goals` layer, no domain graph
+ * and no topic router (Phase 10 capability evaluation, see
+ * docs/capability-matrix.md) — so the domain term is dropped rather than
+ * faked with an invented signal. What remains is goal-term coverage over
+ * the record's claim text, using the same `tokenOverlap` the semantic
+ * channel already uses.
+ *
+ * Invariant (GOAL.md Phase 10, Core Invariants): a goal is a DIRECTION,
+ * not an answer and not an authority. This value only routes ordering; it
+ * never promotes, never changes authority/validation/confidence, and is
+ * inert without an explicit goal (Similarity ≠ Authority, and a goal is
+ * weaker evidence than a verified record — never stronger).
+ */
+export function goalAffinity(goal, record) {
+  const g = String(goal ?? '').trim()
+  if (!g) return 0
+  const text = claimText(record)
+  if (!text) return 0
+  const { ratio } = tokenOverlap(splitCamelCase(text), splitCamelCase(g))
+  return Number(clamp01(ratio * GOAL_WEIGHT).toFixed(3))
+}
+
 /**
  * Temporal validity bounds (GOAL.md Phase 4, §13).
  *
@@ -437,6 +468,7 @@ const FUSION_CHANNELS = Object.freeze([
   'scope_proximity',     // scope applicability
   'applicability',       // §12 context compatibility (Phase 4, new)
   'temporal_validity',   // §13 validity window (Phase 4, new)
+  'goal_affinity',       // explicit-goal routing (Phase 10, new; flat → inactive)
 ])
 
 export function reciprocalRankFusion(scored) {
@@ -468,10 +500,11 @@ export function reciprocalRankFusion(scored) {
  * Rank records with a full dimensional breakdown.
  * Never returns a single opaque score.
  */
-export function rankRecords(records, { weights = {}, preferProject = true, intent = null, query = '' } = {}) {
+export function rankRecords(records, { weights = {}, preferProject = true, intent = null, query = '', goal = null } = {}) {
   if (!Array.isArray(records) || records.length === 0) return []
   const w = { ...DEFAULT_WEIGHTS, ...intentWeights(intent), ...weights }
   const hasQuery = Boolean(String(query ?? '').trim())
+  const hasGoal = Boolean(String(goal ?? '').trim())
   const poolIds = new Set(records.map((r) => r.id).filter(Boolean))
   const scored = records.map((rec, idx) => {
     const lex = lexicalScore(rec, query, idx)
@@ -486,6 +519,10 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
     const rel = relationshipScore(rec, poolIds)
     const compatible = polarityCompatible(query, rec)
     const causal = causalRelevance(query, rec)
+    // Phase 10 §goal — sort-only, and only when an explicit goal was
+    // supplied: without one every value is 0, the channel is flat, and it
+    // drops out of the RRF exactly like the other neutral channels.
+    const goalHit = hasGoal ? goalAffinity(goal, rec) : 0
     const composite = Number((
       relevance * w.relevance
       + sem * (w.semantic ?? 0.10)
@@ -520,6 +557,7 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
         // channels drop out of the RRF for that pool.
         applicability: contextCompatibility(rec),
         temporal_validity: temporalState(rec) === 'expired' ? 0 : 1,
+        goal_affinity: Number(goalHit.toFixed(3)),
       },
     }
   })
@@ -588,6 +626,30 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
     }
   }
 
+  // Phase 10 §28 — explicit-goal routing, the same sort-only discipline as
+  // the Phase 4 guards above. An explicit goal is a DIRECTION the caller
+  // states, not an authority claim, so it may reorder recall but it must
+  // never touch `composite` or any lifecycle field: a goal cannot promote,
+  // demote, validate, or resurrect anything.
+  //
+  // RRF alone cannot deliver this. `goal_affinity` enters fusion as one of
+  // twelve channels, and RRF is rank-based, so a full one-position swing in
+  // one channel moves `fusion` by roughly FUSION_WEIGHT × 1/(RRF_K + 1) —
+  // about 0.001 — while the composite differences the goal is meant to
+  // overrule routinely exceed that. Measured on a two-record pool where
+  // both tie on ten of twelve channels: goal affinity 0.525 vs 0.262 and the
+  // lower-affinity record still led, because its composite gap was ~3× the
+  // entire reachable fusion term. So the goal leg gets its own sort key
+  // ABOVE the query-signal tier, graded by affinity rather than binary: two
+  // records can both carry goal signal and still differ, so a pass/fail band
+  // would hand the decision straight back to composite. Records with no goal
+  // signal never lead a goal-directed recall — a record that does not
+  // mention the direction the caller stated is not an answer to it — but
+  // they stay fully recallable, and within one affinity the normal
+  // fusion/composite order is completely untouched.
+  const goalKey = (r) => r.scores.goal_affinity || 0
+  const hasGoalSignal = hasGoal && scored.some((r) => goalKey(r) > 0)
+
   // Primary: the fused score — composite plus the RRF consensus term
   // (identical to the capped composite whenever fusion is inactive, so the
   // legacy ordering is byte-identical). Secondary, on ties: the (possibly
@@ -613,6 +675,15 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
   // to have signal against, so the tier is inactive by construction.
   const signalTier = (r) => ((r.scores.relevance > 0 || r.scores.semantic > 0) ? 1 : 0)
   scored.sort((a, b) => {
+    // Goal routing sits ABOVE the query-signal tier: the caller has stated
+    // what they are trying to do, which is stronger evidence about what to
+    // surface than the query's own token overlap. Inside one affinity the
+    // ordering is untouched, so the goal decides the band, never the
+    // order within it.
+    if (hasGoalSignal) {
+      const goalT = goalKey(b) - goalKey(a)
+      if (goalT !== 0) return goalT
+    }
     if (hasQuery) {
       const tier = signalTier(b) - signalTier(a)
       if (tier !== 0) return tier
@@ -724,6 +795,7 @@ const COVERAGE_ZERO_SCORES = Object.freeze({
   causal: NEG_COVERAGE_SCORE,
   rrf: NEG_COVERAGE_SCORE,
   fusion: NEG_COVERAGE_SCORE,
+  goal_affinity: NEG_COVERAGE_SCORE,
 })
 
 /**
@@ -789,8 +861,13 @@ export function hybridRetrieve({
   includeReusable = true,
   intent = null,
   kind = null,
+  goal = null,
 } = {}) {
   const detectedIntent = intent || detectIntent(query)
+  // Phase 10 — an explicit goal is caller-supplied routing context, not a
+  // stored fact: nothing here reads a goal layer, and with no goal the
+  // ranking path is byte-identical to before.
+  const activeGoal = String(goal ?? '').trim() ? goal : null
   if (limit === 0) return []
   const perStore = Math.max(limit * 3, 12)
   const projectFtsHits = projectStore
@@ -831,7 +908,7 @@ export function hybridRetrieve({
   for (const r of reusableRecent) addCandidate(r, true)
 
   const merged = Array.from(candidateMap.values())
-  const ranked = annotateContradictions(rankRecords(merged, { query, intent: detectedIntent, preferProject: true }))
+  const ranked = annotateContradictions(rankRecords(merged, { query, intent: detectedIntent, preferProject: true, goal: activeGoal }))
   // Deduplicate before the top-K cut so freed slots go to the next distinct
   // record; contradiction extras and graph expansion below still see only
   // what survived, and both sides of a contradiction are relation-connected
@@ -874,7 +951,7 @@ export function hybridRetrieve({
   extras.push(...neighbors)
 
   if (extras.length === 0) return withCoverage(limited)
-  return withCoverage(annotateContradictions(rankRecords([...limited, ...extras], { query, intent: detectedIntent, preferProject: true })))
+  return withCoverage(annotateContradictions(rankRecords([...limited, ...extras], { query, intent: detectedIntent, preferProject: true, goal: activeGoal })))
 }
 
 /**

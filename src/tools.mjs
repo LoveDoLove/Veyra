@@ -290,6 +290,7 @@ export function buildToolDefinitions(runtime) {
         + 'each turn; use this for targeted queries beyond automatic context.',
       parameters: {
         query: { type: 'string', required: true, description: 'What to look for.' },
+        goal: { type: 'string', description: 'Optional goal-directed routing: the task you are working toward. Steers ranking toward relevant experience; it is a direction, never an authority, and never promotes or demotes anything. Omit for ordinary search.' },
         limit: { type: 'number', description: 'Max results (default 5, max 20).' },
         include_reusable: { type: 'boolean', description: 'Include cross-project reusable experience. Default true.' },
         kind: { type: 'string', enum: [...VALID_KINDS], description: 'Optional kind filter: memory | knowledge | evidence | observation | negative | unresolved. Omit for unified search (known-failed/unresolved then surface only as a bounded zero-score coverage tail).' },
@@ -315,10 +316,13 @@ export function buildToolDefinitions(runtime) {
         const { projectStore, reusableStore } = storesFor(runtime, exec, SCOPES.PROJECT)
         const limit = Math.max(1, Math.min(Number(args.limit) || 5, 20))
         const includeReusable = args.include_reusable !== false
+        // Phase 10 — goal is caller-supplied routing context only.
+        const goal = String(args.goal ?? '').trim() ? args.goal : null
         const items = recall({
           projectStore,
           reusableStore,
           query: args.query,
+          goal,
           limit,
           includeReusable,
           kind: args.kind || null,

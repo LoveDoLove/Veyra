@@ -1282,6 +1282,35 @@ regression coverage
 no scope violation
 ```
 
+### Outcome
+
+Six candidates evaluated; one adopted.
+
+```text
+ADOPTED  goal-directed retrieval — copied and adapted from dsh-memory
+         md_cg/mdcos.py:1411 _path_goal
+         (score = min(1.0, 0.7·goal_term_coverage + 0.3·domain_affinity)).
+         Veyra has no goals layer and no domain router, so the domain leg
+         is DROPPED rather than faked; only goal-term coverage survives
+         (GOAL_WEIGHT = 0.7). An explicit goal routes recall as a sort key
+         above the query-signal tier; it never rewrites composite or any
+         lifecycle field.
+
+REJECTED metacognition        — Cognitive OS drift, outside the product identity
+REJECTED self-state           — a model describing itself is not engineering memory
+REJECTED prediction           — speculative write-back violates Observe ≠ Store
+REJECTED advanced reflection  — hallucinatory and unverifiable; duplicates the
+                                existing evidence-grounded feedback path
+REJECTED multi-agent attribution — swarm orchestration, forbidden by the
+                                product identity (§28.2)
+```
+
+Rejections leave no code surface; `test/m14-goal-retrieval.test.mjs` asserts
+the absence of every rejected capability's identifiers across `src/`.
+
+**Status: COMPLETE** — `src/retrieve.mjs`, `src/tools.mjs`, `src/context.mjs`;
+13 tests in `test/m14-goal-retrieval.test.mjs`.
+
 ---
 
 # Phase 11 — Benchmark and Final Hardening
