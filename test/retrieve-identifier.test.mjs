@@ -37,7 +37,7 @@ const sem = (q, title, body = '') => semanticSimilarity(q, rec(title, body))
 const BASE = {
   kind: 'memory', status: 'current', validation: 'unverified', authority: 'derived',
   confidence: 'low', scope: 'project', projectId: 'p', tags: [],
-  evidence: [{ path: 'src/x.mjs' }], relations: [], source: [], forgotten: false,
+  evidence: [{ path: 'src/x.mjs' }], relations: [], source: {}, forgotten: false,
   createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
   lastRecalledAt: null,
 }

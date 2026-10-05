@@ -110,16 +110,6 @@ function isIsoDate(value) {
   return typeof value === 'string' && Number.isFinite(Date.parse(value))
 }
 
-function parseJson(value, fallback) {
-  if (value == null || value === '') return fallback
-  if (typeof value !== 'string') return value
-  try {
-    return JSON.parse(value)
-  } catch {
-    return fallback
-  }
-}
-
 function asJson(value, fallback) {
   try {
     return JSON.stringify(value ?? fallback)
@@ -128,9 +118,69 @@ function asJson(value, fallback) {
   }
 }
 
+/**
+ * §25 corruption detection — strict JSON column parse.
+ *
+ * dsh-memory `test_n198_tokens_corrupt_failclosed`: a corrupt column that
+ * silently degrades to a fallback lets a read-modify-write cycle wipe the
+ * original bytes. Here a parse failure (or wrong parsed type) records the
+ * field in `corrupt` instead of pretending the record is intact.
+ *
+ * @param {unknown} value       raw column value
+ * @param {unknown} fallback    array/object fallback used for readability
+ * @param {string} label        field name pushed to `corrupt`
+ * @param {string[]} corrupt    accumulator of broken field names
+ * @returns parsed value, or fallback when unreadable
+ */
+function parseJsonStrict(value, fallback, label, corrupt) {
+  if (value == null || value === '') return fallback
+  let parsed = value
+  if (typeof value === 'string') {
+    try {
+      parsed = JSON.parse(value)
+    } catch {
+      corrupt.push(label)
+      return fallback
+    }
+  }
+  const wantArray = Array.isArray(fallback)
+  const typeOk = wantArray
+    ? Array.isArray(parsed)
+    : Boolean(parsed) && typeof parsed === 'object' && !Array.isArray(parsed)
+  if (!typeOk) {
+    corrupt.push(label)
+    return fallback
+  }
+  return parsed
+}
+
+/**
+ * §24/§25 structural check shared by read (rowToRecord) and the repair
+ * verification in put(): every field a record must have, in valid form.
+ * Pure — returns the list of invalid field names (empty = intact).
+ *
+ * @param {object} record
+ * @returns {string[]}
+ */
+function recordStructuralFields(record) {
+  const bad = []
+  if (!Array.isArray(record.tags)) bad.push('tags')
+  if (!Array.isArray(record.evidence)) bad.push('evidence')
+  if (!Array.isArray(record.relations)) bad.push('relations')
+  if (!record.source || typeof record.source !== 'object' || Array.isArray(record.source)) bad.push('source')
+  if (!VALID_KINDS.includes(record.kind)) bad.push('kind')
+  if (!VALID_STATUSES.includes(record.status)) bad.push('status')
+  if (!VALID_VALIDATIONS.includes(record.validation)) bad.push('validation')
+  if (!VALID_AUTHORITIES.includes(record.authority)) bad.push('authority')
+  if (!VALID_CONFIDENCES.includes(record.confidence)) bad.push('confidence')
+  if (!VALID_SCOPES.includes(record.scope)) bad.push('scope')
+  return bad
+}
+
 function rowToRecord(row) {
   if (!row) return null
-  return {
+  const corrupt = []
+  const record = {
     id: row.id,
     kind: row.kind,
     status: row.status,
@@ -141,10 +191,10 @@ function rowToRecord(row) {
     projectId: row.project_id,
     title: row.title,
     body: row.body,
-    tags: parseJson(row.tags, []),
-    evidence: parseJson(row.evidence, []),
-    relations: parseJson(row.relations, []),
-    source: parseJson(row.source, {}),
+    tags: parseJsonStrict(row.tags, [], 'tags', corrupt),
+    evidence: parseJsonStrict(row.evidence, [], 'evidence', corrupt),
+    relations: parseJsonStrict(row.relations, [], 'relations', corrupt),
+    source: parseJsonStrict(row.source, {}, 'source', corrupt),
     contentHash: row.content_hash,
     forgotten: Boolean(row.forgotten),
     createdAt: row.created_at,
@@ -152,6 +202,64 @@ function rowToRecord(row) {
     lastRecalledAt: row.last_recalled_at || null,
     rank: typeof row.rank === 'number' ? row.rank : undefined,
   }
+  // §25 fail-closed: a structurally invalid row carries `corrupt` so recall
+  // gates exclude it (types.mjs isLifecycleEligible) and put() refuses to
+  // overwrite its bytes (recovery only via explicit repair: true).
+  for (const field of recordStructuralFields(record)) {
+    if (!corrupt.includes(field)) corrupt.push(field)
+  }
+  if (corrupt.length) record.corrupt = corrupt
+  return record
+}
+
+/** Enum passthrough with a SANITIZED fallback (§25: garbage never inherits). */
+function validEnum(value, allowed, fallback) {
+  return typeof value === 'string' && allowed.includes(value) ? value : fallback
+}
+
+/** §24 scrub accumulator shared by the tag/evidence/source scrub passes. */
+function newScrubBag() {
+  return { dirty: false, patterns: [] }
+}
+
+function scrubString(value, bag) {
+  const result = scrub(value)
+  if (!result.clean) bag.dirty = true
+  for (const name of result.detectedPatterns) {
+    if (!bag.patterns.includes(name)) bag.patterns.push(name)
+  }
+  return result.scrubbed
+}
+
+/**
+ * §24 — scrub secrets inside nested JSON values (evidence entries, the
+ * source provenance bag). Depth-capped; ordinary text is byte-identical
+ * after scrub, so clean records round-trip unchanged.
+ */
+function scrubDeep(value, depth, bag) {
+  if (typeof value === 'string') return scrubString(value, bag)
+  if (Array.isArray(value)) {
+    if (depth <= 0) return value
+    return value.map((entry) => scrubDeep(entry, depth - 1, bag))
+  }
+  if (value && typeof value === 'object') {
+    if (depth <= 0) return value
+    const out = {}
+    for (const [key, entry] of Object.entries(value)) {
+      if (
+        typeof entry === 'string'
+        && /^(api[_-]?key|secret|password|passwd|token|auth[_-]?token|access[_-]?key|private[_-]?key)$/i.test(key)
+      ) {
+        bag.dirty = true
+        if (!bag.patterns.includes('sensitive_key_value')) bag.patterns.push('sensitive_key_value')
+        out[key] = '[REDACTED_SECRET]'
+      } else {
+        out[key] = scrubDeep(entry, depth - 1, bag)
+      }
+    }
+    return out
+  }
+  return value
 }
 
 function normalizeRecord(input, { existing = null, explicitCanonical = false } = {}) {
@@ -163,45 +271,67 @@ function normalizeRecord(input, { existing = null, explicitCanonical = false } =
     throw new Error('memory must have a title or a body')
   }
 
+  const bag = newScrubBag()
+  const existingAuthority = validEnum(existing?.authority, VALID_AUTHORITIES, AUTHORITIES.CANDIDATE)
   const authority = normalizeEnum(
     input.authority,
     VALID_AUTHORITIES,
-    existing?.authority ?? AUTHORITIES.CANDIDATE,
+    existingAuthority,
   )
   if (existing) {
-    assertAuthorityTransition(existing.authority, authority, { explicit: explicitCanonical })
+    assertAuthorityTransition(existingAuthority, authority, { explicit: explicitCanonical })
   } else if (authority === AUTHORITIES.CANONICAL && !explicitCanonical) {
     throw new Error('Veyra refuses to auto-promote memory to canonical authority')
   }
 
-  const tags = Array.isArray(input.tags)
+  const rawTags = Array.isArray(input.tags)
     ? input.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 24)
-    : (existing?.tags ?? [])
-  const evidence = Array.isArray(input.evidence)
+    : (input.tags !== undefined ? input.tags : (existing?.tags ?? []))
+  // §24 — tags/evidence/source carry agent-authored strings too: scrub them
+  // on the write path, not just title/body (secrets protected).
+  const tags = Array.isArray(rawTags)
+    ? rawTags.map((t) => (typeof t === 'string' ? scrubString(t, bag) : t))
+    : rawTags
+
+  const rawEvidence = Array.isArray(input.evidence)
     ? input.evidence.slice(0, 32)
-    : (existing?.evidence ?? [])
-  const relations = Array.isArray(input.relations)
+    : (input.evidence !== undefined ? input.evidence : (existing?.evidence ?? []))
+  const evidence = Array.isArray(rawEvidence)
+    ? rawEvidence.map((entry) => scrubDeep(entry, 6, bag))
+    : rawEvidence
+
+  const rawRelations = Array.isArray(input.relations)
     ? input.relations
       .filter((r) => r && VALID_RELATIONS.includes(r.type) && typeof r.targetId === 'string')
       .slice(0, 32)
-    : (existing?.relations ?? [])
+    : (input.relations !== undefined ? input.relations : (existing?.relations ?? []))
+  const relations = rawRelations
+
+  const rawSource = input.source !== undefined
+    ? input.source
+    : (existing?.source && typeof existing.source === 'object' && !Array.isArray(existing.source)
+      ? existing.source
+      : {})
+  const source = rawSource && typeof rawSource === 'object' && !Array.isArray(rawSource)
+    ? scrubDeep(rawSource, 6, bag)
+    : rawSource
 
   const stamp = nowIso()
   return {
     id: existing?.id ?? input.id ?? newRecordId(),
-    kind: normalizeEnum(input.kind, VALID_KINDS, existing?.kind ?? KINDS.MEMORY),
-    status: normalizeEnum(input.status, VALID_STATUSES, existing?.status ?? STATUSES.CURRENT),
-    validation: normalizeEnum(input.validation, VALID_VALIDATIONS, existing?.validation ?? VALIDATIONS.UNVERIFIED),
+    kind: normalizeEnum(input.kind, VALID_KINDS, validEnum(existing?.kind, VALID_KINDS, KINDS.MEMORY)),
+    status: normalizeEnum(input.status, VALID_STATUSES, validEnum(existing?.status, VALID_STATUSES, STATUSES.CURRENT)),
+    validation: normalizeEnum(input.validation, VALID_VALIDATIONS, validEnum(existing?.validation, VALID_VALIDATIONS, VALIDATIONS.UNVERIFIED)),
     authority,
-    confidence: normalizeEnum(input.confidence, VALID_CONFIDENCES, existing?.confidence ?? CONFIDENCES.MEDIUM),
-    scope: normalizeEnum(input.scope, VALID_SCOPES, existing?.scope ?? SCOPES.PROJECT),
+    confidence: normalizeEnum(input.confidence, VALID_CONFIDENCES, validEnum(existing?.confidence, VALID_CONFIDENCES, CONFIDENCES.MEDIUM)),
+    scope: normalizeEnum(input.scope, VALID_SCOPES, validEnum(existing?.scope, VALID_SCOPES, SCOPES.PROJECT)),
     projectId: input.projectId ?? existing?.projectId ?? '',
     title,
     body,
     tags,
     evidence,
     relations,
-    source: input.source && typeof input.source === 'object' ? input.source : (existing?.source ?? {}),
+    source,
     contentHash: contentHash(title, body),
     forgotten: Boolean(input.forgotten ?? existing?.forgotten ?? false),
     createdAt: existing?.createdAt ?? input.createdAt ?? stamp,
@@ -214,17 +344,33 @@ function normalizeRecord(input, { existing = null, explicitCanonical = false } =
     lastRecalledAt: Object.hasOwn(input, 'lastRecalledAt') && (input.lastRecalledAt == null || isIsoDate(input.lastRecalledAt))
       ? input.lastRecalledAt
       : (existing?.lastRecalledAt ?? null),
-    redacted: !titleScrub.clean || !bodyScrub.clean,
-    detectedPatterns: [...new Set([...titleScrub.detectedPatterns, ...bodyScrub.detectedPatterns])],
+    redacted: !titleScrub.clean || !bodyScrub.clean || bag.dirty,
+    detectedPatterns: [...new Set([...titleScrub.detectedPatterns, ...bodyScrub.detectedPatterns, ...bag.patterns])],
   }
 }
 
 function openDatabase(filePath) {
   mkdirSync(dirname(filePath), { recursive: true })
   const db = new DatabaseSync(filePath)
-  db.exec('PRAGMA journal_mode = WAL;')
-  db.exec('PRAGMA foreign_keys = ON;')
-  db.exec('PRAGMA busy_timeout = 5000;')
+  try {
+    db.exec('PRAGMA journal_mode = WAL;')
+    db.exec('PRAGMA foreign_keys = ON;')
+    db.exec('PRAGMA busy_timeout = 5000;')
+  } catch (err) {
+    throw new Error(`Veyra refuses to open corrupted store: ${filePath} (${err.message})`, { cause: err })
+  }
+  // §25 fail-closed: refuse to operate on a physically corrupt store
+  // (dsh-memory corruption hardening — unreadable bytes never silently
+  // become empty/authoritative state).
+  let integrity
+  try {
+    integrity = db.prepare('PRAGMA quick_check').get()
+  } catch (err) {
+    throw new Error(`Veyra refuses to open corrupted store: ${filePath} (${err.message})`, { cause: err })
+  }
+  if (!integrity || integrity.quick_check !== 'ok') {
+    throw new Error(`Veyra refuses to open corrupted store: ${filePath} (${integrity?.quick_check ?? 'quick_check failed'})`)
+  }
   db.exec(SCHEMA_DDL)
   const version = db.prepare('SELECT value FROM meta WHERE key = ?').get('schema_version')
   if (!version) {
@@ -286,16 +432,38 @@ export class MemoryStore {
     return Number(this._count.get()?.n ?? 0)
   }
 
-  put(input, { explicitCanonical = false } = {}) {
+  put(input, { explicitCanonical = false, repair = false } = {}) {
     const existing = input.id ? this.get(input.id) : null
+    // §25 fail-closed (dsh-memory n198_corrupt_failclosed): a read-modify-
+    // write over a corrupt row would silently replace its bytes with degraded
+    // state. Refuse by default — on-disk bytes are preserved; recovery is the
+    // explicit `repair: true` path (§25 recovery), never automatic.
+    if (existing?.corrupt?.length && !repair) {
+      throw new Error(
+        `Veyra refuses to overwrite corrupted record ${existing.id} `
+        + `(${existing.corrupt.join(', ')}) — bytes preserved; pass repair: true to rewrite`,
+      )
+    }
     const record = normalizeRecord(
       { ...input, projectId: input.projectId ?? this.projectId, scope: input.scope ?? this.scope },
       { existing, explicitCanonical },
     )
+    // Repair verification: the rewritten record must actually clear every
+    // broken field before any byte on disk changes (§25 recovery is verified,
+    // not hopeful).
+    if (existing?.corrupt?.length) {
+      const still = recordStructuralFields(record)
+      if (still.length) {
+        throw new Error(`repair failed for ${existing.id}: still invalid — ${still.join(', ')}`)
+      }
+    }
 
     if (!existing) {
       const dup = rowToRecord(this._byHash.get(record.contentHash))
-      if (dup) return { record: dup, created: false, duplicate: true, redacted: record.redacted }
+      // A corrupt content-twin is NOT a duplicate: returning it would hand
+      // degraded state to the caller as if it were authoritative. A fresh
+      // intact row is written instead; the corrupt bytes stay untouched.
+      if (dup && !dup.corrupt?.length) return { record: dup, created: false, duplicate: true, redacted: record.redacted }
     }
 
     // node:sqlite rejects named-parameter objects that contain keys the

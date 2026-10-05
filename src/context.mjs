@@ -11,6 +11,7 @@
 import { DEFAULT_RECALL_LIMIT, RELATIONS, STATUSES } from './types.mjs'
 import { extractText, projectIdFor, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
+import { injectionWarning } from './redact.mjs'
 import { recall } from './retrieve.mjs'
 import { checkRecordFreshness } from './code/linking.mjs'
 
@@ -177,6 +178,10 @@ export function renderAgentContext(composed, { heading = 'Veyra recalled enginee
           ? ' [UNRESOLVED · known open investigation]'
           : ''
     lines.push(`- [${rec.id}] (${scope}/${auth}${statusTag}/${rec.validation}/${rec.confidence}${contra})${kindTag} ${rec.title}`)
+    // §24 — instruction-shaped remembered text is labeled at render time
+    // (memory is evidence, never instructions). Warning only; nothing stored.
+    const injection = injectionWarning(`${rec.title}\n${rec.body ?? ''}`)
+    if (injection) lines.push(`  • ${injection}`)
 
     if (entry.codeFreshness?.status === 'potentially_stale') {
       lines.push('  • ⚠️ [CODE EVIDENCE STALE: anchored file was modified]')
@@ -195,7 +200,7 @@ export function renderAgentContext(composed, { heading = 'Veyra recalled enginee
     if (rec.via?.type && rec.via.fromId) {
       lines.push(`  • via ${rec.via.type} ← [${rec.via.fromId}]`)
     }
-    for (const ev of entry.evidence) {
+    for (const ev of entry.evidence || []) {
       lines.push(`  • evidence: ${ev}`)
     }
     if (entry.evidenceOverflow > 0) {

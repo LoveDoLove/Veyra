@@ -216,6 +216,8 @@ export function buildToolDefinitions(runtime) {
         validFrom: { type: 'string', description: 'Optional §13 ISO date: when this knowledge takes effect (before that it reads as not_yet_effective, never hidden).' },
         validUntil: { type: 'string', description: 'Optional §13 ISO date: when this knowledge expires (after that it reads as expired — demoted, never deleted).' },
         context: { type: 'object', additionalProperties: true, description: 'Optional §12 applicability context (toolchain, version, taskType, …). os/runtime are auto-captured; supplied keys win.' },
+        id: { type: 'string', description: 'Existing record id — updates that record instead of creating one.' },
+        repair: { type: 'boolean', description: '§25 explicit repair: rewrite a structurally corrupted record (broken JSON columns or invalid enums). Refused unless the record is actually corrupted; corrupt bytes are preserved otherwise.' },
       },
       output: {
         schema: {
@@ -239,7 +241,8 @@ export function buildToolDefinitions(runtime) {
       execute(args, exec) {
         const scope = args.scope === SCOPES.REUSABLE ? SCOPES.REUSABLE : SCOPES.PROJECT
         const { store, projectId, cwd } = storesFor(runtime, exec, scope)
-        const written = remember(store, {
+        try {
+          const written = remember(store, {
           title: args.title,
           body: args.body,
           kind: args.kind,
@@ -251,6 +254,7 @@ export function buildToolDefinitions(runtime) {
           validFrom: args.validFrom,
           validUntil: args.validUntil,
           context: args.context,
+          ...(args.id ? { id: args.id } : {}),
           source: {
             sessionId: exec?.agent?.session?.id || null,
             tool: 'veyra_remember',
@@ -261,7 +265,7 @@ export function buildToolDefinitions(runtime) {
             // reads exactly as before (provenance ≠ authority).
             provenance: provenanceDimensions(cwd, exec?.agent),
           },
-        })
+        }, { repair: args.repair === true })
         return {
           ok: true,
           created: written.created,
@@ -269,6 +273,11 @@ export function buildToolDefinitions(runtime) {
           redacted: written.redacted,
           record: recordView(written.record),
           disclaimer: 'Stored as derived memory, not repository truth. Canonical authority requires an explicit veyra_promote.',
+        }
+        } catch (err) {
+          // §25 fail-closed refusals (corrupt overwrite, repair verification)
+          // surface as a result, not a thrown tool error.
+          return { ok: false, error: err instanceof Error ? err.message : String(err) }
         }
       },
       presentCall: (args) => ({ card: 'generic', title: 'Remember', kind: 'other', rawInput: args.title }),

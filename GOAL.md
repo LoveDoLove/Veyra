@@ -1237,6 +1237,8 @@ Obsolete memory leaves active retrieval without destroying useful lifecycle hist
 
 Harden:
 
+**Status: COMPLETE** — §24 memory safety in `src/learn.mjs` + `src/redact.mjs` + `src/types.mjs`: deep secret scrubbing of nested `source`/`evidence`/tag payloads (`scrubDeep`, accumulator-based, depth-capped, `api_key`/`secret`/`password`/`token`/`access_key`/`private_key` → `[REDACTED_SECRET]`, byte-identical ordinary text); untrusted memory is labeled evidence-only on render (`injectionWarning` in `src/context.mjs` + `src/retrieve.mjs` summarizeForPrompt); M1–M4 mutation guards (isLifecycleEligible fails closed on `record.corrupt` and unknown validation/authority). §25 corruption + recovery in `src/store.mjs`: strict JSON column parsing (`parseJsonStrict` pushes broken field names into `record.corrupt`), structural field validation (`recordStructuralFields`), row corruption tagging in `rowToRecord`, fail-closed `PRAGMA quick_check` wrapping in `openDatabase` (garbage / non-database header → `Veyra refuses to open corrupted store`), corrupt-row overwrite guard (`repair: true` required in `put`), verified repair path via `veyra_remember` tool (`repair` boolean param). Health reporting for corrupted records in `src/health.mjs` (`memoryHealth` accepts array OR object with `.list()`, corrupted-record count + section). `test/m13-safety-hardening.test.mjs` (12 tests) + identifier-splitting FTS regression fix in `test/retrieve-identifier.test.mjs` (`source: []` → `source: {}` — corrupt source column was failing closed recall eligibility). Suite: 571 pass / 0 fail.
+
 ```text
 prompt injection
 secret scrubbing

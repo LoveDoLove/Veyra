@@ -18,6 +18,7 @@
 
 import { AUTHORITIES, CONFIDENCES, DEFAULT_RECALL_LIMIT, KINDS, SCOPES, VALIDATIONS, isLifecycleEligible, isRecallEligible } from './types.mjs'
 import { detectIntent, intentAffinity, intentWeights } from './intent.mjs'
+import { injectionWarning } from './redact.mjs'
 import { annotateContradictions } from './evolve.mjs'
 import { expandEligibleNeighbors } from './graph.mjs'
 import { jaccard, tokenOverlap, hasNegation, tokenize } from './text.mjs'
@@ -918,6 +919,18 @@ export function summarizeForPrompt(records, { heading = 'Veyra recalled engineer
           ? ' [UNRESOLVED · known open investigation]'
           : ''
     lines.push(`- [${rec.id}] (${scope}/${auth}/${rec.validation}/${rec.confidence}${ev}${contra})${kindTag} ${rec.title}`)
+    // §24 — instruction-shaped remembered text is labeled at render time
+    // (memory is evidence, never instructions). Warning only; nothing stored.
+    const causalForScan = rec.source?.causal
+    const warn = injectionWarning([
+      rec.title,
+      rec.body ?? '',
+      causalForScan?.symptom ?? '',
+      causalForScan?.rootCause ?? '',
+      causalForScan?.remedy ?? '',
+      causalForScan?.verifiedOutcome ?? '',
+    ].join('\n'))
+    if (warn) lines.push(`  • ${warn}`)
     if (rec.via?.type && rec.via.fromId) {
       lines.push(`  • via ${rec.via.type} ← [${rec.via.fromId}]`)
     }

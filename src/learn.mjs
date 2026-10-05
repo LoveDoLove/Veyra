@@ -344,7 +344,7 @@ export function maybeLearn(store, candidate, { related = [], workspace = null } 
  * (only `veyra_promote` does that). Evolves relations against neighbors
  * without merging them.
  */
-export function remember(store, input, { explicitCanonical = false } = {}) {
+export function remember(store, input, { explicitCanonical = false, repair = false } = {}) {
   // GOAL.md Phase 2 / §8 / §9 — negative and unresolved are first-class
   // kinds with idempotent writers. They are never coerced to memory, never
   // carry canonical authority, and skip evolveAgainst: a known failed
@@ -411,7 +411,7 @@ export function remember(store, input, { explicitCanonical = false } = {}) {
     validation: input.validation || VALIDATIONS.UNVERIFIED,
     confidence: input.confidence || CONFIDENCES.MEDIUM,
     status: input.status || STATUSES.CURRENT,
-  }, { explicitCanonical })
+  }, { explicitCanonical, repair })
   if (!written.record || written.duplicate) return written
 
   const existing = store.list({ limit: 60 }).filter((r) => !r.forgotten && r.id !== written.record.id)
@@ -422,7 +422,7 @@ export function remember(store, input, { explicitCanonical = false } = {}) {
   const updated = store.put({
     ...written.record,
     relations: evolved.record.relations,
-  }, { explicitCanonical })
+  }, { explicitCanonical, repair })
   return { ...updated, created: written.created, duplicate: written.duplicate }
 }
 

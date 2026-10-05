@@ -45,7 +45,10 @@ function finding(record, extra = {}) {
  * @returns report — see return literal. Pure: no I/O, no mutation.
  */
 export function memoryHealth(records, { workspace = null, failureThreshold = 2 } = {}) {
-  const list = Array.isArray(records) ? records.filter((r) => r && !r.forgotten) : []
+  const rawList = Array.isArray(records)
+    ? records
+    : (typeof records?.list === 'function' ? records.list() : [])
+  const list = rawList.filter((r) => r && !r.forgotten)
   const threshold = Math.max(2, Math.min(50, Number(failureThreshold) || 2))
 
   // --- §21 categories: signal buckets (validation dimension × kind dimension
@@ -76,7 +79,8 @@ export function memoryHealth(records, { workspace = null, failureThreshold = 2 }
     if (protectionOf(record).protected) categories.protected += 1
   }
 
-  // --- §21 findings: the six quality problems maintenance must react to.
+  // --- §21 findings: the quality problems maintenance must react to
+  // (six quality issues + §25 corrupted records).
   const contradictions = pairs.slice(0, FINDING_LIMIT).map((pair) => ({
     idA: pair.a,
     idB: pair.b,
@@ -90,8 +94,14 @@ export function memoryHealth(records, { workspace = null, failureThreshold = 2 }
   const repeatedFailures = []
   const unverifiedHighValueCandidates = []
   const revalidationCandidates = []
+  const corruptedRecords = []
 
   for (const record of list) {
+    // §25 — corrupted rows surface in health; they are recall-ineligible
+    // (types.mjs gate) and need explicit repair, never silent healing.
+    if (corruptedRecords.length < FINDING_LIMIT && Array.isArray(record.corrupt) && record.corrupt.length) {
+      corruptedRecords.push(finding(record, { fields: record.corrupt.slice(0, 10) }))
+    }
     if (staleKnowledge.length < FINDING_LIMIT && record.validation === VALIDATIONS.STALE) {
       staleKnowledge.push(finding(record, { validation: record.validation }))
     }
@@ -149,6 +159,7 @@ export function memoryHealth(records, { workspace = null, failureThreshold = 2 }
     repeatedFailures,
     unverifiedHighValueCandidates,
     revalidationCandidates,
+    corruptedRecords,
   }
   const counts = Object.fromEntries(
     Object.entries(findings).map(([name, entries]) => [name, entries.length]),
@@ -178,7 +189,8 @@ export function renderHealth(report) {
     + `${report.counts.unresolvedInvestigations} unresolved investigations, `
     + `${report.counts.repeatedFailures} repeated failures (threshold ${report.threshold}), `
     + `${report.counts.unverifiedHighValueCandidates} unverified high-value candidates, `
-    + `${report.counts.revalidationCandidates} revalidation candidates`,
+    + `${report.counts.revalidationCandidates} revalidation candidates, `
+    + `${report.counts.corruptedRecords ?? 0} corrupted records`,
   )
 
   const section = (title, entries, line) => {
@@ -200,6 +212,8 @@ export function renderHealth(report) {
     (f) => `${f.id} ${f.title} — confidence ${f.confidence}, grounded ${f.grounded}`)
   section('Memories requiring revalidation', report.findings.revalidationCandidates,
     (f) => `${f.id} ${f.title} — evidence ${f.evidenceStatus} (${f.missingPaths.length} missing)`)
+  section('Corrupted records', report.findings.corruptedRecords ?? [],
+    (f) => `${f.id} ${f.title} — invalid: ${f.fields.join(', ')} (repair via veyra_remember repair: true)`)
 
   if (report.totalFindings === 0) {
     lines.push('', 'No memory-quality problems found in the scanned window.')

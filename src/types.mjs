@@ -97,10 +97,17 @@ export const MAX_MEMORY_BODY_CHARS = 4000
 export function isLifecycleEligible(record) {
   if (!record) return false
   if (record.forgotten) return false
+  // §24/§25 fail-closed: a structurally corrupted row (broken JSON column,
+  // invalid enum — see store.mjs rowToRecord) never becomes authoritative
+  // engineering behavior; recovery is the explicit repair path.
+  if (Array.isArray(record.corrupt) && record.corrupt.length > 0) return false
   if (record.status !== STATUSES.CURRENT) return false
   if (record.validation === VALIDATIONS.INVALID || record.validation === VALIDATIONS.STALE) {
     return false
   }
+  // Unknown validation garbage fails closed (allow-list, not deny-list);
+  // `undefined` still passes for legacy records written before the field.
+  if (record.validation !== undefined && !VALID_VALIDATIONS.includes(record.validation)) return false
   if (record.authority === AUTHORITIES.CANDIDATE) return false
   return record.authority === AUTHORITIES.DERIVED || record.authority === AUTHORITIES.CANONICAL
 }
