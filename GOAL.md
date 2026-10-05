@@ -1315,6 +1315,13 @@ the absence of every rejected capability's identifiers across `src/`.
 
 # Phase 11 — Benchmark and Final Hardening
 
+**Status: COMPLETE** — `test/m15-benchmark.test.mjs` (29 tests, 45 measured
+dimensions covering all 15 Phase-11 axes); published in `docs/BENCHMARK.md`.
+No production change was required: every dimension already had an exported,
+directly measurable surface in `src/`. No feature met the removal bar, because
+every Phase 1–10 capability is both load-bearing for a named invariant and
+non-zero in the measured table.
+
 Measure:
 
 ```text
