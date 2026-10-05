@@ -11,6 +11,7 @@ import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
 import { recall } from './retrieve.mjs'
 import { promote } from './learn.mjs'
+import { memoryHealth, renderHealth } from './health.mjs'
 import {
   observatoryCausality,
   observatoryConsolidation,
@@ -61,6 +62,7 @@ function helpText() {
     '/veyra inspect <id>                        deep evidence, provenance & causal inspect',
     '/veyra forget <id>                         soft-forget a record',
     '/veyra promote <id> [derived|canonical]    promote standing (canonical requires user explicit)',
+    '/veyra health [threshold]                  §21 memory-health findings (read-only)',
     '',
     'Canonical promotion is an explicit user action. Automatic capture',
     'never creates authoritative truth. Memory lives in $DSH_HOME/veyra/.',
@@ -97,6 +99,17 @@ export function handleVeyraCommand(runtime, invocation) {
         helpText(),
       ].join('\n'),
     }
+  }
+
+  if (verb === 'health') {
+    // §21 automated maintenance findings — read-only, never mutates records.
+    const threshold = Number(arg) > 0 ? Number(arg) : 2
+    const projectRecords = projectStore.list({ limit: 200 })
+    const reusableRecords = reusableStore.list({ limit: 200 })
+    const merged = new Map()
+    for (const record of [...projectRecords, ...reusableRecords]) merged.set(record.id, record)
+    const report = memoryHealth([...merged.values()], { workspace: cwd, failureThreshold: threshold })
+    return { kind: 'success', text: renderHealth(report) }
   }
 
   if (verb === 'observatory' || verb === 'obs') {

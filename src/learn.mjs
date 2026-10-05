@@ -53,7 +53,7 @@ export const WRITE_GATES = Object.freeze({
   DEFER: 'DEFER',
 })
 
-function hasGrounding(candidate) {
+export function hasGrounding(candidate) {
   const evidence = candidate?.evidence || []
   if (evidence.some((item) => item && (item.path || item.uri || item.anchor || item.note))) {
     return true

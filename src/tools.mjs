@@ -1,7 +1,7 @@
 /**
  * Veyra — DSH tools.
  *
- * Seven model-facing tools:
+ * Eight model-facing tools:
  *   veyra_remember  — keep durable engineering knowledge or RAG knowledge
  *   veyra_recall    — unified hybrid search beyond automatic context
  *   veyra_inspect   — read one record with deep provenance, causal facets, relations
@@ -11,6 +11,8 @@
  *                     failure records history and decreases reliability
  *   veyra_recurrence — §20: detect recurring root cause/symptom/failed approach,
  *                     optionally gate a remedy-consistent cluster into a candidate
+ *   veyra_health    — §21: read-only memory-health categories & maintenance
+ *                     findings; never mutates authority or records
  *
  * Registered through `@deepseek-ai/dsh-tools` `defineTool` when the peer
  * is available. Falls back to a duck-typed definition so unit tests and
@@ -34,6 +36,7 @@ import { inspect, recall, summarizeForPrompt, temporalState } from './retrieve.m
 import { provenanceChain } from './context.mjs'
 import { promote, remember } from './learn.mjs'
 import { detectRecurrence, eligibleForCandidate, recordFeedback, recurrenceCandidate } from './feedback.mjs'
+import { memoryHealth, renderHealth } from './health.mjs'
 import { CodeIntelligenceEngine } from './code/engine.mjs'
 import { FRESHNESS_STATUS } from './code/types.mjs'
 import { checkRecordFreshness } from './code/linking.mjs'
@@ -564,6 +567,45 @@ export function buildToolDefinitions(runtime) {
         return { ok: true, threshold, findings, candidates, autoCandidate: args.autoCandidate === true }
       },
       presentCall: (args) => ({ card: 'generic', title: 'Recurrence', kind: 'other', rawInput: `threshold ${args.threshold ?? 3}${args.autoCandidate ? ' + candidate' : ''}` }),
+    },
+    {
+      name: 'veyra_health',
+      description:
+        'Memory-health report (§21): the nine quality categories (verified/reviewed/unverified/stale/'
+        + 'invalid/contradicted/unresolved/negative/protected) and six maintenance findings (new '
+        + 'contradictions, stale knowledge, unresolved investigations, repeated failures, unverified '
+        + 'high-value candidates, memories requiring revalidation). Read-only — findings are evidence '
+        + 'for explicit review, never automatic edits; contradictions stay visible.',
+      parameters: {
+        failureThreshold: { type: 'number', description: 'Failures required for a repeated-failure finding (default 2, clamped to 2–50).' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            ok: { type: 'boolean' },
+            scanned: { type: 'number' },
+            threshold: { type: 'number' },
+            totalFindings: { type: 'number' },
+            categories: { type: 'object', additionalProperties: true },
+            counts: { type: 'object', additionalProperties: true },
+            findings: { type: 'object', additionalProperties: true },
+          },
+        },
+        render: (_args, value) => textBlocks(renderHealth(value)),
+      },
+      execute(args, exec) {
+        const { cwd, projectStore, reusableStore } = storesFor(runtime, exec, SCOPES.PROJECT)
+        const failureThreshold = Math.max(2, Math.min(50, Number(args.failureThreshold) || 2))
+        const byId = new Map()
+        for (const r of [...projectStore.list({ limit: 200 }), ...reusableStore.list({ limit: 200 })]) {
+          if (r?.id && !byId.has(r.id)) byId.set(r.id, r)
+        }
+        const report = memoryHealth([...byId.values()], { workspace: cwd, failureThreshold })
+        return { ok: true, ...report }
+      },
+      presentCall: (args) => ({ card: 'generic', title: 'Memory health', kind: 'other', rawInput: `failure threshold ${args.failureThreshold ?? 2}` }),
     },
     {
       name: 'cbm_projects',
