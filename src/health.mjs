@@ -15,7 +15,8 @@
  *   - Candidate ≠ Truth: an "unverified high-value candidate" is a review
  *     suggestion, never an auto-promotion.
  *   - Contradictions stay visible: they are listed, never merged away.
- *   - "Protected" (§23) maps to CANONICAL standing — the only standing the
+ *   - "Protected" (§23) maps to CANONICAL standing plus an explicit
+ *     `source.protection` mark (see lifecycle.protectionOf) — standing the
  *     automatic maintenance sweeps (markStale / sweepStale) skip and the
  *     write gate never writes on its own. Protection is not a shield:
  *     protected records still appear in findings when their evidence rots,
@@ -24,6 +25,7 @@
 import { detectContradictions, verifyEvidenceHealth } from './evolve.mjs'
 import { feedbackStats } from './feedback.mjs'
 import { hasGrounding } from './learn.mjs'
+import { protectionOf } from './lifecycle.mjs'
 import { AUTHORITIES, CONFIDENCES, KINDS, VALIDATIONS } from './types.mjs'
 
 const FINDING_LIMIT = 100
@@ -71,7 +73,7 @@ export function memoryHealth(records, { workspace = null, failureThreshold = 2 }
     if (contradictingIds.has(record.id)) categories.contradicted += 1
     if (record.kind === KINDS.UNRESOLVED) categories.unresolved += 1
     if (record.kind === KINDS.NEGATIVE) categories.negative += 1
-    if (record.authority === AUTHORITIES.CANONICAL) categories.protected += 1
+    if (protectionOf(record).protected) categories.protected += 1
   }
 
   // --- §21 findings: the six quality problems maintenance must react to.

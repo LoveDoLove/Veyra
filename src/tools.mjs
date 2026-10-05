@@ -35,6 +35,7 @@ import { openProjectStore, openReusableStore } from './store.mjs'
 import { inspect, recall, summarizeForPrompt, temporalState } from './retrieve.mjs'
 import { provenanceChain } from './context.mjs'
 import { promote, remember } from './learn.mjs'
+import { forget as lifecycleForget } from './lifecycle.mjs'
 import { detectRecurrence, eligibleForCandidate, recordFeedback, recurrenceCandidate } from './feedback.mjs'
 import { memoryHealth, renderHealth } from './health.mjs'
 import { CodeIntelligenceEngine } from './code/engine.mjs'
@@ -379,9 +380,17 @@ export function buildToolDefinitions(runtime) {
     },
     {
       name: 'veyra_forget',
-      description: 'Soft-forget a Veyra record. It remains inspectable but leaves recall.',
+      description:
+        'Soft-forget a Veyra record. It remains inspectable but leaves recall. The reason '
+        + 'is preserved in the record\'s lifecycle history. Protected records (canonical '
+        + 'authority or explicitly protected) require override=true with a reason.',
       parameters: {
         id: { type: 'string', required: true, description: 'Record id to forget.' },
+        reason: { type: 'string', description: 'Why the record is being forgotten — preserved in source.lifecycle.' },
+        override: {
+          type: 'boolean',
+          description: 'Required true to forget a protected record; the reason is recorded as the justification.',
+        },
       },
       output: {
         schema: {
@@ -390,16 +399,22 @@ export function buildToolDefinitions(runtime) {
           properties: {
             ok: { type: 'boolean' },
             record: RECORD_SCHEMA,
+            error: { type: 'string' },
           },
         },
-        render: (_args, value) => textBlocks(value.ok ? `Forgot ${value.record?.id}.` : 'Not found.'),
+        render: (_args, value) => textBlocks(value.ok ? `Forgot ${value.record?.id}.` : (value.error || 'Not found.')),
       },
       execute(args, exec) {
         const { projectStore, reusableStore } = storesFor(runtime, exec, SCOPES.PROJECT)
         const existing = inspect({ projectStore, reusableStore, id: args.id })
-        if (!existing) return { ok: false }
+        if (!existing) return { ok: false, error: 'not found' }
         const store = existing.scope === SCOPES.REUSABLE ? reusableStore : projectStore
-        return { ok: true, record: recordView(store.forget(args.id)) }
+        const result = lifecycleForget(store, args.id, {
+          why: args.reason == null ? '' : String(args.reason),
+          override: args.override === true,
+        })
+        if (!result.ok) return { ok: false, error: result.error }
+        return { ok: true, record: recordView(result.record) }
       },
       presentCall: (args) => ({ card: 'generic', title: 'Forget', kind: 'other', rawInput: args.id }),
     },

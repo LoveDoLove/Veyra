@@ -43,7 +43,7 @@ relevant context via unified Hybrid Search. Treat it as an assistant, not as tru
 | `veyra_remember` | Keep a durable lesson or RAG knowledge. Always stored as **derived**. |
 | `veyra_recall` | Unified Hybrid Search (lexical + semantic + causal + relations). |
 | `veyra_inspect` | Read one `vey_…` id with evidence anchors, causal facets, and graph relations. |
-| `veyra_forget` | Soft-forget. Leaves recall, stays inspectable. |
+| `veyra_forget` | Soft-forget with an audited `reason`; protected records need `override: true`. Leaves recall, stays inspectable. |
 | `veyra_promote` | Change standing. **canonical requires `explicit: true`**. |
 
 The user-facing `/veyra` command covers the same operations, plus the human Knowledge Observatory.

@@ -478,7 +478,18 @@ test('remember/inspect/promote/forget payloads are lossless JSON and forget is s
   assert.equal(promoted.ok, true)
   assertLossless(promoted)
 
-  const forgotProject = await harness.call('veyra_forget', { id: remembered.record.id }, exec)
+  // §23: canonical authority is implicitly protected — a plain forget on it
+  // is refused until an explicit override supplies a reason.
+  const refused = await harness.call('veyra_forget', { id: remembered.record.id }, exec)
+  assert.equal(refused.ok, false)
+  assert.match(refused.error, /protected/)
+  assertLossless(refused)
+
+  const forgotProject = await harness.call('veyra_forget', {
+    id: remembered.record.id,
+    override: true,
+    reason: 'canonical fixture retired under §23 override',
+  }, exec)
   assert.equal(forgotProject.ok, true)
   assert.equal(forgotProject.record.forgotten, true)
   assertLossless(forgotProject)

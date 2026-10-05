@@ -11,6 +11,7 @@ import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
 import { recall } from './retrieve.mjs'
 import { promote } from './learn.mjs'
+import { forget as lifecycleForget, invalidate, protect, supersede, tombstone, unprotect } from './lifecycle.mjs'
 import { memoryHealth, renderHealth } from './health.mjs'
 import {
   observatoryCausality,
@@ -60,7 +61,12 @@ function helpText() {
     '       code impact                         check memory impact against changed code',
     '/veyra recent                              last 8 memories (including candidates)',
     '/veyra inspect <id>                        deep evidence, provenance & causal inspect',
-    '/veyra forget <id>                         soft-forget a record',
+    '/veyra forget <id> [override] [reason]     soft-forget a record (reason kept in history)',
+    '/veyra invalidate <id> [reason]            mark invalid; reason kept in lifecycle history',
+    '/veyra supersede <id> <replacementId> [why] retire a record in favour of another',
+    '/veyra tombstone <id> [override] [reason]  retire to historical (reason kept, still inspectable)',
+    '/veyra protect <id> [reason]               guard a memory against forgetting (auditable)',
+    '/veyra unprotect <id>                      remove the explicit protection mark',
     '/veyra promote <id> [derived|canonical]    promote standing (canonical requires user explicit)',
     '/veyra health [threshold]                  §21 memory-health findings (read-only)',
     '',
@@ -77,6 +83,13 @@ export function handleVeyraCommand(runtime, invocation) {
   const reusableStore = openReusableStore(runtime.veyraHome)
   const [verb, ...rest] = raw.split(/\s+/)
   const arg = rest.join(' ').trim()
+
+  /** Resolve which store holds a lifecycle-target record (project first). */
+  const storeForId = (id) => {
+    if (projectStore.get(id)) return projectStore
+    if (reusableStore.get(id)) return reusableStore
+    return null
+  }
 
   if (!verb || verb === 'help' || verb === 'status') {
     const projectRecords = projectStore.list({ limit: 200 })
@@ -212,11 +225,67 @@ export function handleVeyraCommand(runtime, invocation) {
   }
 
   if (verb === 'forget') {
-    const existing = projectStore.get(arg) || reusableStore.get(arg)
-    if (!existing) return { kind: 'error', text: 'not found' }
-    const store = existing.scope === 'reusable' ? reusableStore : projectStore
-    store.forget(arg)
-    return { kind: 'success', text: `Forgot ${arg}` }
+    const [id, flag, ...whyParts] = arg.split(/\s+/)
+    const store = storeForId(id)
+    if (!store) return { kind: 'error', text: 'not found' }
+    const override = flag === 'override'
+    const why = (override ? whyParts : flag ? [flag, ...whyParts] : []).join(' ').trim()
+    const result = lifecycleForget(store, id, { why, override })
+    if (!result.ok) return { kind: 'error', text: result.error }
+    return { kind: 'success', text: `Forgot ${id}` }
+  }
+
+  if (verb === 'invalidate') {
+    const [id, ...whyParts] = arg.split(/\s+/)
+    const store = storeForId(id)
+    if (!store) return { kind: 'error', text: 'not found' }
+    const result = invalidate(store, id, { why: whyParts.join(' ').trim() })
+    if (!result.ok) return { kind: 'error', text: result.error }
+    if (result.already) return { kind: 'success', text: `${id} is already invalid` }
+    return { kind: 'success', text: `Invalidated ${id}` }
+  }
+
+  if (verb === 'supersede') {
+    const [id, replacement, ...whyParts] = arg.split(/\s+/)
+    if (!id || !replacement) return { kind: 'error', text: 'usage: /veyra supersede <id> <replacementId> [why]' }
+    const store = storeForId(id)
+    if (!store) return { kind: 'error', text: 'not found' }
+    const result = supersede(store, id, replacement, { why: whyParts.join(' ').trim() })
+    if (!result.ok) return { kind: 'error', text: result.error }
+    if (result.already) return { kind: 'success', text: `${id} already superseded by ${replacement}` }
+    return { kind: 'success', text: `Superseded ${id} by ${replacement}` }
+  }
+
+  if (verb === 'tombstone') {
+    const [id, flag, ...whyParts] = arg.split(/\s+/)
+    const store = storeForId(id)
+    if (!store) return { kind: 'error', text: 'not found' }
+    const override = flag === 'override'
+    const why = (override ? whyParts : flag ? [flag, ...whyParts] : []).join(' ').trim()
+    const result = tombstone(store, id, { why, override })
+    if (!result.ok) return { kind: 'error', text: result.error }
+    if (result.already) return { kind: 'success', text: `${id} is already historical` }
+    return { kind: 'success', text: `Tombstoned ${id}` }
+  }
+
+  if (verb === 'protect') {
+    const [id, ...whyParts] = arg.split(/\s+/)
+    const store = storeForId(id)
+    if (!store) return { kind: 'error', text: 'not found' }
+    const result = protect(store, id, { reason: whyParts.join(' ').trim() })
+    if (!result.ok) return { kind: 'error', text: result.error }
+    return { kind: 'success', text: `Protected ${id}` }
+  }
+
+  if (verb === 'unprotect') {
+    const store = storeForId(arg)
+    if (!store) return { kind: 'error', text: 'not found' }
+    const result = unprotect(store, arg)
+    if (!result.ok) return { kind: 'error', text: result.error }
+    return {
+      kind: 'success',
+      text: result.stillProtected ? `Unmarked ${arg} (still protected by canonical authority)` : `Unprotected ${arg}`,
+    }
   }
 
   if (verb === 'code') {
@@ -328,7 +397,7 @@ export function registerCommand(ctx, runtime, scope) {
   const register = () => ctx.commands.register({
     name: 'veyra',
     description: 'Inspect and administer Veyra engineering memory & observatory',
-    input: { hint: '[status|observatory|recall|recent|inspect|forget|promote]', attachments: false },
+    input: { hint: '[status|observatory|recall|recent|inspect|forget|invalidate|supersede|tombstone|protect|unprotect|promote]', attachments: false },
     handler: (invocation) => handleVeyraCommand(runtime, invocation),
   })
   if (effect) effect(register)

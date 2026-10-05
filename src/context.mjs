@@ -498,5 +498,18 @@ export function provenanceChain(record) {
   } else {
     rows.push({ stage: 'Update/Supersession', state: 'none', at: rec.updatedAt || null, detail: 'no update, retirement, or invalidation yet' })
   }
+  // §22 — surface the preserved lifecycle reasoning (what happened, when,
+  // why, what contradicted it, what replaced it). Gated on presence: records
+  // without `source.lifecycle` render byte-identically to before.
+  const lifecycle = Array.isArray(rec.source?.lifecycle) ? rec.source.lifecycle : null
+  if (lifecycle?.length) {
+    const last = lifecycle[lifecycle.length - 1]
+    const row = rows[rows.length - 1]
+    const parts = [`${last.action} @ ${last.at}`]
+    if (last.why) parts.push(last.why)
+    if (last.contradictedBy && !row.detail.includes(last.contradictedBy)) parts.push(`contradicted by ${last.contradictedBy}`)
+    if (last.replacedBy && !row.detail.includes(last.replacedBy)) parts.push(`replaced by ${last.replacedBy}`)
+    row.detail += ` · ${parts.join(' · ')}`
+  }
   return rows
 }
