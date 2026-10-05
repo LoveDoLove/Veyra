@@ -315,6 +315,9 @@ export function apply(ctx, config = {}) {
         const candidate = candidateFromBuffer(buffer, {
           projectId,
           sessionId: session.id,
+          // §15 — provenance dimensions ride with the captured turn.
+          cwd,
+          agent,
         })
         if (!candidate) return
         const written = projectStore.put(candidate)

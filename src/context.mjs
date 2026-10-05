@@ -8,7 +8,7 @@
  * Recalled items are always framed as non-authoritative experience.
  */
 
-import { DEFAULT_RECALL_LIMIT, RELATIONS } from './types.mjs'
+import { DEFAULT_RECALL_LIMIT, RELATIONS, STATUSES } from './types.mjs'
 import { extractText, projectIdFor, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
 import { recall } from './retrieve.mjs'
@@ -169,7 +169,13 @@ export function renderAgentContext(composed, { heading = 'Veyra recalled enginee
     for (const banner of rec.contradictionBanners || []) {
       lines.push(`> ⚠️ ${banner}`)
     }
-    const kindTag = rec.kind === 'knowledge' ? ' [KNOWLEDGE]' : ''
+    const kindTag = rec.kind === 'knowledge'
+      ? ' [KNOWLEDGE]'
+      : rec.kind === 'negative'
+        ? ' [NEGATIVE · known failed solution]'
+        : rec.kind === 'unresolved'
+          ? ' [UNRESOLVED · known open investigation]'
+          : ''
     lines.push(`- [${rec.id}] (${scope}/${auth}${statusTag}/${rec.validation}/${rec.confidence}${contra})${kindTag} ${rec.title}`)
 
     if (entry.codeFreshness?.status === 'potentially_stale') {
@@ -255,6 +261,14 @@ export const GUIDANCE_TEXT = [
   '- Project isolation is preserved. Do not treat reusable experience as',
   '  this project\'s architecture.',
   '- Memory assists engineering; it does not replace verification.',
+  '',
+  'Recall markers (GOAL.md Phase 2):',
+  '- [NEGATIVE · known failed solution] marks a falsified approach. Do not retry it',
+  '  without new evidence; it is historical evidence, not an authoritative ban.',
+  '- [UNRESOLVED · known open investigation] marks a known unknown. Do not treat',
+  '  repeated retrieval as resolution; it never becomes canonical by being recalled.',
+  '- "No known engineering history" means nothing is remembered for this query —',
+  '  absence of memory, not evidence that no history exists.',
   '',
   'Codebase Memory Policy — Structural Code Intelligence is available in this session.',
   'Tools: cbm_projects, cbm_search, cbm_snippet, cbm_trace, cbm_arch, cbm_search_code, veyra_code_status.',
@@ -342,7 +356,19 @@ export function buildRecallContext({ veyraHome, cwd, query = '', limit = DEFAULT
     limit,
     includeReusable,
   })
-  if (records.length === 0) return ''
+  if (records.length === 0) {
+    // GOAL.md Phase 2 — "no known history" must be a distinguishable state,
+    // not silence: an agent has to be able to tell apart "known solution /
+    // known failed solution / known unresolved / nothing remembered here".
+    // `limit: 0` above stays silent — recall is disabled there.
+    return [
+      'Veyra recalled engineering memory',
+      '',
+      'No known engineering history: Veyra has no eligible recall for this query.',
+      'Absence of memory is not evidence. Verify against the repository.',
+      '',
+    ].join('\n')
+  }
   projectStore.touch(records.filter((r) => r.scope !== 'reusable').map((r) => r.id))
   if (reusableStore) reusableStore.touch(records.filter((r) => r.scope === 'reusable').map((r) => r.id))
   // M6 Phase-1: compose the engineering-aware view (lifecycle, evidence,
@@ -369,4 +395,108 @@ export function createContextProvider(runtime) {
       return ''
     }
   }
+}
+
+// ── §16 memory provenance chain ──────────────────────────────────────────────
+
+/**
+ * §16 — read-only lifecycle chain over facts a record already persists, in
+ * GOAL.md §16 order:
+ *
+ *   Observation → Evidence → Candidate → Validation → Promotion →
+ *   Retrieval → Application → Verification → Update/Supersession
+ *
+ * Answers, per record: where did this memory come from, why was it trusted,
+ * and what happened when it was used. It never invents telemetry — stages
+ * Veyra does not persist say so honestly (`not-tracked` / `not-yet`), and a
+ * legacy record says `unknown`. Provenance ≠ authority: the chain reports
+ * states, it never grants them (a rich chain leaves authority/validation
+ * exactly where the gates put them).
+ */
+export function provenanceChain(record) {
+  const rec = record && typeof record === 'object' ? record : {}
+  const src = rec.source && typeof rec.source === 'object' ? rec.source : {}
+  const prov = src.provenance && typeof src.provenance === 'object' ? src.provenance : null
+  const origins = Array.isArray(prov?.origins) && prov.origins.length ? prov.origins : null
+  const agent = prov?.agent && (prov.agent.provider || prov.agent.model)
+    ? `${prov.agent.provider || '?'}/${prov.agent.model || '?'}`
+    : null
+  const session = src.sessionId ? `${src.sessionId}${src.turn != null ? ` turn ${src.turn}` : ''}` : null
+  const where = prov?.workspace || null
+  const relations = Array.isArray(rec.relations) ? rec.relations : []
+  const evidence = Array.isArray(rec.evidence) ? rec.evidence : []
+  const rows = []
+
+  // 1 — Observation: when, where, and by-what it was captured.
+  const obsBits = [
+    session && `session ${session}`,
+    origins && `origins [${origins.join(', ')}]`,
+    where && `workspace ${where}`,
+    agent && `agent ${agent}`,
+  ].filter(Boolean)
+  rows.push(obsBits.length
+    ? { stage: 'Observation', state: 'recorded', at: rec.createdAt || null, detail: obsBits.join(' · ') }
+    : { stage: 'Observation', state: 'unknown', at: rec.createdAt || null, detail: 'legacy record — capture context not recorded' })
+
+  // 2 — Evidence: anchors attached at capture or review.
+  rows.push(evidence.length
+    ? { stage: 'Evidence', state: 'recorded', at: null, detail: `${evidence.length} anchor(s): ${evidence.map((e) => e?.path || e?.note || 'note').join(', ')}` }
+    : { stage: 'Evidence', state: 'none', at: null, detail: 'no evidence anchors' })
+
+  // 3 — Candidate: how it entered the store (Observe ≠ Store — automatic
+  // capture and deliberate writes are both acts of entering the store).
+  rows.push({
+    stage: 'Candidate',
+    state: 'recorded',
+    at: rec.createdAt || null,
+    detail: src.tool ? `deliberate write via ${src.tool}` : src.automatic ? 'distilled from a turn (write gate)' : 'entered the store',
+  })
+
+  // 4 — Validation: candidate → review ladder.
+  const validation = rec.validation || 'candidate'
+  rows.push(validation === 'candidate'
+    ? { stage: 'Validation', state: 'pending', at: rec.updatedAt || null, detail: 'still a candidate — not yet validated' }
+    : { stage: 'Validation', state: 'recorded', at: rec.updatedAt || null, detail: `validation ${validation}` })
+
+  // 5 — Promotion: authority level actually granted (never inferred).
+  const authority = rec.authority || 'candidate'
+  rows.push(authority === 'canonical'
+    ? { stage: 'Promotion', state: 'recorded', at: rec.updatedAt || null, detail: 'explicitly promoted to canonical' }
+    : authority === 'derived'
+      ? { stage: 'Promotion', state: 'recorded', at: rec.updatedAt || null, detail: 'admitted as derived by the write gate — useful, not truth' }
+      : { stage: 'Promotion', state: 'pending', at: null, detail: 'no promotion yet' })
+
+  // 6 — Retrieval: last time recall surfaced it (telemetry, may be absent).
+  rows.push(rec.lastRecalledAt
+    ? { stage: 'Retrieval', state: 'recorded', at: rec.lastRecalledAt, detail: 'last surfaced by recall' }
+    : { stage: 'Retrieval', state: 'not-yet', at: null, detail: 'never recalled yet' })
+
+  // 7 — Application: deliberately NOT tracked — memory is evidence, not
+  // instructions; what an agent did with a recollection is outside Veyra.
+  rows.push({ stage: 'Application', state: 'not-tracked', at: null, detail: 'application happens in the agent — Veyra stores evidence, not instructions' })
+
+  // 8 — Verification: validated or evidenced as verified.
+  const verifiedNote = evidence.find((e) => /test-passed|verified|reproduc/i.test(String(e?.note || '')))
+  rows.push(validation === 'verified' || verifiedNote
+    ? { stage: 'Verification', state: 'recorded', at: null, detail: validation === 'verified' ? 'marked verified' : `evidence note: ${verifiedNote.note}` }
+    : { stage: 'Verification', state: 'pending', at: null, detail: 'no verified outcome yet' })
+
+  // 9 — Update / Supersession. `supersedes` is directed retired →
+  // replacement (M1 contract), so an edge here means THIS record was
+  // retired in favour of its target.
+  const retired = relations.filter((r) => r?.type === RELATIONS.SUPERSEDES)
+  const status = rec.status || STATUSES.CURRENT
+  if (retired.length) {
+    rows.push({ stage: 'Update/Supersession', state: 'recorded', at: rec.updatedAt || null, detail: `retired — replaced by ${retired.map((r) => r.targetId).join(', ')}` })
+  } else if (rec.forgotten) {
+    rows.push({ stage: 'Update/Supersession', state: 'recorded', at: rec.updatedAt || null, detail: 'forgotten (soft-deleted, off recall)' })
+  } else if (status !== STATUSES.CURRENT) {
+    rows.push({ stage: 'Update/Supersession', state: 'recorded', at: rec.updatedAt || null, detail: `status ${status}` })
+  } else if (validation === 'stale' || validation === 'invalid') {
+    // evolve demotes the review ladder too — a demotion is an update.
+    rows.push({ stage: 'Update/Supersession', state: 'recorded', at: rec.updatedAt || null, detail: `validation demoted to ${validation}` })
+  } else {
+    rows.push({ stage: 'Update/Supersession', state: 'none', at: rec.updatedAt || null, detail: 'no update, retirement, or invalidation yet' })
+  }
+  return rows
 }

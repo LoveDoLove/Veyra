@@ -26,10 +26,32 @@ import {
 import { contentHash } from './ids.mjs'
 import { looksLikeClaim } from './understand.mjs'
 import { evolveAgainst } from './evolve.mjs'
+import { addRejected, addUnresolved } from './negative.mjs'
 
 export function looksDurable(text) {
   return looksLikeClaim(text) && typeof text === 'string' && text.length >= 60
 }
+
+/**
+ * Write-gate verdicts (GOAL.md Phase 1). Every learning decision is one of
+ * these four, and every one carries a human-readable reason so Veyra can
+ * explain why an observation was accepted, merged, rejected, or deferred.
+ *
+ *   ACCEPT — new derived knowledge was written.
+ *   MERGE  — near-duplicate of existing derived knowledge; the neighbor was
+ *            strengthened instead of writing a second record.
+ *   DROP   — rejected: noise, verbatim duplicate, or nothing to learn.
+ *   DEFER  — not rejected, not accepted now: the record stays exactly as
+ *            captured and may become learnable later (provenance-gated
+ *            automatic records, canonical records that need an explicit
+ *            user promotion).
+ */
+export const WRITE_GATES = Object.freeze({
+  ACCEPT: 'ACCEPT',
+  MERGE: 'MERGE',
+  DROP: 'DROP',
+  DEFER: 'DEFER',
+})
 
 function hasGrounding(candidate) {
   const evidence = candidate?.evidence || []
@@ -189,32 +211,46 @@ export function provenanceAllowsLearning(record) {
  *     and never reach evolveAgainst.
  *   - observation count, age, retrieval count, similarity, confidence and
  *     frequency are never consulted here.
+ *
+ * Returns `{ hash, existing }` on pass, or `{ blocked: { decision, reason } }`.
  */
 function learningGuards(store, candidate, { limit = 60 } = {}) {
-  if (!store || !candidate) return null
-  if (!provenanceAllowsLearning(candidate)) return null
-  if (candidate.authority === AUTHORITIES.CANONICAL) return null
-  if (!looksDurable(`${candidate.title}\n${candidate.body}`)) return null
+  if (!store || !candidate) return { blocked: { decision: WRITE_GATES.DROP, reason: 'no-record' } }
+  if (!provenanceAllowsLearning(candidate)) {
+    return { blocked: { decision: WRITE_GATES.DEFER, reason: 'provenance-gated' } }
+  }
+  if (candidate.authority === AUTHORITIES.CANONICAL) {
+    return { blocked: { decision: WRITE_GATES.DEFER, reason: 'canonical-requires-explicit-promotion' } }
+  }
+  if (!looksDurable(`${candidate.title}\n${candidate.body}`)) {
+    return { blocked: { decision: WRITE_GATES.DROP, reason: 'not-durable' } }
+  }
 
   const hash = contentHash(candidate.title, candidate.body)
   const existing = store.list({ limit }).filter((r) => !r.forgotten)
-  if (existing.some((r) => r.contentHash === hash && r.authority !== AUTHORITIES.CANDIDATE && r.id !== candidate.id)) {
-    return null
-  }
   return { hash, existing }
 }
 
 /**
- * After a turn, consider promoting a fresh candidate into derived memory
- * when it looks durable, is grounded, and is not a verbatim duplicate of
- * existing knowledge. If it confirms an existing derived memory, strengthen
- * that memory's validation and evidence.
+ * The write gate (GOAL.md Phase 1). Runs the full guard chain and the
+ * evolution decision, performs the write, and returns the verdict with a
+ * human-readable reason so Veyra can explain every learning decision:
  *
- * Returns the written derived record, or null when nothing new was learned.
+ *   ACCEPT — new derived knowledge was written (`record`).
+ *   MERGE  — near-duplicate; the existing derived neighbor was strengthened
+ *            (`neighbor`), no second record written.
+ *   DROP   — rejected: noise, verbatim duplicate, or nothing to learn.
+ *   DEFER  — not rejected, not accepted now: the record stays exactly as
+ *            captured and may become learnable later.
+ *
+ * `maybeLearn` is the compatibility wrapper: it returns the written record or
+ * null, exactly as before.
  */
-export function maybeLearn(store, candidate, { related = [], workspace = null } = {}) {
+export function writeGate(store, candidate, { related = [], workspace = null } = {}) {
   const guards = learningGuards(store, candidate)
-  if (!guards) return null
+  if (guards.blocked) {
+    return { decision: guards.blocked.decision, reason: guards.blocked.reason, record: null, neighbor: null, evolveAction: null }
+  }
   const { hash, existing } = guards
 
   const seedRelations = []
@@ -242,7 +278,13 @@ export function maybeLearn(store, candidate, { related = [], workspace = null } 
       const strengthened = strengthenMemory(evolved.neighbor, candidate, { workspace })
       store.put(strengthened)
     }
-    return null
+    return {
+      decision: WRITE_GATES.MERGE,
+      reason: 'near-duplicate-strengthened',
+      record: null,
+      neighbor: evolved.neighbor,
+      evolveAction: evolved.action,
+    }
   }
 
   // Update the candidate in place when it already has an id. A new put
@@ -271,9 +313,29 @@ export function maybeLearn(store, candidate, { related = [], workspace = null } 
       observations: 1,
       learnedFrom: candidate.id || null,
       evolveAction: evolved.action,
+      writeGate: { decision: WRITE_GATES.ACCEPT, reason: 'new-derived-knowledge' },
     },
   })
-  return written.record
+  return {
+    decision: WRITE_GATES.ACCEPT,
+    reason: 'new-derived-knowledge',
+    record: written.record,
+    neighbor: null,
+    evolveAction: evolved.action,
+  }
+}
+
+/**
+ * After a turn, consider promoting a fresh candidate into derived memory
+ * when it looks durable, is grounded, and is not a verbatim duplicate of
+ * existing knowledge. If it confirms an existing derived memory, strengthen
+ * that memory's validation and evidence.
+ *
+ * Returns the written derived record, or null when nothing new was learned.
+ * Use `writeGate` when the verdict and its reason are needed.
+ */
+export function maybeLearn(store, candidate, { related = [], workspace = null } = {}) {
+  return writeGate(store, candidate, { related, workspace }).record ?? null
 }
 
 /**
@@ -283,6 +345,59 @@ export function maybeLearn(store, candidate, { related = [], workspace = null } 
  * without merging them.
  */
 export function remember(store, input, { explicitCanonical = false } = {}) {
+  // GOAL.md Phase 2 / §8 / §9 — negative and unresolved are first-class
+  // kinds with idempotent writers. They are never coerced to memory, never
+  // carry canonical authority, and skip evolveAgainst: a known failed
+  // approach must not supersede positive memory by content match, and an
+  // open investigation keeps its identity across rewording.
+  if (input?.kind === KINDS.NEGATIVE) {
+    return addRejected(store, input.title, input.body, {
+      tags: input.tags,
+      evidence: input.evidence,
+      confidence: input.confidence,
+      scope: input.scope,
+      projectId: input.projectId,
+      source: input.source,
+    })
+  }
+  if (input?.kind === KINDS.UNRESOLVED) {
+    return addUnresolved(store, input.title, {
+      knownClues: input.body,
+      tags: input.tags,
+      evidence: input.evidence,
+      confidence: input.confidence,
+      scope: input.scope,
+      projectId: input.projectId,
+      source: input.source,
+    })
+  }
+  // GOAL.md Phase 4 §12/§13 — applicability context and temporal validity
+  // ride the `source` JSON bag (precedent: source.causal / source.provenance):
+  // the row schema is fixed-column and bumping schema_version fails closed
+  // on every existing database. The runtime auto-stamps the environment
+  // facts it knows for free (§12: os, runtime); agent-supplied keys ride
+  // alongside and win on conflict. validFrom/validUntil land canonical
+  // camelCase under source.temporal — snake_case stays a read-side alias
+  // only (dsh-memory nodefile.py:133-138 discipline).
+  // ponytail: negative/unresolved kinds return above without auto-context —
+  // their routing is the coverage tail, not applicability scoring.
+  if (input?.kind !== KINDS.NEGATIVE && input?.kind !== KINDS.UNRESOLVED) {
+    const source = { ...(input.source && typeof input.source === 'object' ? input.source : {}) }
+    const validFrom = input.validFrom ?? input.valid_from ?? null
+    const validUntil = input.validUntil ?? input.valid_until ?? null
+    if (validFrom || validUntil) {
+      source.temporal = {
+        ...(validFrom ? { validFrom } : {}),
+        ...(validUntil ? { validUntil } : {}),
+      }
+    }
+    source.context = {
+      os: process.platform,
+      runtime: process.version,
+      ...(input.context && typeof input.context === 'object' ? input.context : {}),
+    }
+    input = { ...input, source }
+  }
   const kind = input.kind === KINDS.KNOWLEDGE || input.kind === KINDS.EVIDENCE
     ? input.kind
     : KINDS.MEMORY
@@ -340,18 +455,18 @@ export function reviewCandidate(store, record, { workspace = null } = {}) {
     return { outcome: 'blocked', reason: 'not durable' }
   }
 
-  // mayLearn writes the derived record in place when the candidate has an id.
+  // maybeLearn writes the derived record in place when the candidate has an id.
   const before = store.get(record.id)
-  const learned = maybeLearn(store, record, { workspace })
+  const gate = writeGate(store, record, { workspace })
   const after = store.get(record.id)
 
   if (after && before && after.authority !== before.authority) {
-    return { outcome: 'transitioned', authority: after.authority, record: after }
+    return { outcome: 'transitioned', authority: after.authority, decision: gate.decision, reason: gate.reason, record: after }
   }
-  if (learned) {
-    return { outcome: 'transitioned', authority: 'derived', record: learned }
+  if (gate.record) {
+    return { outcome: 'transitioned', authority: 'derived', decision: gate.decision, reason: gate.reason, record: gate.record }
   }
-  return { outcome: 'unchanged', record: after || record }
+  return { outcome: 'unchanged', decision: gate.decision, reason: gate.reason, record: after || record }
 }
 
 /**

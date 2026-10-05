@@ -16,7 +16,7 @@
  *   Retrieval != authority. Similarity != identity. Memory != truth.
  */
 
-import { AUTHORITIES, CONFIDENCES, DEFAULT_RECALL_LIMIT, KINDS, SCOPES, VALIDATIONS, isRecallEligible } from './types.mjs'
+import { AUTHORITIES, CONFIDENCES, DEFAULT_RECALL_LIMIT, KINDS, SCOPES, VALIDATIONS, isLifecycleEligible, isRecallEligible } from './types.mjs'
 import { detectIntent, intentAffinity, intentWeights } from './intent.mjs'
 import { annotateContradictions } from './evolve.mjs'
 import { expandEligibleNeighbors } from './graph.mjs'
@@ -267,12 +267,210 @@ function polarityCompatible(query, record) {
 }
 
 /**
+ * Causal-channel text (GOAL.md Phase 3, §14 Causal Memory).
+ * The searchable half of `record.source.causal` — symptom, root cause,
+ * remedy, verified outcome. Null/absent facets are skipped; a record
+ * without causal facets contributes '' and scores 0 on this channel.
+ */
+function causalText(record) {
+  const c = record?.source?.causal
+  if (!c || typeof c !== 'object') return ''
+  return [c.symptom, c.rootCause, c.remedy, c.verifiedOutcome]
+    .filter((v) => typeof v === 'string' && v.trim())
+    .join(' ')
+}
+
+/**
+ * Causal relevance (GOAL.md Phase 3: Causal as a ranking signal).
+ *
+ * Fraction of the query tokens the record's causal facets explain, so a
+ * record that documents WHY/HOW a failure happens beats an equally
+ * title-matched record that does not. camelCase split applied so identifier
+ * queries still reach facet prose. Not part of the weighted composite —
+ * it participates through rank fusion below, keeping `composite` the plain
+ * weighted sum its contract (and its pinned test) requires.
+ */
+export function causalRelevance(query, record) {
+  const q = String(query || '').trim()
+  const c = record?.source?.causal
+  const text = causalText(record)
+  if (!q || !text) return 0
+  const { ratio } = tokenOverlap(splitCamelCase(text), splitCamelCase(q))
+  // §14 — prioritize verified historical cause/effect chains: a chain
+  // that recorded its outcome outweighs a suspected one, and documenting
+  // more of the chain (symptom → root cause → remedy) raises the channel
+  // proportionally. A verified, complete chain keeps quality at exactly
+  // 1 (unchanged legacy behavior); fragments and unverified chains rank
+  // strictly below it — never at 0, so an explaining record still beats
+  // a silent one.
+  const documented = [c?.symptom, c?.rootCause, c?.remedy]
+    .filter((v) => typeof v === 'string' && v.trim()).length
+  const verified = typeof c?.verifiedOutcome === 'string' && c.verifiedOutcome.trim() ? 1 : 0
+  const quality = 0.5 + 0.3 * verified + 0.2 * (documented / 3)
+  return Number(Math.min(1, Math.max(0, ratio * quality)).toFixed(3))
+}
+
+/**
+ * Temporal validity bounds (GOAL.md Phase 4, §13).
+ *
+ * Canonical shape lives on `source.temporal` — same JSON-bag precedent as
+ * `source.causal`: the row schema is fixed-column and bumping
+ * schema_version fails closed on every existing database. Top-level
+ * `validFrom`/`validUntil` and snake_case `valid_from`/`valid_until` are
+ * read-side aliases, mirroring dsh-memory's canonical-key + read-fallback
+ * discipline (md_cg/nodefile.py:133-138 — new writes land canonical,
+ * legacy shapes keep reading, zero migration). Unparseable endpoints are
+ * dropped here so `temporalState` fails open to `current` — never guess
+ * (dsh-memory mdcos.py: 时间轴缺失/端点不可解析 → 不过滤).
+ */
+export function temporalBounds(record) {
+  const bag = record?.source?.temporal
+  const t = bag && typeof bag === 'object' ? bag : {}
+  const raw = [
+    record?.validFrom ?? record?.valid_from ?? t.validFrom ?? t.valid_from ?? null,
+    record?.validUntil ?? record?.valid_until ?? t.validUntil ?? t.valid_until ?? null,
+  ]
+  const valid = raw.map((v) => (typeof v === 'string' && Number.isFinite(Date.parse(v)) ? v : null))
+  return { validFrom: valid[0], validUntil: valid[1] }
+}
+
+/**
+ * The §13 validity state on the temporal axis: `current` |
+ * `not_yet_effective` | `expired`.
+ *
+ * Copied semantics from dsh-memory (mdcg/mdcos.py:763-765): a passed
+ * `valid_until` is expired; a future `valid_from` is NOT an expiry —
+ * scheduled knowledge must stay recallable before it takes effect
+ * ("valid_from 绝不并入 _EXPIRY_KEYS"). Absent window → `current`.
+ */
+export function temporalState(record, now = Date.now()) {
+  const { validFrom, validUntil } = temporalBounds(record)
+  if (validUntil && now > Date.parse(validUntil)) return 'expired'
+  if (validFrom && now < Date.parse(validFrom)) return 'not_yet_effective'
+  return 'current'
+}
+
+/**
+ * Captured applicability context (GOAL.md Phase 4, §12). Written at
+ * remember() time: the runtime auto-stamps the environment facts it knows
+ * (os, runtime) and agent-supplied keys (toolchain, version, taskType, …)
+ * ride alongside on `source.context`.
+ */
+export function recordContext(record) {
+  const c = record?.source?.context
+  return c && typeof c === 'object' ? c : null
+}
+
+/** The environment facts THIS runtime states, compared against captures. */
+export function currentAppContext() {
+  return { os: process.platform, runtime: process.version }
+}
+
+function contextValueMatches(key, current, captured) {
+  if (key === 'runtime') {
+    // Same major = same toolchain line; patch/minor drift is not a context
+    // change (a v24.8 capture applies on v24.21 alike).
+    const major = (v) => String(v).match(/\d+/)?.[0] ?? String(v)
+    return major(current) === major(captured)
+  }
+  return String(current) === String(captured)
+}
+
+/**
+ * Context compatibility: 1 (compatible or unknown) / 0 (contradiction).
+ *
+ * §12 invariant: Similarity ≠ Applicability. Only keys BOTH sides state
+ * can contradict — a capture is a statement of where it was observed, not
+ * a claim that nowhere else applies, so absent context stays neutral and
+ * keys only the record carries (toolchain vs current {os, runtime}) are
+ * never guessed at. Fail-open, same discipline as dsh-memory validity.
+ */
+export function contextCompatibility(record, current = currentAppContext()) {
+  const ctx = recordContext(record)
+  if (!ctx) return 1
+  for (const key of Object.keys(current)) {
+    const captured = ctx[key]
+    if (captured == null || captured === '') continue
+    if (!contextValueMatches(key, current[key], captured)) return 0
+  }
+  return 1
+}
+
+/**
+ * RRF fusion (GOAL.md Phase 3, §10 Multi-Channel Retrieval).
+ *
+ * Copied from the reference implementation: score(d) = Σ_path w_path /
+ * (RRF_K + rank_path(d)) — dsh-memory md_cg/mdcos.py:64 (RRF_K = 60) and
+ * :1454 search_rrf. Multi-channel consensus (top-ranked by several
+ * channels) outranks a single-path hit; every contribution is
+ * deterministic — no learned weights, no vectors.
+ *
+ * Channels are the named signals of §10, each ranking the SAME candidate
+ * pool by its own scores field: FTS5/BM25 (lexical), token overlap
+ * (semantic), intent, relations (relationship), causal (new), evidence,
+ * negative history (polarity_compatible), temporal (freshness_tier) and
+ * applicability (scope_proximity).
+ *
+ * A channel whose values are identical across the pool carries no rank
+ * information (e.g. every candidate polarity-compatible, or all-equal
+ * freshness in a single-record pool) and is excluded for that pool — so a
+ * pool with no discriminative channel gets null and the caller falls back
+ * to the plain composite ordering untouched.
+ *
+ * Returns an array aligned with `scored`: normalized RRF in (0, 1],
+ * where 1.0 = rank 1 in every included channel. Fully deterministic:
+ * value desc, input-index asc tiebreak.
+ */
+export const RRF_K = 60
+export const FUSION_WEIGHT = 0.06
+
+const FUSION_CHANNELS = Object.freeze([
+  'lexical',             // FTS5 / BM25
+  'semantic',            // token overlap
+  'intent_affinity',     // intent
+  'relationship',        // relations
+  'causal',              // causal relevance (Phase 3, new)
+  'evidence_strength',   // evidence strength
+  'polarity_compatible', // negative / polarity history
+  'freshness_tier',      // recency tiers
+  'scope_proximity',     // scope applicability
+  'applicability',       // §12 context compatibility (Phase 4, new)
+  'temporal_validity',   // §13 validity window (Phase 4, new)
+])
+
+export function reciprocalRankFusion(scored) {
+  if (!Array.isArray(scored) || scored.length === 0) return null
+  const n = scored.length
+  const channelRanks = []
+  for (const key of FUSION_CHANNELS) {
+    const values = scored.map((r) => {
+      const v = r?.scores?.[key]
+      if (typeof v === 'boolean') return v ? 1 : 0
+      return Number.isFinite(v) ? v : 0
+    })
+    if (Math.max(...values) === Math.min(...values)) continue // flat = no signal
+    const order = values.map((v, i) => i).sort((a, b) => (values[b] - values[a]) || (a - b))
+    const ranks = new Array(n)
+    order.forEach((idx, pos) => { ranks[idx] = pos + 1 })
+    channelRanks.push(ranks)
+  }
+  if (channelRanks.length === 0) return null
+  const maxRaw = channelRanks.length / (RRF_K + 1) // rank 1 in every channel
+  return scored.map((_, i) => {
+    let raw = 0
+    for (const ranks of channelRanks) raw += 1 / (RRF_K + ranks[i])
+    return Number((raw / maxRaw).toFixed(4))
+  })
+}
+
+/**
  * Rank records with a full dimensional breakdown.
  * Never returns a single opaque score.
  */
 export function rankRecords(records, { weights = {}, preferProject = true, intent = null, query = '' } = {}) {
   if (!Array.isArray(records) || records.length === 0) return []
   const w = { ...DEFAULT_WEIGHTS, ...intentWeights(intent), ...weights }
+  const hasQuery = Boolean(String(query ?? '').trim())
   const poolIds = new Set(records.map((r) => r.id).filter(Boolean))
   const scored = records.map((rec, idx) => {
     const lex = lexicalScore(rec, query, idx)
@@ -286,6 +484,7 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
     const affinity = intentAffinity(rec, intent)
     const rel = relationshipScore(rec, poolIds)
     const compatible = polarityCompatible(query, rec)
+    const causal = causalRelevance(query, rec)
     const composite = Number((
       relevance * w.relevance
       + sem * (w.semantic ?? 0.10)
@@ -312,10 +511,31 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
         confidence: Number(confidence.toFixed(3)),
         intent_affinity: Number(affinity.toFixed(3)),
         relationship: Number(rel.toFixed(3)),
+        causal: Number(causal.toFixed(3)),
         polarity_compatible: compatible,
+        // Phase 4 §12/§13 — sort-only channels, composite untouched:
+        // unknown context / absent window are neutral (1), so pools
+        // without applicability or validity signal stay flat and the
+        // channels drop out of the RRF for that pool.
+        applicability: contextCompatibility(rec),
+        temporal_validity: temporalState(rec) === 'expired' ? 0 : 1,
       },
     }
   })
+
+  // RRF consensus (GOAL.md Phase 3, §10): rank the pool once per channel and
+  // fuse with reciprocal-rank fusion. Query-driven retrieval only — an
+  // empty-query pool is a recency browse where fusion adds nothing — and a
+  // pool with no discriminative channel gets null (all rrf = 0). `composite`
+  // stays the plain weighted sum its contract requires; `fusion` is a
+  // separate sort-only score, same discipline as the polarity cap and the
+  // signal tier below.
+  const rrfs = hasQuery ? reciprocalRankFusion(scored) : null
+  for (let i = 0; i < scored.length; i++) {
+    const rrf = rrfs ? rrfs[i] : 0
+    scored[i].scores.rrf = rrf
+    scored[i].scores.fusion = Number((scored[i].scores.composite + FUSION_WEIGHT * rrf).toFixed(4))
+  }
 
   // Applied after scoring so every component above is preserved verbatim.
   // A polarity-mismatched candidate is capped just below the best compatible
@@ -328,19 +548,52 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
   const compatibleScores = scored.filter((r) => r.scores.polarity_compatible)
   if (compatibleScores.length > 0 && compatibleScores.length < scored.length) {
     const best = Math.max(...compatibleScores.map((r) => r.scores.composite))
+    // The same invariant must hold on the sort score: the RRF consensus
+    // term must not lift a mismatched candidate above the best compatible
+    // one either, so `fusion` is capped by the same rule.
+    const bestFusion = Math.max(...compatibleScores.map((r) => r.scores.fusion))
     for (const r of scored) {
       if (r.scores.polarity_compatible) continue
       r.scores.polarity_mismatch = true
       r.scores.polarity_original_composite = r.scores.composite
       if (r.scores.composite >= best) r.scores.composite = Number((best - 0.0001).toFixed(4))
+      // Re-derive fusion from the (possibly capped) composite so the two
+      // never disagree, then hold the same invariant on it.
+      r.scores.fusion = Number((r.scores.composite + FUSION_WEIGHT * r.scores.rrf).toFixed(4))
+      if (r.scores.fusion > bestFusion) r.scores.fusion = Number((bestFusion - 0.0001).toFixed(4))
     }
   }
 
-  // Primary: the (possibly capped) composite. Secondary, only when the primary
-  // ties: the pre-cap composite, so capped rows keep their true relative order
-  // regardless of the order they entered rankRecords. Records without the key
-  // fall back to their own composite, so matching-polarity behaviour is
-  // byte-identical to before.
+  // Phase 4 §12/§13 — applicability and temporal validity guards, same
+  // sort-only discipline: `composite` and the dimensional breakdown stay
+  // verbatim, only `fusion` is held below the best fully-eligible
+  // alternative. An expired or context-incompatible record remains fully
+  // recallable (historical knowledge stays available) but cannot outrank
+  // the best valid, applicable one on text similarity alone — Similarity
+  // ≠ Applicability, historical ≠ current truth. Sequential with the
+  // polarity cap above (each step only lowers, so the result is the min
+  // of all applicable ceilings). Inactive when no eligible alternative
+  // exists (nothing to protect) and, like fusion itself, query-only: an
+  // empty-query pool is a browse where availability wins.
+  if (hasQuery) {
+    const eligible = scored.filter((r) => r.scores.applicability === 1 && r.scores.temporal_validity === 1)
+    if (eligible.length > 0 && eligible.length < scored.length) {
+      const ceiling = Number((Math.max(...eligible.map((r) => r.scores.fusion)) - 0.0001).toFixed(4))
+      for (const r of scored) {
+        if (r.scores.applicability === 1 && r.scores.temporal_validity === 1) continue
+        r.scores.rank_limited = true // §11 explainability: why this row was held back
+        if (r.scores.fusion > ceiling) r.scores.fusion = ceiling
+      }
+    }
+  }
+
+  // Primary: the fused score — composite plus the RRF consensus term
+  // (identical to the capped composite whenever fusion is inactive, so the
+  // legacy ordering is byte-identical). Secondary, on ties: the (possibly
+  // capped) composite, then the pre-cap composite, so capped rows keep
+  // their true relative order regardless of the order they entered
+  // rankRecords. Records without the key fall back to their own composite,
+  // so matching-polarity behaviour is byte-identical to before.
   const sortKey = (r) => r.scores.polarity_original_composite ?? r.scores.composite
 
   // Query-signal tier: for a non-empty query, a record with NO textual signal
@@ -357,14 +610,13 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
   // deliberate design: when NOTHING matches, all records share tier 0 and
   // the composite order — recency — is untouched). Empty query: no query
   // to have signal against, so the tier is inactive by construction.
-  const hasQuery = Boolean(String(query ?? '').trim())
   const signalTier = (r) => ((r.scores.relevance > 0 || r.scores.semantic > 0) ? 1 : 0)
   scored.sort((a, b) => {
     if (hasQuery) {
       const tier = signalTier(b) - signalTier(a)
       if (tier !== 0) return tier
     }
-    return (b.scores.composite - a.scores.composite) || (sortKey(b) - sortKey(a))
+    return (b.scores.fusion - a.scores.fusion) || (b.scores.composite - a.scores.composite) || (sortKey(b) - sortKey(a))
   })
   return scored
 }
@@ -445,6 +697,89 @@ function suppressNearDuplicates(records) {
  *   - Strict lifecycle & authority filtering
  *   - Contradiction surfacing
  */
+/**
+ * GOAL.md Phase 2 — negative-coverage tail budget. Matches the reference
+ * dsh-memory `NEG_COVERAGE_MAX`: at most this many known-failed/unresolved
+ * entries may surface per recall, and they always come last.
+ */
+export const NEG_COVERAGE_MAX = 3
+
+/** Sentinel score for coverage entries (reference `NEG_COVERAGE_SCORE = 0.0`). */
+export const NEG_COVERAGE_SCORE = 0
+
+const COVERAGE_ZERO_SCORES = Object.freeze({
+  composite: NEG_COVERAGE_SCORE,
+  relevance: NEG_COVERAGE_SCORE,
+  lexical: NEG_COVERAGE_SCORE,
+  semantic: NEG_COVERAGE_SCORE,
+  evidence_strength: NEG_COVERAGE_SCORE,
+  validation_tier: NEG_COVERAGE_SCORE,
+  scope_proximity: NEG_COVERAGE_SCORE,
+  freshness_tier: NEG_COVERAGE_SCORE,
+  confidence: NEG_COVERAGE_SCORE,
+  intent_affinity: NEG_COVERAGE_SCORE,
+  relationship: NEG_COVERAGE_SCORE,
+  polarity_compatible: NEG_COVERAGE_SCORE,
+  causal: NEG_COVERAGE_SCORE,
+  rrf: NEG_COVERAGE_SCORE,
+  fusion: NEG_COVERAGE_SCORE,
+})
+
+/**
+ * Known failed solutions / known open investigations (GOAL.md Phase 2).
+ *
+ * These records are deliberately NOT forward-scored: negative memory is
+ * historical evidence, not a match to repeat (reference dsh-memory emits
+ * them as zero-score tail entries after the primary cut, `_neg_tail`).
+ * Matching here is simple term overlap against title+body — coverage,
+ * not relevance — and they surface only on unified queries.
+ */
+function negativeCoverageTail({ projectStore, reusableStore, includeReusable, projectId, query, limit }) {
+  const wanted = Math.min(NEG_COVERAGE_MAX, Math.max(0, limit))
+  if (wanted === 0 || !query?.trim()) return []
+  const fetch = Math.max(wanted * 4, 12)
+  const pools = []
+  if (projectStore) {
+    pools.push(
+      ...projectStore.list({ limit: fetch, kind: KINDS.NEGATIVE }).map((r) => [r, false]),
+      ...projectStore.list({ limit: fetch, kind: KINDS.UNRESOLVED }).map((r) => [r, false]),
+    )
+  }
+  if (includeReusable && reusableStore) {
+    pools.push(
+      ...reusableStore.list({ limit: fetch, kind: KINDS.NEGATIVE }).map((r) => [r, true]),
+      ...reusableStore.list({ limit: fetch, kind: KINDS.UNRESOLVED }).map((r) => [r, true]),
+    )
+  }
+  const seen = new Set()
+  const matched = []
+  for (const [rec, fromReusable] of pools) {
+    if (!rec || seen.has(rec.id)) continue
+    seen.add(rec.id)
+    // Same lifecycle + scope isolation as the forward pool (addCandidate).
+    if (!isLifecycleEligible(rec)) continue
+    if (fromReusable) {
+      if (rec.scope !== SCOPES.REUSABLE || rec.projectId === projectId) continue
+    } else {
+      if (rec.projectId !== projectId && rec.scope !== SCOPES.PROJECT) continue
+    }
+    const hits = tokenOverlap(query, `${rec.title || ''} ${rec.body || ''}`).hits
+    if (hits <= 0) continue
+    matched.push({ rec, hits })
+  }
+  matched.sort((a, b) => (
+    b.hits - a.hits
+    || String(b.rec.updatedAt || b.rec.createdAt || '').localeCompare(String(a.rec.updatedAt || a.rec.createdAt || ''))
+    || String(a.rec.id).localeCompare(String(b.rec.id))
+  ))
+  return matched.slice(0, wanted).map(({ rec }) => ({
+    ...rec,
+    negativeCoverage: true,
+    negLayer: rec.kind,
+    scores: { ...COVERAGE_ZERO_SCORES },
+  }))
+}
+
 export function hybridRetrieve({
   projectStore,
   reusableStore = null,
@@ -480,6 +815,10 @@ export function hybridRetrieve({
       if (rec.projectId !== projectId && rec.scope !== SCOPES.PROJECT) return
     }
     if (kind && rec.kind !== kind) return
+    // GOAL.md Phase 2: negative/unresolved never enter the forward-scored
+    // pool on a unified query (reference treats them as coverage only);
+    // an explicit kind query is the deliberate exception.
+    if (!kind && (rec.kind === KINDS.NEGATIVE || rec.kind === KINDS.UNRESOLVED)) return
     if (!candidateMap.has(rec.id)) {
       candidateMap.set(rec.id, rec)
     }
@@ -497,7 +836,18 @@ export function hybridRetrieve({
   // what survived, and both sides of a contradiction are relation-connected
   // so they can never be suppressed.
   const selected = suppressNearDuplicates(ranked)
-  const limited = selected.slice(0, Math.max(0, limit))
+  // GOAL.md Phase 2 — coverage tail: known-failed/unresolved entries are
+  // appended after the primary cut and consume budget slots (reference
+  // `_primary_slots` = max(0, k - n_tail)).
+  const negTail = kind
+    ? []
+    : negativeCoverageTail({ projectStore, reusableStore, includeReusable, projectId, query, limit })
+  const limited = selected.slice(0, Math.max(0, limit - negTail.length))
+  const withCoverage = (base) => {
+    if (negTail.length === 0) return base
+    const baseIds = new Set(base.map((r) => r.id))
+    return [...base, ...negTail.filter((r) => !baseIds.has(r.id))]
+  }
 
   // PMA invariant: never hide one side of a contradiction.
   // Pull opposing recall-eligible records even if search missed them.
@@ -522,8 +872,8 @@ export function hybridRetrieve({
   }).filter((rec) => !kind || rec.kind === kind)
   extras.push(...neighbors)
 
-  if (extras.length === 0) return limited
-  return annotateContradictions(rankRecords([...limited, ...extras], { query, intent: detectedIntent, preferProject: true }))
+  if (extras.length === 0) return withCoverage(limited)
+  return withCoverage(annotateContradictions(rankRecords([...limited, ...extras], { query, intent: detectedIntent, preferProject: true })))
 }
 
 /**
@@ -560,7 +910,13 @@ export function summarizeForPrompt(records, { heading = 'Veyra recalled engineer
     for (const banner of rec.contradictionBanners || []) {
       lines.push(`> ⚠️ ${banner}`)
     }
-    const kindTag = rec.kind === KINDS.KNOWLEDGE ? ' [KNOWLEDGE]' : ''
+    const kindTag = rec.kind === KINDS.KNOWLEDGE
+      ? ' [KNOWLEDGE]'
+      : rec.kind === KINDS.NEGATIVE
+        ? ' [NEGATIVE · known failed solution]'
+        : rec.kind === KINDS.UNRESOLVED
+          ? ' [UNRESOLVED · known open investigation]'
+          : ''
     lines.push(`- [${rec.id}] (${scope}/${auth}/${rec.validation}/${rec.confidence}${ev}${contra})${kindTag} ${rec.title}`)
     if (rec.via?.type && rec.via.fromId) {
       lines.push(`  • via ${rec.via.type} ← [${rec.via.fromId}]`)

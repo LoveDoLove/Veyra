@@ -133,6 +133,29 @@ export function resolveWorkspace(source) {
   return process.cwd()
 }
 
+/**
+ * §15 provenance dimensions — where a memory was captured (workspace),
+ * which repository it belongs to (root + origin remote), and which agent
+ * captured it. Attribution only: these fields ride alongside the M8
+ * `origins` capture-stream bag and never enter it, so the M9 learning
+ * gate reads exactly as before. Provenance is not authority (§15).
+ *
+ * Unknown stays unknown: no workspace → nulls, no remote → null, an
+ * agent exposing neither provider nor model → null. Never guessed.
+ */
+export function provenanceDimensions(cwd, agent) {
+  const workspace = typeof cwd === 'string' && cwd.trim() ? resolve(cwd.trim()) : null
+  const repository = findGitRoot(workspace)
+  const provider = typeof agent?.provider === 'string' && agent.provider.trim() ? agent.provider.trim() : null
+  const model = typeof agent?.model === 'string' && agent.model.trim() ? agent.model.trim() : null
+  return {
+    workspace,
+    repository,
+    remote: repository ? (readGitRemote(repository) || null) : null,
+    agent: provider || model ? { provider, model } : null,
+  }
+}
+
 export function extractText(content) {
   if (typeof content === 'string') return content
   if (!content || typeof content !== 'object') return ''

@@ -13,6 +13,10 @@ export const KINDS = Object.freeze({
   MEMORY: 'memory',
   KNOWLEDGE: 'knowledge',
   EVIDENCE: 'evidence',
+  // GOAL.md Phase 2 / §8 / §9 — first-class negative engineering memory
+  // (known failed approaches) and known unresolved investigations.
+  NEGATIVE: 'negative',
+  UNRESOLVED: 'unresolved',
 })
 
 export const STATUSES = Object.freeze({
@@ -84,13 +88,13 @@ export const MIN_OBSERVATION_CHARS = 40
 export const MAX_MEMORY_BODY_CHARS = 4000
 
 /**
- * Authority gate for active recall.
+ * Lifecycle gate (kind-agnostic): current, not forgotten, not a candidate.
  *
- * Invariant (GOAL.md): Candidate ≠ Truth. Automatic behavior must not
- * silently create authoritative truth. Candidates and unverified
- * observations never appear in ambient recall.
+ * Negative/unresolved records pass this — they are real knowledge records —
+ * even though the forward-recall pool excludes them by kind (GOAL.md
+ * Phase 2). Used by the negative-coverage tail in `retrieve.mjs`.
  */
-export function isRecallEligible(record) {
+export function isLifecycleEligible(record) {
   if (!record) return false
   if (record.forgotten) return false
   if (record.status !== STATUSES.CURRENT) return false
@@ -98,8 +102,20 @@ export function isRecallEligible(record) {
     return false
   }
   if (record.authority === AUTHORITIES.CANDIDATE) return false
-  if (record.kind === KINDS.OBSERVATION) return false
   return record.authority === AUTHORITIES.DERIVED || record.authority === AUTHORITIES.CANONICAL
+}
+
+/**
+ * Authority gate for active recall.
+ *
+ * Invariant (GOAL.md): Candidate ≠ Truth. Automatic behavior must not
+ * silently create authoritative truth. Candidates and unverified
+ * observations never appear in ambient recall.
+ */
+export function isRecallEligible(record) {
+  if (!isLifecycleEligible(record)) return false
+  if (record.kind === KINDS.OBSERVATION) return false
+  return true
 }
 
 /**

@@ -974,6 +974,8 @@ Do not perform one large dsh-memory-to-Veyra rewrite.
 
 ## Phase 0 — Reference Baseline
 
+**Status: COMPLETE** — gap analysis recorded in `docs/capability-matrix.md` (21 capabilities with `file:symbol` citations).
+
 ### Goal
 
 Understand dsh-memory and establish a precise Veyra gap analysis.
@@ -1032,6 +1034,8 @@ No implementation is based solely on assumptions or README-level behavior.
 
 # Phase 1 — Memory Decision Layer
 
+**Status: COMPLETE** — `ACCEPT / MERGE / DROP / DEFER` write gate implemented in `src/learn.mjs` (`writeGate`, `WRITE_GATES`, integrated with Candidate/Evidence/Validation/Authority); `test/m1-write-gate.test.mjs` (9 tests).
+
 Implement:
 
 ```text
@@ -1061,6 +1065,8 @@ Veyra can explain why an observation was accepted, merged, rejected, or deferred
 
 # Phase 2 — Negative and Unresolved Memory
 
+**Status: COMPLETE** — `KINDS.NEGATIVE` / `KINDS.UNRESOLVED` in `src/types.mjs` (+ lifecycle/recall eligibility split); idempotent writers `addRejected` / `addUnresolved` / `slugify` in `src/negative.mjs`, ported from dsh-memory `mdcg.py` + `tasks.py`; kind routing in `src/learn.mjs` (`remember()`); zero-score negative-coverage tail (`NEG_COVERAGE_MAX = 3`) in `src/retrieve.mjs`; render markers `[NEGATIVE · known failed solution]` / `[UNRESOLVED · known open investigation]` in `src/retrieve.mjs` + `src/context.mjs`; empty-recall state "No known engineering history" in `src/context.mjs`; `test/m2-negative-unresolved.test.mjs` (11 tests). Suite: 480 pass / 0 fail.
+
 Implement:
 
 ```text
@@ -1084,6 +1090,8 @@ Agents can avoid repeating known failed approaches and can recognize known unkno
 ---
 
 # Phase 3 — Retrieval Fusion
+
+**Status: COMPLETE** — causal retrieval channel + deterministic reciprocal-rank fusion added in src/retrieve.mjs (causalRelevance / causalText, RRF_K = 60 and FUSION_WEIGHT = 0.06 copied from dsh-memory md_cg/mdcos.py, reciprocalRankFusion across the nine §10 signals, sort-only `scores.fusion = composite + 0.06 * rrf`; `scores.composite` stays the plain weighted sum, polarity cap holds on both scores, empty-query pools keep the legacy chain). test/m3-fusion.test.mjs (12 tests). Suite: 492 pass / 0 fail.
 
 Strengthen retrieval with:
 
@@ -1109,6 +1117,8 @@ Retrieval quality improves without requiring unnecessary vector infrastructure.
 
 # Phase 4 — Applicability and Temporal Semantics
 
+**Status: COMPLETE** — §13 temporal validity in src/retrieve.mjs (`temporalBounds` / `temporalState`: canonical `source.temporal` with `valid_from`/`valid_until` read-side aliases copied from dsh-memory `md_cg/nodefile.py:133-138`, unparseable endpoints fail open per `mdcos.py`, states `current` / `not_yet_effective` / `expired`); §12 applicability context auto-captured on the write path in src/learn.mjs (`remember()` stamps `source.context` os/runtime + agent keys; `validFrom`/`validUntil` ride the source bag); `contextCompatibility` compares only keys both sides state, runtime at major-version granularity; both dimensions enter `FUSION_CHANNELS` as sort-only channels (`applicability`, `temporal_validity` — 11 total) plus a query-gated eligibility cap that holds non-eligible `fusion` below the best eligible alternative (`rank_limited` for §11 explainability); `composite` untouched (M11 pin), expired never removed, not_yet_effective never demoted; record views expose `temporal` + `context` (`recordView`, `RECORD_SCHEMA`, `veyra_remember` params in src/tools.mjs). `test/m4-applicability-temporal.test.mjs` (14 tests). Suite: 506 pass / 0 fail.
+
 Implement contextual applicability and temporal validity.
 
 ### Exit Criteria
@@ -1124,6 +1134,8 @@ Is it still valid?
 ---
 
 # Phase 5 — Causal and Provenance Strengthening
+
+**Status: COMPLETE** — §14 causal quality multiplier in `src/retrieve.mjs` (`causalRelevance`: `quality = 0.5 + 0.3*verified + 0.2*(documented/3)` where documented = non-empty [symptom, rootCause, remedy] — verified+complete chains score ×1.0 so legacy behavior stays byte-identical, fragments/unverified degrade smoothly but never to 0; participates only through the causal/RRF channel, `scores.composite` untouched); §15 attribution dimensions in `src/ids.mjs` (`provenanceDimensions`: workspace / repository / remote / agent via `findGitRoot` + `readGitRemote`) stamped into `source.provenance` **beside** `origins` on the capture path (`distillBuffer` / `candidateFromBuffer` / plugin turn-stop, cwd-gated so legacy call sites keep the exact `['origins']` shape) and on deliberate writes (`veyra_remember`) — `origins` remain the only M9 gate currency and dimensions never open the automatic-learning gate (provenance ≠ authority); §16 memory provenance chain in `src/context.mjs` (`provenanceChain`: Observation → Evidence → Candidate → Validation → Promotion → Retrieval → Application → Verification → Update/Supersession, read-only over facts the record already persists, honest `unknown` / `not-yet` / `not-tracked` states — Application is never invented: memory is evidence, not instructions) exposed as `payload.chain` + inspect-card render in `veyra_inspect` (`src/tools.mjs`). `test/m5-causal-provenance.test.mjs` (10 tests). Suite: 516 pass / 0 fail.
 
 Strengthen:
 
@@ -1154,6 +1166,8 @@ Recurring engineering problems can reuse verified causal knowledge.
 ---
 
 # Phase 6 — Feedback and Recurrence
+
+**Status: COMPLETE** — §19 feedback loop in `src/feedback.mjs` (`recordFeedback`: success strengthens via the existing observation ladder — obs≥3 + test evidence → verified/high + `promotion-candidate` tag, obs≥2 → reviewed/medium; failure records bounded history (`source.feedback.history`, 10 entries, counters never bounded) and demotes validation + confidence one rank each — canonical records get history only, validation/confidence/observations untouched; `causal.verifiedOutcome` is never synthesized or rewritten, authority is never changed) surfaced as **`veyra_feedback`** (`src/tools.mjs`, §19: deliberate agent report of a real application outcome, renders reliability change X→Y); §20 recurring-problem detection in `src/feedback.mjs` (`detectRecurrence`: recurring root cause / recurring symptom / recurring regression / recurring remedy / failed approach / recurring failure, threshold clamped 2–50, `remedyConsistent` + `verifiedRemedy` facets on causal clusters) surfaced as **`veyra_recurrence`** (read-only scan by default; writes only on explicit `autoCandidate=true` and only through the write gate — `recurrenceCandidate` → `writeGate` → derived candidate with DERIVES edges to every incident, `automatic:false`, never canonical; ineligible clusters report but never write). `test/m6-feedback-recurrence.test.mjs` (15 tests) + tool-count guards updated 12→14 (`compatibility`, `dsh-runtime`, `plugin`, `m4-applicability-temporal`). Suite: 531 pass / 0 fail.
 
 Implement:
 

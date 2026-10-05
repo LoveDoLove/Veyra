@@ -20,6 +20,7 @@ import {
 } from './types.mjs'
 import { scrub } from './redact.mjs'
 import { tokenize } from './text.mjs'
+import { provenanceDimensions } from './ids.mjs'
 
 const CLAIM_HINTS = [
   /\b(decided|decision|always|never|must not|must\b|should not|root cause|workaround|fix was|the cause|lesson|constraint|regression)\b/i,
@@ -332,7 +333,7 @@ function tagsFor(signal, files, tools, causal = null) {
  *
  * Never assigns derived/canonical authority.
  */
-export function distillBuffer(buffer, { projectId, sessionId } = {}) {
+export function distillBuffer(buffer, { projectId, sessionId, cwd, agent } = {}) {
   if (!buffer) return null
   const user = (buffer.user || []).join('\n').trim()
   const assistant = (buffer.assistant || []).join('\n').trim()
@@ -412,7 +413,10 @@ export function distillBuffer(buffer, { projectId, sessionId } = {}) {
     source: {
       sessionId: sessionId || null,
       turn: buffer.turn,
-      provenance: { origins },
+      // §15 — origins stay the canonical capture-stream bag; workspace/
+      // repository/agent dimensions stamp only when a cwd was supplied,
+      // so legacy call sites stay byte-identical (unknown stays unknown).
+      provenance: { origins, ...(cwd ? provenanceDimensions(cwd, agent) : {}) },
       tools: tools.map((t) => t.name),
       files,
       symbols,

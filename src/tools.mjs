@@ -1,12 +1,16 @@
 /**
  * Veyra — DSH tools.
  *
- * Five model-facing tools:
+ * Seven model-facing tools:
  *   veyra_remember  — keep durable engineering knowledge or RAG knowledge
  *   veyra_recall    — unified hybrid search beyond automatic context
  *   veyra_inspect   — read one record with deep provenance, causal facets, relations
  *   veyra_forget    — soft-forget a record
  *   veyra_promote   — change standing; canonical requires explicit=true
+ *   veyra_feedback  — §19: report a real application outcome; success strengthens,
+ *                     failure records history and decreases reliability
+ *   veyra_recurrence — §20: detect recurring root cause/symptom/failed approach,
+ *                     optionally gate a remedy-consistent cluster into a candidate
  *
  * Registered through `@deepseek-ai/dsh-tools` `defineTool` when the peer
  * is available. Falls back to a duck-typed definition so unit tests and
@@ -24,10 +28,12 @@
  */
 
 import { AUTHORITIES, CONFIDENCES, KINDS, SCOPES, VALIDATIONS, VALID_AUTHORITIES, VALID_CONFIDENCES, VALID_KINDS, VALID_SCOPES } from './types.mjs'
-import { projectIdFor, resolveWorkspace } from './ids.mjs'
+import { projectIdFor, provenanceDimensions, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
-import { inspect, recall, summarizeForPrompt } from './retrieve.mjs'
+import { inspect, recall, summarizeForPrompt, temporalState } from './retrieve.mjs'
+import { provenanceChain } from './context.mjs'
 import { promote, remember } from './learn.mjs'
+import { detectRecurrence, eligibleForCandidate, recordFeedback, recurrenceCandidate } from './feedback.mjs'
 import { CodeIntelligenceEngine } from './code/engine.mjs'
 import { FRESHNESS_STATUS } from './code/types.mjs'
 import { checkRecordFreshness } from './code/linking.mjs'
@@ -135,9 +141,16 @@ function recordView(record) {
     relations: record.relations || [],
     source: record.source || {},
     scores: record.scores || {},
+    // Phase 4 §11/§13 — "still valid?" and "applicable here?" answered
+    // straight from the view: validity state on the temporal axis plus
+    // the context captured when the memory was written.
+    temporal: temporalState(record),
+    context: record.source?.context ?? null,
     contradictions: record.contradictions || [],
     contradictionBanners: record.contradictionBanners || [],
     via: record.via || undefined,
+    negativeCoverage: record.negativeCoverage || undefined,
+    negLayer: record.negLayer || undefined,
     forgotten: Boolean(record.forgotten),
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -162,6 +175,16 @@ const RECORD_SCHEMA = {
     relations: { type: 'array', items: { type: 'object', additionalProperties: true } },
     source: { type: 'object', additionalProperties: true },
     scores: { type: 'object', additionalProperties: true },
+    temporal: {
+      type: 'string',
+      enum: ['current', 'not_yet_effective', 'expired'],
+      description: '§13 validity state derived from source.temporal (validFrom/validUntil).',
+    },
+    context: {
+      type: 'object',
+      additionalProperties: true,
+      description: '§12 applicability context captured at write time (os, runtime, agent-supplied keys).',
+    },
   },
 }
 
@@ -177,7 +200,7 @@ export function buildToolDefinitions(runtime) {
       parameters: {
         title: { type: 'string', required: true, description: 'Short title for the memory.' },
         body: { type: 'string', required: true, description: 'The knowledge itself, with enough context to reuse later.' },
-        kind: { type: 'string', enum: [...VALID_KINDS], description: 'observation | memory | knowledge | evidence. Default memory (or knowledge for RAG).' },
+        kind: { type: 'string', enum: [...VALID_KINDS], description: 'observation | memory | knowledge | evidence | negative (known failed approach) | unresolved (known open investigation). Default memory (or knowledge for RAG). negative: title = hypothesis, body = rejection reason. unresolved: title = question, body = known clues.' },
         scope: { type: 'string', enum: [...VALID_SCOPES], description: 'project (default) or reusable.' },
         tags: { type: 'array', items: { type: 'string' }, description: 'Optional short tags.' },
         evidence: {
@@ -186,6 +209,9 @@ export function buildToolDefinitions(runtime) {
           description: 'Optional evidence anchors (path, note, uri).',
         },
         confidence: { type: 'string', enum: [...VALID_CONFIDENCES], description: 'low | medium | high. Default medium.' },
+        validFrom: { type: 'string', description: 'Optional §13 ISO date: when this knowledge takes effect (before that it reads as not_yet_effective, never hidden).' },
+        validUntil: { type: 'string', description: 'Optional §13 ISO date: when this knowledge expires (after that it reads as expired — demoted, never deleted).' },
+        context: { type: 'object', additionalProperties: true, description: 'Optional §12 applicability context (toolchain, version, taskType, …). os/runtime are auto-captured; supplied keys win.' },
       },
       output: {
         schema: {
@@ -208,7 +234,7 @@ export function buildToolDefinitions(runtime) {
       },
       execute(args, exec) {
         const scope = args.scope === SCOPES.REUSABLE ? SCOPES.REUSABLE : SCOPES.PROJECT
-        const { store, projectId } = storesFor(runtime, exec, scope)
+        const { store, projectId, cwd } = storesFor(runtime, exec, scope)
         const written = remember(store, {
           title: args.title,
           body: args.body,
@@ -218,10 +244,18 @@ export function buildToolDefinitions(runtime) {
           tags: args.tags,
           evidence: args.evidence,
           confidence: args.confidence,
+          validFrom: args.validFrom,
+          validUntil: args.validUntil,
+          context: args.context,
           source: {
             sessionId: exec?.agent?.session?.id || null,
             tool: 'veyra_remember',
             automatic: false,
+            // §15 — attribution dimensions (workspace/repository/agent).
+            // `origins` stays absent on deliberate writes: capture-stream
+            // provenance is never fabricated, so the M9 learning gate
+            // reads exactly as before (provenance ≠ authority).
+            provenance: provenanceDimensions(cwd, exec?.agent),
           },
         })
         return {
@@ -245,7 +279,7 @@ export function buildToolDefinitions(runtime) {
         query: { type: 'string', required: true, description: 'What to look for.' },
         limit: { type: 'number', description: 'Max results (default 5, max 20).' },
         include_reusable: { type: 'boolean', description: 'Include cross-project reusable experience. Default true.' },
-        kind: { type: 'string', enum: [...VALID_KINDS], description: 'Optional kind filter: memory | knowledge | evidence | observation. Omit for unified search.' },
+        kind: { type: 'string', enum: [...VALID_KINDS], description: 'Optional kind filter: memory | knowledge | evidence | observation | negative | unresolved. Omit for unified search (known-failed/unresolved then surface only as a bounded zero-score coverage tail).' },
       },
       output: {
         schema: {
@@ -301,6 +335,11 @@ export function buildToolDefinitions(runtime) {
           properties: {
             ok: { type: 'boolean' },
             record: RECORD_SCHEMA,
+            chain: {
+              type: 'array',
+              description: '§16 memory provenance chain — Observation → … → Update/Supersession.',
+              items: { type: 'object', additionalProperties: true },
+            },
           },
         },
         render: (_args, value) => {
@@ -315,6 +354,11 @@ export function buildToolDefinitions(runtime) {
             if (c.verifiedOutcome) lines.push(`Outcome: ${c.verifiedOutcome}`)
           }
           lines.push(r.body)
+          if (value.chain?.length) {
+            lines.push('')
+            lines.push('Provenance chain (§16):')
+            for (const row of value.chain) lines.push(`  ${row.stage}: ${row.state} — ${row.detail}`)
+          }
           return textBlocks(lines.join('\n'))
         },
       },
@@ -322,7 +366,10 @@ export function buildToolDefinitions(runtime) {
         const { projectStore, reusableStore } = storesFor(runtime, exec, SCOPES.PROJECT)
         const record = inspect({ projectStore, reusableStore, id: args.id })
         const payload = { ok: Boolean(record) }
-        if (record) payload.record = recordView(record)
+        if (record) {
+          payload.record = recordView(record)
+          payload.chain = provenanceChain(record)
+        }
         return payload
       },
       presentCall: (args) => ({ card: 'generic', title: 'Inspect', kind: 'read', rawInput: args.id }),
@@ -397,6 +444,126 @@ export function buildToolDefinitions(runtime) {
         return payload
       },
       presentCall: (args) => ({ card: 'generic', title: 'Promote', kind: 'other', rawInput: `${args.id} → ${args.to || 'derived'}` }),
+    },
+    {
+      name: 'veyra_feedback',
+      description:
+        'Report the real-world outcome of APPLYING a Veyra memory (§19 feedback loop). '
+        + 'success = the memory\'s guidance was applied and verified working → the record strengthens '
+        + '(observation ladder, validation/confidence progression). failure = it was applied and did '
+        + 'not work → failure history is recorded and reliability decreases (validation and confidence '
+        + 'demote one step; canonical records keep their validation — only history is recorded). '
+        + 'Memory stays evidence, never instructions; feedback never changes authority.',
+      parameters: {
+        id: { type: 'string', required: true, description: 'Record id that was applied.' },
+        outcome: { type: 'string', enum: ['success', 'failure'], required: true, description: 'success or failure of the application.' },
+        note: { type: 'string', description: 'Short outcome note, e.g. "tests failed: writer timeout".' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            ok: { type: 'boolean' },
+            error: { type: 'string' },
+            record: RECORD_SCHEMA,
+            feedback: { type: 'object', additionalProperties: true },
+            previous: { type: 'object', additionalProperties: true },
+          },
+        },
+        render: (_args, value) => {
+          if (!value.ok) return textBlocks(`Feedback rejected: ${value.error || 'unknown'}`)
+          const fb = value.feedback || {}
+          const base = `Feedback recorded for ${value.record?.id}: ${fb.successes} success / ${fb.failures} failure (reliability ${fb.reliability}).`
+          if (value.previous && (
+            value.previous.validation !== value.record?.validation
+            || value.previous.confidence !== value.record?.confidence
+          )) {
+            return textBlocks(`${base} Reliability decreased: validation ${value.previous.validation} → ${value.record?.validation}, confidence ${value.previous.confidence} → ${value.record?.confidence}.`)
+          }
+          return textBlocks(`${base} validation ${value.record?.validation}, confidence ${value.record?.confidence}.`)
+        },
+      },
+      execute(args, exec) {
+        const { projectStore, reusableStore } = storesFor(runtime, exec, SCOPES.PROJECT)
+        const existing = inspect({ projectStore, reusableStore, id: args.id })
+        if (!existing) return { ok: false, error: 'record not found' }
+        const store = existing.scope === SCOPES.REUSABLE ? reusableStore : projectStore
+        const res = recordFeedback(store, { id: args.id, outcome: args.outcome, note: args.note ?? null })
+        if (!res.ok) return { ok: false, error: res.error }
+        return {
+          ok: true,
+          record: recordView(res.record),
+          feedback: res.feedback,
+          previous: res.previous,
+        }
+      },
+      presentCall: (args) => ({ card: 'generic', title: 'Feedback', kind: 'other', rawInput: `${args.outcome}: ${args.id}` }),
+    },
+    {
+      name: 'veyra_recurrence',
+      description:
+        'Detect recurring engineering failures (§20): the same root cause, symptom, failed approach '
+        + 'or remedy across records, or one record whose applications repeatedly failed. Read-only by '
+        + 'default. With autoCandidate=true, a cluster that shares ONE verified remedy becomes a gated '
+        + 'candidate for stronger engineering knowledge (write gate decides; canonical never automatic).',
+      parameters: {
+        threshold: { type: 'number', description: 'Minimum incidents per pattern (default 3, clamped to 2–50).' },
+        autoCandidate: { type: 'boolean', description: 'Turn an eligible remedy-consistent root-cause cluster into a write-gate candidate. Default false.' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            ok: { type: 'boolean' },
+            threshold: { type: 'number' },
+            findings: { type: 'array', items: { type: 'object', additionalProperties: true } },
+            candidates: { type: 'array', items: { type: 'object', additionalProperties: true } },
+          },
+        },
+        render: (_args, value) => {
+          if (!value.findings?.length) return textBlocks(`No recurring engineering problem detected at threshold ${value.threshold}.`)
+          const lines = value.findings.map((f) => {
+            const extras = []
+            if (f.remedyConsistent) extras.push('one remedy')
+            if (f.verifiedRemedy) extras.push('verified outcome')
+            if (f.failureCount) extras.push(`${f.failureCount} failed applications`)
+            return `  ${f.kind} [${f.count}]: "${f.key}"${extras.length ? ` — ${extras.join(', ')}` : ''}`
+          })
+          const head = `Recurrence scan (§20): ${value.findings.length} pattern(s) at threshold ${value.threshold}.`
+          const cand = (value.candidates || []).length
+            ? value.candidates.map((c) => `  candidate ${c.decision}: ${c.reason}${c.id ? ` → ${c.id}` : ''}`).join('\n')
+            : (value.autoCandidate ? '  no eligible cluster (needs same root cause, one remedy, a verified outcome).' : '')
+          return textBlocks([head, ...lines, ...(cand ? [cand] : [])].join('\n'))
+        },
+      },
+      execute(args, exec) {
+        const { cwd, projectStore, reusableStore } = storesFor(runtime, exec, SCOPES.PROJECT)
+        const threshold = Math.max(2, Math.min(50, Number(args.threshold) || 3))
+        const byId = new Map()
+        for (const r of [...projectStore.list({ limit: 500 }), ...reusableStore.list({ limit: 500 })]) {
+          if (r?.id && !byId.has(r.id)) byId.set(r.id, r)
+        }
+        const findings = detectRecurrence([...byId.values()], { threshold })
+        const candidates = []
+        if (args.autoCandidate === true) {
+          for (const finding of findings.filter(eligibleForCandidate)) {
+            const members = finding.recordIds.map((id) => byId.get(id)).filter(Boolean)
+            const owner = members[0]?.scope === SCOPES.REUSABLE ? reusableStore : projectStore
+            const res = recurrenceCandidate(owner, finding, members, { workspace: cwd })
+            candidates.push({
+              kind: finding.kind,
+              key: finding.key,
+              decision: res.decision,
+              reason: res.reason,
+              ...(res.record?.id ? { id: res.record.id } : {}),
+            })
+          }
+        }
+        return { ok: true, threshold, findings, candidates, autoCandidate: args.autoCandidate === true }
+      },
+      presentCall: (args) => ({ card: 'generic', title: 'Recurrence', kind: 'other', rawInput: `threshold ${args.threshold ?? 3}${args.autoCandidate ? ' + candidate' : ''}` }),
     },
     {
       name: 'cbm_projects',

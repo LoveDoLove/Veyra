@@ -160,8 +160,8 @@ function collectFiles(files, args) {
  *
  * Never returns derived/canonical authority.
  */
-export function candidateFromBuffer(buffer, { projectId, sessionId } = {}) {
-  const distilled = distillBuffer(buffer, { projectId, sessionId })
+export function candidateFromBuffer(buffer, { projectId, sessionId, cwd, agent } = {}) {
+  const distilled = distillBuffer(buffer, { projectId, sessionId, cwd, agent })
   if (!distilled) return null
   const user = (buffer.user || []).join('\n').trim()
   const signal = distilled.source?.signal

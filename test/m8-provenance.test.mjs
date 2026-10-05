@@ -14,7 +14,9 @@
  * Never inferred from: signal, tags, title, files, tool names in metadata,
  * lexical content, similarity, or session/turn context. Canonical order is
  * fixed (user, assistant, tool); there is no "mixed" value. Deliberate
- * `veyra_remember` records carry no provenance. Legacy records read as
+ * `veyra_remember` records never fabricate capture-stream origins — from
+ * Phase 5 §15 they do carry attribution dimensions (workspace / repository
+ * / agent) beside `origins`, which stay absent. Legacy records read as
  * unknown (`provenanceOrigins(...) === null`), never backfilled.
  */
 import { test } from 'node:test'
@@ -195,7 +197,7 @@ test('M8: origins are canonically ordered, frozen vocabulary, never "mixed"', ()
 
 // --------------------------------------- 10. deliberate veyra_remember
 
-test('M8: deliberate veyra_remember records carry no provenance', async () => {
+test('M8: deliberate veyra_remember records carry §15 attribution but never capture origins', async () => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-m8-'))
   try {
     const defs = buildToolDefinitions({ veyraHome: home, fallbackCwd: home })
@@ -208,8 +210,13 @@ test('M8: deliberate veyra_remember records carry no provenance', async () => {
     assert.ok(res?.record, `deliberate write succeeded: ${JSON.stringify(res).slice(0, 200)}`)
     assert.equal(res.record.source.automatic, false)
     assert.equal(res.record.source.tool, 'veyra_remember')
-    assert.equal('provenance' in res.record.source, false, 'deliberate records get NO provenance')
-    assert.equal(provenanceOrigins(res.record.source), null)
+    assert.deepEqual(
+      res.record.source.provenance,
+      { workspace: home, repository: null, remote: null, agent: null },
+      '§15 attribution dimensions stamped; unknown stays unknown (tmp home is not a git repo)',
+    )
+    assert.equal(res.record.source.provenance.origins, undefined, 'capture-stream origins never fabricated on deliberate writes')
+    assert.equal(provenanceOrigins(res.record.source), null, 'M9 gate still reads unknown origins')
   } finally {
     closeAllStores()
     rmSync(home, { recursive: true, force: true })
