@@ -32,6 +32,7 @@ import { CodeIntelligenceEngine } from './code/engine.mjs'
 import { RepositoryWatcher } from './code/watcher.mjs'
 import { findAffectedMemories, buildStaleReviewCandidate } from './code/linking.mjs'
 import { FRESHNESS_STATUS } from './code/types.mjs'
+import { autoStartCodebaseMemory, findExe, getOrCreateClient, createClient, cbmApply } from './code/client.mjs'
 
 export const name = 'veyra'
 export const inject = ['tools']
@@ -156,6 +157,22 @@ export function apply(ctx, config = {}) {
   }
 
   const runtime = createRuntime(ctx, { ...DEFAULT_CONFIG, ...config })
+
+  // Eagerly start codebase-memory-mcp daemon on plugin load unless running inside unit tests
+  const isTest =
+    process.env.NODE_ENV === 'test' ||
+    process.execArgv.includes('--test') ||
+    process.argv.includes('--test') ||
+    process.argv.some((arg) => typeof arg === 'string' && (arg.endsWith('.test.mjs') || arg.endsWith('.test.js')))
+
+  const shouldEagerStart = config.eagerStartCodebaseMemory !== undefined
+    ? Boolean(config.eagerStartCodebaseMemory)
+    : !isTest
+
+  if (shouldEagerStart && runtime.codeEngine?.client?.isAvailable) {
+    autoStartCodebaseMemory(runtime.codeEngine.client, runtime.log)
+  }
+
   const buffers = new WeakMap()
   const watchers = new Map()
 
@@ -412,4 +429,9 @@ export {
   projectIdFor,
   openProjectStore,
   openReusableStore,
+  findExe,
+  getOrCreateClient,
+  createClient,
+  cbmApply,
+  autoStartCodebaseMemory,
 }

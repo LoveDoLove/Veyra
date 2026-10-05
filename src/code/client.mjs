@@ -327,6 +327,21 @@ export class CodebaseMemoryClient {
     return this.callTool('check_index_coverage', { project })
   }
 
+  start() {
+    return this.ensureStarted()
+  }
+
+  dispose() {
+    this.stop()
+    if (sharedClient === this) {
+      sharedClient = null
+    }
+  }
+
+  isRunning() {
+    return Boolean(this.child && !this.child.killed && this.child.exitCode === null)
+  }
+
   stop() {
     this.isDisposed = true
     if (this.child) {
@@ -355,4 +370,61 @@ export function resetSharedCodeClient() {
     sharedClient.stop()
     sharedClient = null
   }
+}
+
+export const findExe = findCodebaseMemoryExe
+export const getOrCreateClient = getOrCreateCodeClient
+
+export function createClient(exePath, opts = {}) {
+  return new CodebaseMemoryClient({ exePath, ...opts })
+}
+
+export function autoStartCodebaseMemory(clientOrOpts = getOrCreateClient(), log = console) {
+  let client, logger
+  if (clientOrOpts && typeof clientOrOpts.start === 'function') {
+    client = clientOrOpts
+    logger = log
+  } else {
+    client = clientOrOpts?.client || getOrCreateClient(clientOrOpts)
+    logger = clientOrOpts?.log || log
+  }
+  if (!client || !client.isAvailable || client.isRunning?.()) return null
+
+  return client
+    .start()
+    .then(() => {
+      const msg = '\x1b[36m[codebase-memory]\x1b[0m 🔍 \x1b[1mcodebase-memory UI is live:\x1b[0m \x1b[32mhttp://localhost:9749/\x1b[0m'
+      if (typeof logger?.info === 'function') logger.info(msg)
+      else if (typeof logger?.log === 'function') logger.log(msg)
+      else console.log(msg)
+    })
+    .catch((err) => {
+      const msg = `[codebase-memory] codebase-memory-mcp failed to start: ${err.message}`
+      if (typeof logger?.warn === 'function') logger.warn(msg)
+      else console.warn(msg)
+    })
+}
+
+export function cbmApply(ctx, opts = {}) {
+  const client = opts.client || getOrCreateClient(opts)
+  if (!client) return null
+
+  ctx.effect?.(() => () => {
+    client.dispose?.()
+    if (sharedClient === client) sharedClient = null
+  })
+
+  const isTest =
+    process.env.NODE_ENV === 'test' ||
+    process.execArgv.includes('--test') ||
+    process.argv.includes('--test') ||
+    process.argv.some((arg) => typeof arg === 'string' && (arg.endsWith('.test.mjs') || arg.endsWith('.test.js')))
+
+  const shouldStart = opts.eagerStart !== undefined ? Boolean(opts.eagerStart) : !isTest
+
+  if (shouldStart && client.isAvailable && !client.isRunning?.()) {
+    autoStartCodebaseMemory(client, ctx.logger?.('codebase-memory') || console)
+  }
+
+  return client
 }

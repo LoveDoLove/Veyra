@@ -371,6 +371,12 @@ export class CodeIntelligenceEngine {
       raw: res.content?.[0]?.text || '',
     }
   }
+
+  dispose() {
+    if (this.client) {
+      this.client.dispose?.() || this.client.stop?.()
+    }
+  }
 }
 
 let sharedEngine = null
@@ -384,6 +390,7 @@ export function getOrCreateCodeEngine(opts = {}) {
 
 export function resetSharedCodeEngine() {
   if (sharedEngine) {
+    sharedEngine.dispose()
     sharedEngine = null
   }
 }
