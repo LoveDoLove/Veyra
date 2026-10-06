@@ -149,7 +149,10 @@ function recordView(record) {
     // straight from the view: validity state on the temporal axis plus
     // the context captured when the memory was written.
     temporal: temporalState(record),
-    context: record.source?.context ?? null,
+    // Omit entirely (|| undefined → stripped by jsonSafe) when absent:
+    // the tool output schema types context as 'object', and JSON null
+    // fails that assertion (RCA: veyra_inspect context:null).
+    context: record.source?.context || undefined,
     contradictions: record.contradictions || [],
     contradictionBanners: record.contradictionBanners || [],
     via: record.via || undefined,

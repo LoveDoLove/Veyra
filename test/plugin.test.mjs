@@ -439,6 +439,100 @@ test('tool failure payloads strictly satisfy output schema validation (no null o
   rmSync(dir, { recursive: true, force: true })
 })
 
+test('records without source.context omit context from tool output (no null schema violation)', async () => {
+  const validate = loadValidateJsonSchemaValue()
+  if (!validate) return
+  const dir = mkdtempSync(join(tmpdir(), 'veyra-no-context-'))
+  const runtime = { veyraHome: dir, fallbackCwd: '/tmp/proj', recallLimit: 5, includeReusable: true }
+  const defs = Object.fromEntries(buildToolDefinitions(runtime).map((d) => [d.name, d]))
+  const harness = createToolHarness(runtime)
+  const exec = { agent: { session: { header: { cwd: '/tmp/proj' } } } }
+
+  // 1. veyra_remember with kind: 'negative' — skips context injection
+  const neg = await harness.call('veyra_remember', {
+    title: 'Negative kind has no context',
+    body: 'This record was written with kind=negative and must not produce context:null.',
+    kind: 'negative',
+  }, exec)
+  assert.equal(neg.ok, true)
+  assert.equal(neg.record.context, undefined, 'context must be omitted, not null')
+  assert.ok(!('context' in neg.record), 'context key must be absent from output')
+  const negViolations = validate(defs.veyra_remember.output.schema, neg)
+  assert.deepEqual(negViolations, [])
+
+  // 2. veyra_inspect on the negative record
+  const inspected = await harness.call('veyra_inspect', { id: neg.record.id }, exec)
+  assert.equal(inspected.ok, true)
+  assert.equal(inspected.record.context, undefined)
+  assert.ok(!('context' in inspected.record))
+  const inspectViolations = validate(defs.veyra_inspect.output.schema, inspected)
+  assert.deepEqual(inspectViolations, [])
+
+  // 3. veyra_recall returning the negative record
+  const recalled = await harness.call('veyra_recall', { query: 'Negative kind has no context' }, exec)
+  assert.equal(recalled.ok, true)
+  const negItem = recalled.items.find((i) => i.id === neg.record.id)
+  assert.ok(negItem, 'negative record must appear in recall results')
+  assert.equal(negItem.context, undefined)
+  assert.ok(!('context' in negItem))
+  const recallViolations = validate(defs.veyra_recall.output.schema, recalled)
+  assert.deepEqual(recallViolations, [])
+
+  // 4. veyra_forget on the negative record
+  const forgot = await harness.call('veyra_forget', { id: neg.record.id }, exec)
+  assert.equal(forgot.ok, true)
+  assert.equal(forgot.record.context, undefined)
+  assert.ok(!('context' in forgot.record))
+  const forgetViolations = validate(defs.veyra_forget.output.schema, forgot)
+  assert.deepEqual(forgetViolations, [])
+
+  // 5. veyra_promote on a fresh negative record
+  const neg2 = await harness.call('veyra_remember', {
+    title: 'Negative kind promote target',
+    body: 'Another negative record for promote schema check.',
+    kind: 'negative',
+  }, exec)
+  assert.equal(neg2.ok, true)
+  const promoted = await harness.call('veyra_promote', { id: neg2.record.id, to: 'derived', explicit: true }, exec)
+  assert.equal(promoted.ok, true)
+  assert.equal(promoted.record.context, undefined)
+  assert.ok(!('context' in promoted.record))
+  const promoteViolations = validate(defs.veyra_promote.output.schema, promoted)
+  assert.deepEqual(promoteViolations, [])
+
+  // 6. veyra_feedback on a fresh negative record
+  const neg3 = await harness.call('veyra_remember', {
+    title: 'Negative kind feedback target',
+    body: 'Another negative record for feedback schema check.',
+    kind: 'negative',
+  }, exec)
+  assert.equal(neg3.ok, true)
+  const feedback = await harness.call('veyra_feedback', { id: neg3.record.id, outcome: 'success' }, exec)
+  assert.equal(feedback.ok, true)
+  assert.equal(feedback.record.context, undefined)
+  assert.ok(!('context' in feedback.record))
+  const feedbackViolations = validate(defs.veyra_feedback.output.schema, feedback)
+  assert.deepEqual(feedbackViolations, [])
+
+  // 7. Normal object context still works (auto-stamped os/runtime + user keys)
+  const normal = await harness.call('veyra_remember', {
+    title: 'Normal record with context',
+    body: 'This record has a normal object context.',
+    kind: 'knowledge',
+    context: { toolchain: 'node', version: '22' },
+  }, exec)
+  assert.equal(normal.ok, true)
+  assert.equal(normal.record.context.toolchain, 'node')
+  assert.equal(normal.record.context.version, '22')
+  assert.equal(typeof normal.record.context.os, 'string')
+  assert.equal(typeof normal.record.context.runtime, 'string')
+  const normalViolations = validate(defs.veyra_remember.output.schema, normal)
+  assert.deepEqual(normalViolations, [])
+
+  closeAllStores()
+  rmSync(dir, { recursive: true, force: true })
+})
+
 function assertLossless(value) {
   assert.deepEqual(JSON.parse(JSON.stringify(value)), value)
 }
