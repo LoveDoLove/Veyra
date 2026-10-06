@@ -18,6 +18,7 @@ const BUNDLED_NAMES = BUNDLED_SKILL_DEFINITIONS.map((def) => def.name)
 test('bundled definitions match the on-disk skills directory convention', () => {
   assert.ok(BUNDLED_NAMES.includes('veyra'))
   assert.ok(BUNDLED_NAMES.includes('legacy-onboarding'))
+  assert.ok(BUNDLED_NAMES.includes('memory-maintenance'))
   for (const name of BUNDLED_NAMES) {
     assert.match(name, /^[a-z0-9]+(?:-[a-z0-9]+)*$/)
     const parsed = parseSkillMarkdown(readFileSync(skillFileFor(name), 'utf8'), name)

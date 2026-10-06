@@ -83,6 +83,21 @@ export const BUNDLED_SKILL_DEFINITIONS = Object.freeze([
       'End-of-session or mid-session memory audits, "did we record that" questions, '
       + "and reconciling this conversation's findings against existing Veyra memory.",
   },
+  {
+    name: 'memory-maintenance',
+    description:
+      'Agent-executable memory maintenance workflow using Veyra\'s existing health '
+      + 'reports and lifecycle commands. Runs health findings, inspects records, '
+      + 'verifies against repository truth, applies lifecycle actions (KEEP / '
+      + 'SUPERSEDE / INVALIDATE / FORGET / TOMBSTONE / REVALIDATE / DEFER), and '
+      + 'reports before/after health changes. Use when the user asks to clean up '
+      + 'memory, maintain engineering knowledge, reconcile stale or contradictory '
+      + 'records, or audit Veyra health.',
+    whenToUse:
+      'Explicit memory maintenance requests, periodic health audits, or when health '
+      + 'findings accumulate (contradictions, stale knowledge, unresolved '
+      + 'investigations, repeated failures, unverified candidates).',
+  },
 ])
 
 export const BUNDLED_SKILLS_DIR = existsSync(join(REPO_ROOT, 'skills'))
