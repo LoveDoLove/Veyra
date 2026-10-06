@@ -26,7 +26,7 @@ import { detectContradictions, verifyEvidenceHealth } from './evolve.mjs'
 import { feedbackStats } from './feedback.mjs'
 import { hasGrounding } from './learn.mjs'
 import { protectionOf } from './lifecycle.mjs'
-import { AUTHORITIES, CONFIDENCES, KINDS, VALIDATIONS } from './types.mjs'
+import { AUTHORITIES, CONFIDENCES, KINDS, STATUSES, VALIDATIONS } from './types.mjs'
 
 const FINDING_LIMIT = 100
 
@@ -73,7 +73,7 @@ export function memoryHealth(records, { workspace = null, failureThreshold = 2 }
     else if (record.validation === VALIDATIONS.UNVERIFIED) categories.unverified += 1
     else if (record.validation === VALIDATIONS.STALE) categories.stale += 1
     else if (record.validation === VALIDATIONS.INVALID) categories.invalid += 1
-    if (contradictingIds.has(record.id)) categories.contradicted += 1
+    if (contradictingIds.has(record.id) && record.status !== STATUSES.SUPERSEDED) categories.contradicted += 1
     if (record.kind === KINDS.UNRESOLVED) categories.unresolved += 1
     if (record.kind === KINDS.NEGATIVE) categories.negative += 1
     if (protectionOf(record).protected) categories.protected += 1
@@ -134,7 +134,7 @@ export function memoryHealth(records, { workspace = null, failureThreshold = 2 }
       const trusted = record.validation === VALIDATIONS.VERIFIED
         || record.validation === VALIDATIONS.REVIEWED
         || record.authority === AUTHORITIES.CANONICAL
-      if (trusted) {
+      if (trusted && record.status !== STATUSES.SUPERSEDED) {
         // Per-record provenance workspace wins: reusable records carry their
         // own repository, and resolving their evidence against this cwd
         // would fabricate "missing" verdicts (same trap as join(ws, abs)).

@@ -52,6 +52,8 @@ function recordText(record) {
   return claimText(record)
 }
 
+export const MIN_CONFLICT_SIM = 0.35
+
 function classify(tokenSim, newText, existingText) {
   const isExtension = newText.length > existingText.length + existingText.length / 4
   const polarityMismatch = hasNegation(newText) !== hasNegation(existingText)
@@ -63,10 +65,10 @@ function classify(tokenSim, newText, existingText) {
     return polarityMismatch ? DIFF.CONFLICT : DIFF.DUPLICATE
   }
 
-  // Semantic signals are read BEFORE the lexical floor. A low token overlap
-  // only proves different wording — it cannot prove irrelevance, and it is
-  // exactly what an explicit replacement looks like.
-  if (polarityMismatch) return DIFF.CONFLICT
+  // Polarities (negation) only signal a conflict when there is a minimum
+  // topical / lexical overlap. Unrelated records with negation must not be
+  // classified as conflicts.
+  if (polarityMismatch && tokenSim >= MIN_CONFLICT_SIM) return DIFF.CONFLICT
   if (replacementNew || replacementExisting) return DIFF.CONFLICT
 
   if (tokenSim < 0.5) return DIFF.ADD

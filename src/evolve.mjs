@@ -27,7 +27,7 @@
  */
 
 import { existsSync } from 'node:fs'
-import { isAbsolute, join } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import { AUTHORITIES, RELATIONS, STATUSES, VALIDATIONS } from './types.mjs'
 import { DIFF, diffMemory, replacementEvidence, sharesSubject, strongestMatch } from './diff.mjs'
 
@@ -234,43 +234,102 @@ export function evolveAgainst(store, incoming, existing = []) {
   }
 }
 
+export function stripLineSuffix(p) {
+  if (typeof p !== 'string') return ''
+  return p.replace(/(?::\d+(?:-\d+)?|#L?\d+(?:-L?\d+)?|:L\d+(?:-L?\d+)?)$/, '')
+}
+
+export function isTemporaryPath(p, workspace) {
+  if (typeof p !== 'string') return false
+  const clean = stripLineSuffix(p)
+  const norm = clean.replace(/\\/g, '/')
+  if (
+    norm.startsWith('/tmp/')
+    || norm.startsWith('/var/tmp/')
+    || norm.startsWith('/private/tmp/')
+    || norm.startsWith('tmp/')
+  ) {
+    if (workspace) {
+      const resolvedWs = resolve(workspace)
+      const resolvedPath = resolve(isAbsolute(clean) ? clean : join(workspace, clean))
+      if (resolvedPath.startsWith(resolvedWs + '/') || resolvedPath === resolvedWs) {
+        return false
+      }
+    }
+    return true
+  }
+  return false
+}
+
 /**
  * Verify whether file evidence still exists in the local workspace.
  * Helps prevent deleted/renamed file references from misleading the agent.
  */
 export function verifyEvidenceHealth(record, workspace) {
   if (!workspace || !record || !Array.isArray(record.evidence) || record.evidence.length === 0) {
-    return { status: 'unknown', missingPaths: [], existingPaths: [] }
+    return { status: 'unknown', missingPaths: [], existingPaths: [], missingTempPaths: [], existingTempPaths: [] }
   }
   const filePaths = record.evidence
     .map((e) => (typeof e === 'string' ? e : e?.path))
     .filter((p) => typeof p === 'string' && p.trim() && !p.startsWith('sym:') && !p.startsWith('note:'))
 
   if (filePaths.length === 0) {
-    return { status: 'unanchored', missingPaths: [], existingPaths: [] }
+    return { status: 'unanchored', missingPaths: [], existingPaths: [], missingTempPaths: [], existingTempPaths: [] }
   }
 
   const existingPaths = []
   const missingPaths = []
+  const existingTempPaths = []
+  const missingTempPaths = []
+  let repoCount = 0
+
   for (const rel of filePaths) {
+    const cleanRel = stripLineSuffix(rel)
+    const isTemp = isTemporaryPath(rel, workspace)
     // An evidence path recorded absolute must be checked as given. `join(ws, abs)`
     // would fabricate '<ws>/<abs>' and report a file that exists as missing,
     // which wrongly marks the record broken (-> stale / outdated proposal).
-    const full = isAbsolute(rel) ? rel : join(workspace, rel)
-    if (existsSync(full)) {
-      existingPaths.push(rel)
+    const full = isAbsolute(cleanRel) ? cleanRel : join(workspace, cleanRel)
+    const exists = existsSync(full)
+
+    if (isTemp) {
+      if (exists) {
+        existingTempPaths.push(rel)
+      } else {
+        missingTempPaths.push(rel)
+      }
     } else {
-      missingPaths.push(rel)
+      repoCount += 1
+      if (exists) {
+        existingPaths.push(rel)
+      } else {
+        missingPaths.push(rel)
+      }
     }
   }
 
-  if (missingPaths.length > 0 && existingPaths.length === 0) {
-    return { status: 'broken', missingPaths, existingPaths }
+  let status
+  if (repoCount > 0) {
+    if (missingPaths.length > 0 && existingPaths.length === 0) {
+      status = 'broken'
+    } else if (missingPaths.length > 0) {
+      status = 'partial'
+    } else {
+      status = 'healthy'
+    }
+  } else {
+    // Only temporary evidence paths were present.
+    // Temporary files must never cause repository evidence to be marked broken or stale.
+    status = missingTempPaths.length > 0 ? 'temporary' : 'healthy'
   }
-  if (missingPaths.length > 0) {
-    return { status: 'partial', missingPaths, existingPaths }
+
+  return {
+    status,
+    missingPaths,
+    existingPaths,
+    missingTempPaths,
+    existingTempPaths,
   }
-  return { status: 'healthy', missingPaths, existingPaths }
 }
 
 /**
@@ -407,10 +466,22 @@ export function detectContradictions(records) {
   const contradictingIds = new Set()
   const seen = new Set()
   for (const rec of records) {
+    if (rec.status === STATUSES.SUPERSEDED) continue
     for (const rel of rec.relations || []) {
       if (rel.type !== RELATIONS.CONTRADICTS) continue
       const other = byId.get(rel.targetId)
       if (!other || other.id === rec.id) continue
+      if (other.status === STATUSES.SUPERSEDED) continue
+
+      // Explicit evolution relation (supersedes) between this pair
+      // means the contradiction has evolved/been resolved; do not treat as an active contradiction.
+      const hasEvolution = (rec.relations || []).some(
+        (r) => r.type === RELATIONS.SUPERSEDES && r.targetId === other.id,
+      ) || (other.relations || []).some(
+        (r) => r.type === RELATIONS.SUPERSEDES && r.targetId === rec.id,
+      )
+      if (hasEvolution) continue
+
       const key = [rec.id, other.id].sort().join(':::')
       if (seen.has(key)) continue
       seen.add(key)
