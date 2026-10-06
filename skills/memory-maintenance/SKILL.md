@@ -30,6 +30,15 @@ recall, and project isolation. Never reimplement any of that here.
 
 `Health → Inspect → Verify → Apply → Re-check → Report`
 
+### 0. Safety limits and budget
+
+To prevent excessive cleaning, runaway deletions, and destructive cascades:
+
+- **Per-run safety limit**: At most **10 records** may receive lifecycle actions (`FORGET`, `INVALIDATE`, `SUPERSEDE`, `TOMBSTONE`) in a single maintenance run.
+- **Stop immediately upon reaching limit**: As soon as 10 lifecycle actions are applied, STOP immediately. Do not continue processing remaining findings in this run.
+- **No full-sweep auto-iteration**: Never iterate through all health findings to apply lifecycle actions in a single execution. Select and prioritize at most 10 records per run.
+- **Report remaining findings**: Any unprocessed findings must be reported as deferred for subsequent maintenance runs.
+
 ### 1. Run health
 
 Call `/veyra health` (or `veyra_health`) once at the start. Reports:
@@ -44,14 +53,17 @@ Read-only. Health never mutates records.
 
 ### 2. Inspect findings
 
-For each finding category, inspect specific records with `veyra_inspect(id)` or
-`/veyra observatory record <id>`. Read:
+Before taking ANY destructive lifecycle action (`FORGET`, `INVALIDATE`, `SUPERSEDE`, `TOMBSTONE`), inspect the specific record with `veyra_inspect(id)` or `/veyra observatory record <id>`. Read:
 
 - Full evidence anchors (path, note, uri)
 - Causal facets (root cause, symptom, remedy, outcome)
 - Relations (updates, supersedes, contradicts)
 - Lifecycle history
 - Protection status
+
+**Inspect failure gate**:
+- **Inspect failure → DEFER**: If `veyra_inspect` fails, throws an error, or the record cannot be loaded, the action MUST be `DEFER`. Never take any destructive action on an uninspected record.
+- **No direct database fallback**: Never bypass Veyra tools or commands with direct database access, queries, or raw mutation. If a tool fails, mark the item as `DEFER`.
 
 ### 3. Verify against repository
 
@@ -82,10 +94,13 @@ For each inspected record, pick ONE action:
 | **FORGET** | Conversational noise, agent narration, temporary task state, no long-term engineering value | `/veyra forget <id> <why>` |
 | **TOMBSTONE** | Historical note with zero active relevance, pure archaeology | `/veyra tombstone <id> [override] <why>` |
 | **REVALIDATE** | Evidence unclear but might still be valuable; mark for human review | (mark in report, no auto-action) |
-| **DEFER** | Cannot safely judge without more context or human input | (mark in report, no auto-action) |
+| **DEFER** | Cannot safely judge, inspection fails, tool error, or human input needed | (mark in report, no auto-action) |
 
 **Hard rules**:
 
+- **Per-run safety limit**: At most 10 records may receive lifecycle actions per maintenance run. Stop immediately when reached.
+- **Inspect before action**: Every destructive action requires successful inspection first. If inspection fails, action must be DEFER.
+- **No direct database access**: Never bypass tools with direct database access, manipulation, or queries.
 - **Never auto-delete contradictions** just to lower the health number.
   Contradictions stay visible until ONE is verified false.
 - **Never delete historical engineering knowledge** just because it is old.
@@ -195,6 +210,9 @@ unresolved issues requiring human judgment.
 
 This workflow is **read-verify-apply**. It never:
 
+- Exceeds the per-run safety limit of 10 lifecycle actions
+- Applies destructive actions without inspection or when inspection fails (must DEFER)
+- Bypasses Veyra tools with direct database access or queries
 - Invents new lifecycle states or commands
 - Reimplements health, storage, or recall
 - Auto-merges contradictions

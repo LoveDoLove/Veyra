@@ -12,6 +12,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { parseSkillMarkdown, skillFileFor } from '../src/skills.mjs'
+import { memoryHealth } from '../src/health.mjs'
+import { VALIDATIONS, AUTHORITIES, KINDS, STATUSES } from '../src/types.mjs'
+import { openEphemeralStore } from '../src/store.mjs'
 
 test('memory-maintenance skill frontmatter follows convention', () => {
   const raw = readFileSync(skillFileFor('memory-maintenance'), 'utf8')
@@ -107,4 +110,123 @@ test('memory-maintenance includes concrete examples', () => {
   
   // At least one example must show repository verification
   assert.ok(parsed.content.match(/repository check:|Repository check:/))
+})
+
+test('regression: memory-maintenance enforces per-run safety limit of at most 10 records and halts', () => {
+  const raw = readFileSync(skillFileFor('memory-maintenance'), 'utf8')
+  const parsed = parseSkillMarkdown(raw)
+
+  // 1. Must define per-run safety limit capped at 10 records
+  assert.ok(parsed.content.match(/safety limit.*10|at most.*10 records/i), 'must define 10-record safety limit')
+  // 2. Must require stopping immediately when reaching limit
+  assert.ok(parsed.content.match(/stop immediately/i), 'must require stopping immediately upon reaching limit')
+  // 3. Must forbid full-sweep auto-iteration across all findings
+  assert.ok(parsed.content.match(/no full-sweep|never iterate through all/i), 'must forbid iterating through all findings in one run')
+  // 4. Must report remaining unhandled findings
+  assert.ok(parsed.content.match(/remaining findings|deferred/i), 'must report remaining findings as deferred')
+})
+
+test('regression: inspect failure requires DEFER and forbids destructive action', () => {
+  const raw = readFileSync(skillFileFor('memory-maintenance'), 'utf8')
+  const parsed = parseSkillMarkdown(raw)
+
+  // 1. Inspect failure must yield DEFER
+  assert.ok(parsed.content.match(/inspect.*fail.*DEFER/i), 'inspect failure must mandate DEFER')
+  // 2. No destructive action without inspection
+  assert.ok(parsed.content.match(/no destructive action without|never.*destructive.*uninspected/i), 'must forbid destructive action without inspect')
+})
+
+test('regression: no direct database / raw SQLite fallback when tools fail', () => {
+  const raw = readFileSync(skillFileFor('memory-maintenance'), 'utf8')
+  const parsed = parseSkillMarkdown(raw)
+
+  // 1. Must explicitly forbid bypassing tools with direct database access
+  assert.ok(parsed.content.match(/no direct database|never bypass.*direct database/i), 'must forbid direct database bypass')
+  // 2. Must not touch raw SQLite / SQL directly
+  assert.ok(!parsed.content.match(/DELETE FROM|PRAGMA|sql|sqlite/i), 'must not reference direct SQLite commands')
+})
+
+test('regression: stale calculation in memoryHealth does not count forgotten records', () => {
+  const activeStale = {
+    id: 'vey_active_stale',
+    title: 'Active stale item',
+    body: 'body',
+    validation: VALIDATIONS.STALE,
+    forgotten: false,
+  }
+  const forgottenStale = {
+    id: 'vey_forgotten_stale',
+    title: 'Forgotten stale item',
+    body: 'body',
+    validation: VALIDATIONS.STALE,
+    forgotten: true,
+  }
+
+  const report = memoryHealth([activeStale, forgottenStale])
+  assert.equal(report.scanned, 1, 'only non-forgotten records are scanned')
+  assert.equal(report.categories.stale, 1, 'only active stale records count in stale category')
+  assert.equal(report.findings.staleKnowledge.length, 1, 'only active stale records appear in findings')
+  assert.equal(report.findings.staleKnowledge[0].id, 'vey_active_stale')
+})
+
+test('regression: 200-row health window shift reveals older pre-existing stale records after forgetting newer records', () => {
+  const store = openEphemeralStore()
+
+  try {
+    // 1. Insert 20 older records marked STALE
+    for (let i = 0; i < 20; i++) {
+      store.put({
+        id: `vey_old_stale_${String(i).padStart(3, '0')}`,
+        title: `Old stale record ${i}`,
+        body: 'historical body',
+        kind: KINDS.MEMORY,
+        status: STATUSES.CURRENT,
+        authority: AUTHORITIES.DERIVED,
+        validation: VALIDATIONS.STALE,
+        updatedAt: new Date(1000000000000 + i * 1000).toISOString(),
+      })
+    }
+
+    // 2. Insert 195 newer records with UNVERIFIED (making total 215 active records > 200)
+    for (let i = 0; i < 195; i++) {
+      store.put({
+        id: `vey_new_active_${String(i).padStart(3, '0')}`,
+        title: `New active record ${i}`,
+        body: 'recent body',
+        kind: KINDS.MEMORY,
+        status: STATUSES.CURRENT,
+        authority: AUTHORITIES.DERIVED,
+        validation: VALIDATIONS.UNVERIFIED,
+        updatedAt: new Date(2000000000000 + i * 1000).toISOString(),
+      })
+    }
+
+    assert.equal(store.count(), 215, 'store has 215 active records total')
+
+    // 3. Before maintenance: health checks top 200 newest records (LIMIT 200)
+    const beforeRecords = store.list({ limit: 200 })
+    assert.equal(beforeRecords.length, 200, 'list limit caps at 200')
+    const beforeHealth = memoryHealth(beforeRecords)
+    // The top 200 newest contain 195 newer records + only 5 older stale records
+    assert.equal(beforeHealth.scanned, 200)
+    assert.equal(beforeHealth.findings.staleKnowledge.length, 5, 'only 5 stale records visible in top-200 window')
+
+    // 4. Maintenance forgets 25 newer records
+    for (let i = 0; i < 25; i++) {
+      store.forget(`vey_new_active_${String(i).padStart(3, '0')}`)
+    }
+
+    assert.equal(store.count(), 190, 'active store count drops from 215 to 190')
+
+    // 5. After maintenance: health checks top 200 newest non-forgotten records
+    const afterRecords = store.list({ limit: 200 })
+    assert.equal(afterRecords.length, 190, 'all remaining 190 active records fit in 200 limit')
+    const afterHealth = memoryHealth(afterRecords)
+
+    // Now all 20 older stale records fit in the top-200 window!
+    assert.equal(afterHealth.scanned, 190)
+    assert.equal(afterHealth.findings.staleKnowledge.length, 20, 'all 20 pre-existing stale records now visible')
+  } finally {
+    store.close()
+  }
 })
