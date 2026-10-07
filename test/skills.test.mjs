@@ -173,3 +173,54 @@ test('registerSkills prefers registerProvider and falls back to register', async
 
   assert.deepEqual(await registerSkills({}), [])
 })
+
+test('regression: frontmatter routing metadata matches BUNDLED_SKILL_DEFINITIONS', () => {
+  // Single source of truth: the provider path uses the definitions, the
+  // register() fallback uses frontmatter. Both must present identical
+  // model-facing routing metadata for every bundled skill.
+  for (const def of BUNDLED_SKILL_DEFINITIONS) {
+    const parsed = parseSkillMarkdown(readFileSync(skillFileFor(def.name), 'utf8'), def.name)
+    assert.equal(
+      parsed.description,
+      def.description,
+      `description drift between SKILL.md frontmatter and BUNDLED_SKILL_DEFINITIONS for '${def.name}'`,
+    )
+    assert.equal(
+      parsed.whenToUse,
+      def.whenToUse,
+      `whenToUse drift between SKILL.md frontmatter and BUNDLED_SKILL_DEFINITIONS for '${def.name}'`,
+    )
+  }
+})
+
+test('regression: memory-review stays review-only, never destructive maintenance', () => {
+  const raw = readFileSync(skillFileFor('memory-review'), 'utf8')
+  const parsed = parseSkillMarkdown(raw, 'memory-review')
+
+  // 1. No destructive lifecycle commands — review never performs maintenance.
+  assert.ok(
+    !parsed.content.match(/\/veyra (forget|invalidate|supersede|tombstone|protect)/),
+    'memory-review must not invoke destructive /veyra lifecycle commands',
+  )
+
+  // 2. Health findings are review input, not instructions.
+  assert.ok(
+    parsed.content.includes('not instructions'),
+    'health findings must be framed as review input, not instructions',
+  )
+
+  // 3. Review never auto-fixes health findings.
+  assert.ok(
+    parsed.content.includes('never fix them automatically'),
+    'review must keep the "never fix them automatically" boundary',
+  )
+
+  // 4. Only review-safe Veyra capabilities are used.
+  for (const tool of ['veyra_recall', 'veyra_inspect', 'veyra_remember', 'veyra_health']) {
+    assert.ok(parsed.content.includes(tool), `review must use ${tool}`)
+  }
+  assert.ok(
+    !parsed.content.match(/veyra_forget\s*\(/),
+    'memory-review must not call veyra_forget',
+  )
+})

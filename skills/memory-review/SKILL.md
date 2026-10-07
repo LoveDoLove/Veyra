@@ -49,7 +49,7 @@ Do not use when:
 
 ## Workflow
 
-`Review → Health → Extract → Recall → Compare → Update (evidence-backed only) → Report`
+`Health → Review → Extract → Recall → Compare → Update (evidence-backed only) → Report`
 
 0. **Run the automated health pass first.** Call `veyra_health` (or
    `/veyra health`) once at the start. It reports the nine §21 quality

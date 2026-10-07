@@ -29,16 +29,18 @@ export const BUNDLED_SKILL_DEFINITIONS = Object.freeze([
   {
     name: 'veyra',
     description:
-      'Use Veyra, the engineering-memory brain for this DSH session. Load it when '
-      + 'the user refers to earlier work ("like last time", "what did we decide"), '
-      + 'asks to remember or forget something, wants a lesson, root cause, constraint, '
-      + 'or fix pattern kept, or when the task needs project context this turn does '
-      + 'not already have — even if nobody says "memory". Covers when to call '
-      + 'veyra_remember / veyra_recall / veyra_inspect / veyra_forget / veyra_promote, '
-      + 'how candidate vs derived vs canonical differ, and that repo truth wins.',
+      'Use Veyra, the engineering-memory and RAG intelligence brain for this DSH session. '
+      + 'Load it when the user refers to earlier work ("like last time", "what did we decide"), '
+      + 'asks to remember or forget something, wants a lesson, root cause, constraint, or fix '
+      + 'pattern kept, needs project documentation/knowledge retrieved via hybrid search, or '
+      + 'when the task needs project context this turn does not already have — even if nobody '
+      + 'says "memory". Covers when to call veyra_remember / veyra_recall / veyra_inspect / '
+      + 'veyra_forget / veyra_promote, how candidate vs derived vs canonical differ, causal facets, '
+      + 'and that repo truth wins.',
     whenToUse:
       'Earlier-session context, remember/forget/promote requests, durable engineering '
-      + 'decisions, or when automatic recall is missing or too thin.',
+      + 'decisions, project RAG documentation, causal troubleshooting, or when automatic '
+      + 'recall is missing or too thin.',
   },
   {
     name: 'codebase-memory',
@@ -54,19 +56,20 @@ export const BUNDLED_SKILL_DEFINITIONS = Object.freeze([
   {
     name: 'legacy-onboarding',
     description:
-      'Onboard an unfamiliar, legacy, or not-yet-baselined project into Veyra. Assesses '
-      + 'the existing memory baseline, discovers the repository, chooses a progressive '
-      + 'investigation depth, extracts only durable engineering knowledge grounded in '
-      + 'verifiable evidence, and builds a Project Memory Baseline future agents can '
-      + 'recall. Load it the first time you work in an old or foreign codebase, when '
-      + 'asked "what is this project / how does this work" with no baseline, before '
-      + 'high-risk legacy changes (auth, data, infrastructure, migrations), or when '
-      + 'existing Veyra memory looks stale. Skip for trivial tasks in projects that '
-      + 'already have a good baseline.',
+      'Onboard an unfamiliar, legacy, or not-yet-baselined project into Veyra. '
+      + 'Assesses the existing memory baseline, discovers the repository, chooses a '
+      + 'progressive investigation depth, extracts only durable engineering knowledge '
+      + 'grounded in verifiable evidence, and builds a Project Memory Baseline that '
+      + 'future agents can recall instead of re-investigating. Load it the first time '
+      + 'you work in an old or foreign codebase, when asked "what is this project / '
+      + 'how does this work" with no baseline available, before high-risk legacy '
+      + 'changes (auth, data, infrastructure, migrations), or when existing Veyra '
+      + 'memory looks stale. Skip it for trivial tasks in projects that already have '
+      + 'a good baseline.',
     whenToUse:
-      'First entry into a new, legacy, or unfamiliar project; a missing or stale Veyra '
-      + 'baseline; high-risk changes to old systems; or an explicit request to onboard '
-      + 'an unfamiliar repository.',
+      'First entry into a new, legacy, or unfamiliar project; a missing or stale '
+      + 'Veyra baseline; high-risk changes to old systems; or an explicit request to '
+      + 'understand or onboard an unfamiliar repository.',
   },
   {
     name: 'memory-review',
@@ -94,9 +97,9 @@ export const BUNDLED_SKILL_DEFINITIONS = Object.freeze([
       + 'memory, maintain engineering knowledge, reconcile stale or contradictory '
       + 'records, or audit Veyra health.',
     whenToUse:
-      'Explicit memory maintenance requests, periodic health audits, or when health '
-      + 'findings accumulate (contradictions, stale knowledge, unresolved '
-      + 'investigations, repeated failures, unverified candidates).',
+      'Explicit memory maintenance requests: when the user asks to clean up memory, '
+      + 'maintain engineering knowledge, reconcile stale or contradictory records, or '
+      + 'audit Veyra health.',
   },
 ])
 

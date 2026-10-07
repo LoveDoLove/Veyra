@@ -230,3 +230,36 @@ test('regression: 200-row health window shift reveals older pre-existing stale r
     store.close()
   }
 })
+
+test('regression: maintenance requires explicit user intent; findings never authorize a run', () => {
+  const raw = readFileSync(skillFileFor('memory-maintenance'), 'utf8')
+  const parsed = parseSkillMarkdown(raw, 'memory-maintenance')
+
+  // 1. whenToUse must not auto-trigger on accumulated health findings.
+  assert.ok(
+    !parsed.whenToUse.match(/when health findings accumulate/i),
+    'whenToUse must not trigger maintenance on health findings alone',
+  )
+  assert.ok(parsed.whenToUse, 'whenToUse must exist')
+
+  // 2. Explicit intent gate in the workflow.
+  assert.ok(
+    parsed.content.match(/Begin a maintenance run only for an explicit user\s+maintenance request/),
+    'workflow must gate the run on an explicit user maintenance request',
+  )
+
+  // 3. Health findings — including memory-review findings — are not authorization.
+  assert.ok(
+    parsed.content.match(/are never\s+themselves authorization/),
+    'findings must be stated as never authorization',
+  )
+  assert.ok(
+    parsed.content.includes('findings surfaced by `memory-review`'),
+    'memory-review findings must be explicitly excluded as an auto-trigger',
+  )
+
+  // 4. Existing safety model stays intact.
+  assert.ok(parsed.content.match(/safety limit.*10|at most.*10 records/i), '10-record safety limit kept')
+  assert.ok(parsed.content.match(/stop immediately/i), 'stop-at-limit kept')
+  assert.ok(parsed.content.match(/inspect.*fail.*DEFER/i), 'inspect-failure DEFER gate kept')
+})

@@ -9,9 +9,9 @@ description: >
   memory, maintain engineering knowledge, reconcile stale or contradictory
   records, or audit Veyra health.
 whenToUse: >
-  Explicit memory maintenance requests, periodic health audits, or when health
-  findings accumulate (contradictions, stale knowledge, unresolved
-  investigations, repeated failures, unverified candidates).
+  Explicit memory maintenance requests: when the user asks to clean up memory,
+  maintain engineering knowledge, reconcile stale or contradictory records, or
+  audit Veyra health.
 ---
 
 # Memory Maintenance
@@ -31,6 +31,13 @@ recall, and project isolation. Never reimplement any of that here.
 `Health → Inspect → Verify → Apply → Re-check → Report`
 
 ### 0. Safety limits and budget
+
+**Intent gate.** Begin a maintenance run only for an explicit user
+maintenance request in the current conversation — cleanup, maintenance,
+lifecycle reconciliation, or a health audit the user asked for. Health
+findings — including findings surfaced by `memory-review` — are never
+themselves authorization. Findings never start a run; a user request
+does.
 
 To prevent excessive cleaning, runaway deletions, and destructive cascades:
 
@@ -224,5 +231,5 @@ Repository truth remains authoritative. Veyra settings stay owned by Veyra.
 ## When NOT to use
 
 - Routine work sessions — let automatic observation capture what matters.
-- Single-record updates — call `veyra_remember` or `/veyra invalidate` directly.
+- Single-record updates — after `veyra_inspect` and repository verification, call `veyra_remember` or `/veyra invalidate` as needed.
 - Research or exploration — memory-maintenance is for cleanup, not discovery.
