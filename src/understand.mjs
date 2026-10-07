@@ -255,15 +255,17 @@ function classifySignal(text, causal = null) {
   return 'observation'
 }
 
-function deriveTitle(user, files, tools, signal, causal = null) {
+export function deriveTitle(user, files, tools, signal, causal = null) {
+  // Only use first user line if it looks like an engineering claim (not a progress update)
   const firstLine = String(user || '').split('\n').map((s) => s.trim()).find(Boolean)
-  if (firstLine && firstLine.length >= 12) return firstLine.slice(0, 160)
+  if (firstLine && firstLine.length >= 12 && looksLikeClaim(firstLine)) return firstLine.slice(0, 160)
+  
+  // Genuine causal claims from text — the only reliable engineering titles
   if (causal?.remedy) return `Fix: ${causal.remedy.slice(0, 120)}`
   if (causal?.rootCause) return `Cause: ${causal.rootCause.slice(0, 120)}`
-  const primary = files[0] ? basename(files[0]) : ''
-  if (signal === 'fix' && primary) return `Fix: work on ${primary}`
-  if (files.length) return `Worked on ${files[0]}`
-  if (tools.length) return `Used ${tools[0].name}`
+  
+  // No reliable claim found → neutral, non-misleading fallback
+  // Never generate "Fix: work on X", "Worked on X", "Used X" — those are activity descriptions, not engineering claims
   return 'Engineering observation'
 }
 

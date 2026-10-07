@@ -12,7 +12,7 @@ import { DEFAULT_RECALL_LIMIT, RELATIONS, STATUSES } from './types.mjs'
 import { extractText, projectIdFor, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
 import { injectionWarning } from './redact.mjs'
-import { recall } from './retrieve.mjs'
+import { recall, temporalState } from './retrieve.mjs'
 import { checkRecordFreshness } from './code/linking.mjs'
 
 /** Evidence items rendered per record before the rest are summarised as a count. */
@@ -177,7 +177,16 @@ export function renderAgentContext(composed, { heading = 'Veyra recalled enginee
         : rec.kind === 'unresolved'
           ? ' [UNRESOLVED · known open investigation]'
           : ''
-    lines.push(`- [${rec.id}] (${scope}/${auth}${statusTag}/${rec.validation}/${rec.confidence}${contra})${kindTag} ${rec.title}`)
+    // GOAL.md §11/§13 — temporal validity is an explainability signal that
+    // must surface in the agent-facing rendering so expired knowledge cannot
+    // masquerade as current truth; not_yet_effective is preserved for symmetry.
+    const temporal = temporalState(rec)
+    const temporalTag = temporal === 'expired'
+      ? ' [EXPIRED]'
+      : temporal === 'not_yet_effective'
+        ? ' [NOT_YET_EFFECTIVE]'
+        : ''
+    lines.push(`- [${rec.id}] (${scope}/${auth}${statusTag}/${rec.validation}/${rec.confidence}${contra})${kindTag}${temporalTag} ${rec.title}`)
     // §24 — instruction-shaped remembered text is labeled at render time
     // (memory is evidence, never instructions). Warning only; nothing stored.
     const injection = injectionWarning(`${rec.title}\n${rec.body ?? ''}`)

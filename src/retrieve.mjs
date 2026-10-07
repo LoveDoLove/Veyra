@@ -995,7 +995,15 @@ export function summarizeForPrompt(records, { heading = 'Veyra recalled engineer
         : rec.kind === KINDS.UNRESOLVED
           ? ' [UNRESOLVED · known open investigation]'
           : ''
-    lines.push(`- [${rec.id}] (${scope}/${auth}/${rec.validation}/${rec.confidence}${ev}${contra})${kindTag} ${rec.title}`)
+    // GOAL.md §11/§13 — temporal state rides the agent-facing line so an
+    // expired record never reads as current truth (mirrors context.mjs).
+    const temporal = temporalState(rec)
+    const temporalTag = temporal === 'expired'
+      ? ' [EXPIRED]'
+      : temporal === 'not_yet_effective'
+        ? ' [NOT_YET_EFFECTIVE]'
+        : ''
+    lines.push(`- [${rec.id}] (${scope}/${auth}/${rec.validation}/${rec.confidence}${ev}${contra})${kindTag}${temporalTag} ${rec.title}`)
     // §24 — instruction-shaped remembered text is labeled at render time
     // (memory is evidence, never instructions). Warning only; nothing stored.
     const causalForScan = rec.source?.causal
