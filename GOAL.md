@@ -1,352 +1,205 @@
-# Veyra — Phase 4 Goal
+# Veyra — Phase 5 Goal
 
-## Real Coding-Agent Validation
+## Correctness Hardening After Real-Agent Validation
 
 ### Direction
 
-```text
-AI Coding Agents
-    ↓
-Repository Intelligence
-    ↓
-Change Intelligence
-    ↓
-Trusted Context
-    ↓
-Real Agent Validation
-```
+Phase 4 demonstrated that Veyra's core Change Intelligence → Trusted Context pipeline works in a real DSH runtime.
 
-Phases 1–3 established the technical pipeline:
+Phase 5 is not a feature expansion.
 
-```text
-Repository Change
-    ↓
-Change Signal
-    ↓
-Change Impact
-    ↓
-Trust Classification
-    ↓
-Ambient Agent Context
-```
+It is a focused correctness-hardening phase based on issues discovered during real validation.
 
-Phase 4 validates whether this pipeline provides useful information to a real coding-agent workflow.
+The goal is:
 
-This phase is primarily a **validation phase**, not a feature-expansion phase.
+> **Remove correctness risks that can violate Veyra's existing invariants without changing the architecture or expanding scope.**
 
 ---
 
 # Primary Goal
 
-Demonstrate that Veyra's change-aware context helps a coding agent avoid relying on knowledge that may no longer be trustworthy after a repository change.
+Fix only correctness issues that were demonstrated or directly identified during Phase 4 validation.
 
-The practical question is:
+Priority:
 
-> **When an agent changes code, does Veyra help the agent recognize affected or stale knowledge and verify it before relying on it?**
-
----
-
-# Validation Method
-
-Use the existing Veyra repository and existing coding-agent integration.
-
-Do not create a synthetic architecture solely for testing.
-
-Each scenario should follow:
-
-```text
-Initial Repository State
-        ↓
-Known Veyra Knowledge
-        ↓
-Agent / Code Change
-        ↓
-RepositoryWatcher
-        ↓
-Change Intelligence
-        ↓
-Trust Classification
-        ↓
-Ambient Agent Context
-        ↓
-Agent Decision
-```
-
-The validation should inspect the actual context exposed to the agent.
+1. Project / workspace isolation correctness
+2. Runtime configuration correctness
+3. Regression protection
+4. No behavioral expansion
 
 ---
 
-# Scenario A — Relevant Change
+# Issue 1 — Store Cache Isolation
 
-Create a controlled repository change that affects code referenced by existing Veyra knowledge.
+## Problem
 
-Expected behavior:
+`openProjectStore` currently caches stores using a project-only cache key.
+
+Conceptually:
 
 ```text
-Changed code
-    ↓
-Affected knowledge detected
-    ↓
-Knowledge becomes review_required / stale
-    ↓
-Ambient context exposes the warning
+project:${projectId}
 ```
 
-Verify that:
+This can cause two different Veyra homes in the same process to share the first opened store when they use the same project id.
 
-* the affected knowledge is identified;
-* the trust state is correct;
-* the reason is understandable;
-* the agent can recognize that the knowledge requires verification;
-* canonical memory remains unchanged.
+That violates the intended isolation model.
+
+## Required Behavior
+
+Different Veyra homes must never share a cached store instance merely because they have the same project id.
+
+Conceptually:
+
+```text
+Veyra Home A + Project X
+        ≠
+Veyra Home B + Project X
+```
+
+The cache identity must include the storage/home boundary required by the existing architecture.
+
+Do not redesign storage.
+
+Do not create another database.
+
+Do not change canonical storage.
+
+Make the smallest correct cache-key fix.
 
 ---
 
-# Scenario B — Unrelated Change
+# Issue 2 — Runtime `recallLimit`
 
-Make a repository change that is unrelated to existing knowledge.
+## Problem
 
-Expected behavior:
+Phase 4 identified that configured `recallLimit` does not reach the runtime.
+
+A boot configuration such as:
 
 ```text
-Unrelated code change
-    ↓
-Unrelated knowledge remains trusted
+recallLimit: 10
 ```
 
-Verify that:
+currently results in the existing runtime limit instead of the configured value.
 
-* unrelated knowledge is not incorrectly marked stale;
-* no false change impact is reported;
-* ambient context does not introduce unnecessary warnings.
+## Required Behavior
+
+If `recallLimit` is an existing supported configuration field, the configured value must reach the runtime component that consumes it.
+
+Preserve existing defaults when the option is not supplied.
+
+Do not invent new configuration semantics.
+
+Do not change unrelated settings behavior.
 
 ---
 
-# Scenario C — Assumption-Breaking Change
+# Regression Requirements
 
-Create a change that directly invalidates an existing engineering assumption.
+Add focused tests for both issues.
 
-For example:
-
-```text
-Existing knowledge:
-"Component A uses implementation X."
-
-Repository change:
-Component A is changed to implementation Y.
-```
-
-Expected behavior:
-
-```text
-Old assumption
-    ↓
-Repository change
-    ↓
-REVIEW_REQUIRED / STALE
-    ↓
-Agent is warned before relying on old knowledge
-```
-
-Verify that the agent-facing context clearly communicates:
-
-* what knowledge is affected;
-* why it is affected;
-* what action is appropriate.
-
----
-
-# Scenario D — Degraded Code Intelligence
-
-Run an equivalent relevant-change scenario with Code Intelligence unavailable.
-
-Expected behavior:
-
-```text
-Code Intelligence unavailable
-        ↓
-Reduced evidence
-        ↓
-Explicit uncertainty
-```
+## Store Cache
 
 Verify:
 
-* path-based evidence still works where available;
-* symbol/call-graph impact is not fabricated;
-* insufficient evidence is visible;
-* no unsafe trust escalation occurs.
+* same project id + different Veyra homes → different stores;
+* data from Home A cannot appear in Home B;
+* closing/reopening stores preserves expected behavior;
+* existing single-home behavior remains unchanged.
+
+## Recall Limit
+
+Verify:
+
+* configured value reaches runtime;
+* default behavior remains unchanged;
+* configured lower limit is respected;
+* configured higher limit is respected where the existing retrieval contract permits it.
 
 ---
 
-# Scenario E — Canonical Safety
+# Existing Invariants
 
-For every scenario verify:
+All existing Veyra invariants remain mandatory.
+
+Especially:
 
 ```text
-Before Change
-    ↓
-Repository Change
-    ↓
-Agent Context
-    ↓
-After Change
+Project isolation
+Workspace isolation
+Fail-closed scope
+Canonical truth safety
+Validation / authority semantics
 ```
 
-The canonical memory store must remain unchanged unless an explicit existing Veyra write/promotion operation is invoked.
-
-Automatic change-aware context must never modify canonical truth.
-
----
-
-# Agent Evaluation
-
-The validation should evaluate both:
-
-## System Correctness
-
-Whether Veyra correctly reports:
-
-* changed files
-* affected knowledge
-* trust classification
-* reasons
-* degraded state
-* project scope
-
-## Agent Usefulness
-
-Whether a coding agent can reasonably understand:
-
-* which information may be stale;
-* why it may be stale;
-* whether verification is required;
-* which information remains trustworthy.
-
-The context should be useful without requiring the agent to understand Veyra's internal implementation.
-
----
-
-# Evidence
-
-Do not rely only on statements such as:
-
-```text
-"Test passed."
-```
-
-Collect concrete evidence from the actual workflow, such as:
-
-* repository change;
-* emitted change signal;
-* ambient context;
-* trust classification;
-* agent-visible warning;
-* canonical store state before/after;
-* degraded behavior where applicable.
-
-Keep the evidence concise and reproducible.
-
----
-
-# Success Criteria
-
-Phase 4 succeeds when the validation demonstrates:
-
-### 1. Relevant Change Detection
-
-A meaningful code change produces an appropriate change-aware context.
-
-### 2. Trust Awareness
-
-Affected knowledge is clearly marked as requiring review or being stale.
-
-### 3. Unrelated Safety
-
-Unrelated changes do not produce false warnings.
-
-### 4. Agent Comprehension
-
-A coding agent can understand the warning and recognize that verification is required.
-
-### 5. Degraded Safety
-
-Reduced Code Intelligence produces reduced confidence rather than fabricated confidence.
-
-### 6. Canonical Safety
-
-Automatic context generation does not modify canonical memory.
-
-### 7. Isolation
-
-The validation does not expose knowledge from another project/workspace.
-
-### 8. Reproducibility
-
-The scenarios can be repeated with consistent results.
+No fix may weaken these invariants.
 
 ---
 
 # Scope Boundary
 
-This phase must NOT introduce major new functionality.
+Do NOT:
 
-Do not implement:
+* redesign the storage layer;
+* introduce a new database;
+* introduce a cache subsystem;
+* redesign retrieval;
+* change Change Intelligence;
+* change Trust Classification;
+* change RepositoryWatcher;
+* change agent context semantics;
+* add security scanning;
+* add embeddings;
+* add graph infrastructure;
+* upgrade dependencies;
+* modify the portfolio;
+* perform unrelated refactoring.
 
-* new retrieval architecture
-* graph impact engine
-* embeddings
-* vector database
-* security scanner
-* automatic canonicalization
-* automatic promotion
-* new watcher architecture
-* persistent change ledger
-* new agent framework
-* dependency upgrades
-* portfolio changes
-* unrelated refactoring
+Only fix the identified correctness issues and add regression coverage.
 
-If a missing capability prevents validation, document the limitation first.
-
-Only implement a minimal fix when it is clearly required to validate an existing Phase 1–3 requirement.
+If an issue cannot be safely fixed within the existing architecture, document it instead of expanding the architecture.
 
 ---
 
-# Deliverable
+# Verification
 
-Produce a concise validation report containing:
+Run:
 
-1. scenarios executed;
-2. repository changes used;
-3. expected behavior;
-4. observed behavior;
-5. agent-visible context;
-6. canonical store verification;
-7. degraded-mode result;
-8. failures or limitations;
-9. final Phase 4 conclusion.
+1. focused tests for store isolation;
+2. focused tests for recallLimit;
+3. relevant existing regression tests;
+4. complete `npm test`.
 
-Do not claim success without concrete evidence.
+No Phase 4 behavior should regress.
+
+The following must remain true:
+
+```text
+Change Intelligence        → unchanged
+Trust Classification       → unchanged
+Ambient Context            → unchanged
+Canonical Safety           → unchanged
+Project Isolation          → stronger
+```
 
 ---
 
 # Definition of Done
 
-Phase 4 is complete when the real coding-agent workflow demonstrates that:
+Phase 5 is complete when:
 
-```text
-Code Change
-    ↓
-Veyra detects impact
-    ↓
-Veyra evaluates trust
-    ↓
-Agent receives useful context
-    ↓
-Agent can recognize uncertainty
-    ↓
-Canonical truth remains protected
-```
+* Veyra store caching respects the Veyra-home boundary;
+* different homes cannot accidentally share a cached project store;
+* configured `recallLimit` reaches runtime;
+* existing default behavior remains intact;
+* regression tests cover both issues;
+* Phase 1–4 tests continue passing;
+* full test suite passes;
+* no unrelated architecture or feature changes are introduced.
 
-At that point Veyra has demonstrated not only that Change Intelligence works technically, but that it provides meaningful value to coding agents.
+---
+
+# Guiding Principle
+
+> **Do not add more intelligence until the existing intelligence is trustworthy at its boundaries.**
