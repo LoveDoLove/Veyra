@@ -2,7 +2,7 @@
 
 > **Veyra — Engineering Intelligence for Coding Agents**
 
-Veyra is a plugin for [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness) (DSH) that gives your coding agent a persistent, evidence-backed engineering memory **and** a structural code intelligence layer — the Dual-Brain architecture.
+Veyra is a plugin for [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness) (DSH) that gives coding agents **reliable, persistent, change-aware Engineering Memory** — evidence-backed, project-isolated, and checked against the current repository — **plus** an optional structural code intelligence layer: the Dual-Brain architecture.
 
 [![npm](https://img.shields.io/npm/v/@lovedolove/veyra)](https://www.npmjs.com/package/@lovedolove/veyra)
 [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/LoveDoLove/Veyra/blob/main/LICENSE)
@@ -26,11 +26,13 @@ Veyra runs two complementary layers that answer different questions:
 ## What Veyra does
 
 - **Persistent engineering memory.** Every record carries evidence anchors, a validation state (`unverified → reviewed → verified`), an authority level (`candidate → derived → canonical`), and causal facets. Your repository stays authoritative; Veyra never writes into it.
-- **Hybrid search.** One query, several signals: FTS5 BM25 + symbol/path boosts, token-level semantic overlap, intent affinity (why / how / what-changed), and relationship graph cohesion — with a transparent score breakdown.
+- **Hybrid search.** One query, several signals: FTS5 BM25 + symbol/path boosts, token-level semantic overlap, intent affinity (why / how / what-changed), and relationship graph cohesion — with a transparent score breakdown. A `goal` argument steers ranking toward work you are pursuing (a direction, never an authority).
 - **Code Intelligence.** When `codebase-memory-mcp` is installed, seven agent tools give structural call-graph tracing, AST-level symbol search, file/component architecture summaries, and code-grounded search. When it is not installed, Veyra Memory runs normally without interruption.
-- **Memory freshness.** Code Intelligence watches changed files, flags memories whose evidence anchors point to modified or deleted code, and applies retrieval penalties to stale records.
+- **Memory freshness and trust.** Code Intelligence watches changed files, flags memories whose evidence anchors point to modified or deleted code, and applies retrieval penalties to stale records. At read time every recalled record is classified `trusted / review_required / stale / contradicted / insufficient_evidence` with reasons and an action — a projection only; it never writes, and never changes a record's authority or validation.
+- **Change intelligence.** Repository changes reach the agent context automatically — a change summary leads the recall block, with the trust impact of that recall — and `veyra_change_impact` analyzes an explicit set of changed files: affected memories, affected evidence anchors, optional review candidates, per-category summary counts. Candidates are never auto-promoted to canonical.
+- **Health and maintenance.** `veyra_health` and `/veyra health` report memory-health findings read-only; the bundled `memory-maintenance` skill applies lifecycle actions (keep / supersede / invalidate / forget / tombstone / revalidate / defer) only on explicit request, with safety limits and before/after reporting.
 - **Human surfaces.** `/veyra` slash commands, a read-only Knowledge Observatory, and an interactive Network Graph at `/veyra` in DSH Web.
-- **Zero runtime npm dependencies.** The package is pure ESM, ~130 kB packed.
+- **Zero runtime npm dependencies.** The package is pure ESM, ~180 kB packed.
 
 ---
 
@@ -119,7 +121,7 @@ Or set `CBM_EXE=/path/to/codebase-memory-mcp` to point to a pre-existing binary.
 
 ### When the binary is absent
 
-Code Intelligence enters **degraded mode**: all seven `cbm_*` tools and `veyra_code_status` return a structured error with installation guidance. All Veyra Memory tools, Observatory, slash commands, and hybrid search continue working without any interruption.
+Code Intelligence enters **degraded mode**: all six `cbm_*` tools and `veyra_code_status` return a structured error with installation guidance. All Veyra Memory tools, Observatory, slash commands, and hybrid search continue working without any interruption.
 
 ### What Code Intelligence provides
 
@@ -162,6 +164,9 @@ Neither brain replaces the other.
 | Unified RAG | `kind: 'knowledge'` records hold project documentation next to engineering memory; both are searched together. |
 | Causal knowledge | Structured `symptom → rootCause → remedy → verifiedOutcome` facets, contradiction detection, and side-by-side conflict views. |
 | Code freshness | Evidence anchors track files and symbols; changed or deleted files mark memory `POTENTIALLY_STALE` or `INVALID` and apply retrieval penalties. |
+| Change intelligence | Repository watcher changes reach ambient context automatically (change summary + trust impact); `veyra_change_impact` maps changed files to affected memories, affected anchors, and optional review candidates. |
+| Trusted context | Every recalled record is classified `trusted / review_required / stale / contradicted / insufficient_evidence` with reasons and an action — a read-time projection that never writes or changes authority/validation. |
+| Memory health | `veyra_health` / `/veyra health` findings (read-only), plus the `memory-maintenance` skill that applies lifecycle actions on explicit request only. |
 | Knowledge Observatory | Read-only text dashboard: overview, search signals, record inspection, causality, relationships, contradictions, and consolidation proposals. |
 | Network Graph | Host-native SVG page at `/veyra` (overview + 1-hop Local Graph), served by the DSH web server; JSON at `/veyra/graph`, `/veyra/record`, `/veyra/search`. |
 | Settings | `Recall limit` and `Include reusable` in the DSH Settings dialog (Veyra section); changes apply from the next turn, no restart. |
@@ -187,7 +192,12 @@ Neither brain replaces the other.
 | `/veyra recent` | Recent records, including candidates |
 | `/veyra inspect <id>` | Read one record with deep provenance and causal facets |
 | `/veyra forget <id>` | Soft-forget |
+| `/veyra invalidate <id> [reason]` | Mark invalid; reason kept in lifecycle history |
+| `/veyra supersede <id> <replacementId> [why]` | Retire a record in favour of a replacement |
+| `/veyra tombstone <id> [override] [reason]` | Retire to historical (still inspectable) |
+| `/veyra protect <id> [reason]` / `/veyra unprotect <id>` | Guard a memory against forgetting (auditable) |
 | `/veyra promote <id> [derived\|canonical]` | Change standing — **canonical only on explicit user request** |
+| `/veyra health [threshold]` | Memory-health findings — read-only, never mutates records |
 | `/veyra code status` | Code Intelligence index status and memory freshness |
 | `/veyra code index` | Trigger repository reindexing |
 | `/veyra code trace <symbol>` | Trace call graph for a symbol |
@@ -199,7 +209,10 @@ Neither brain replaces the other.
 ## Tools
 
 **Memory tools** (always available):
-`veyra_remember`, `veyra_recall`, `veyra_inspect`, `veyra_forget`, `veyra_promote`
+`veyra_remember`, `veyra_recall`, `veyra_inspect`, `veyra_forget`, `veyra_promote`, `veyra_feedback`, `veyra_recurrence`, `veyra_health`
+
+**Change intelligence** (always available; degrades to path matching without the binary):
+`veyra_change_impact`
 
 **Code Intelligence tools** (require `codebase-memory-mcp` binary; degrade gracefully when absent):
 `cbm_projects`, `cbm_search`, `cbm_snippet`, `cbm_trace`, `cbm_arch`, `cbm_search_code`, `veyra_code_status`
@@ -210,7 +223,7 @@ Load the bundled `veyra` skill for full guidance on when to call each tool and h
 
 ## Skills
 
-Four skills ship inside the package and register automatically (no separate install):
+Five skills ship inside the package and register automatically (no separate install):
 
 | Skill | Use it when |
 | --- | --- |
@@ -218,6 +231,7 @@ Four skills ship inside the package and register automatically (no separate inst
 | `codebase-memory` | You are using Code Intelligence tools (`cbm_*`): when to prefer `cbm_trace` vs. grep, how to navigate from a symbol to its call graph, and how Code Intelligence and Veyra Memory complement each other. |
 | `legacy-onboarding` | First entry into an unfamiliar or legacy repo: baseline assessment, progressive investigation depth, evidence-first extraction, and building a Project Memory Baseline. |
 | `memory-review` | You want to audit this conversation for durable engineering memory: what is already recorded, what is missing, what looks stale or conflicting. |
+| `memory-maintenance` | You explicitly ask to clean up or maintain memory: runs the health findings and lifecycle actions (keep / supersede / invalidate / forget / tombstone / revalidate / defer) with before/after reporting — health findings alone are never authorization. |
 
 ---
 
@@ -314,7 +328,7 @@ Full write-up: [docs/architecture-graph.md](https://github.com/LoveDoLove/Veyra/
 ## Development
 
 ```sh
-npm test               # node --test test/*.test.mjs  (456 tests)
+npm test               # node --test test/*.test.mjs  (755 tests)
 npm run pack:check     # npm pack --dry-run — what would be published
 ```
 
@@ -327,9 +341,10 @@ Publishing is automatic: every push to `main` publishes to npm (patch-bumped fir
 
 | | |
 | --- | --- |
+| Current release | `0.1.51` |
 | Node | `>=22.5.0 <25.0.0` |
 | DSH | `>=0.1.2-rc.1 <0.3.0-0` |
-| Verified on | DSH `0.1.7-rc.2` (plugin boot, tools, `/veyra` + `/veyra/graph`); DSH `0.2.0-rc.1` (real compatibility gate + composed-host-service runtime); CI on Node 22 and 24 |
+| Verified on | DSH `0.1.7-rc.2` (plugin boot, tools, `/veyra` + `/veyra/graph`); DSH `0.2.0-rc.1` (real compatibility gate + composed-host-service runtime); DSH `0.2.0-rc.2` (composed host-service runtime + real `ToolRuntime` tool-output validation against the declared range); CI on Node 22 and 24 |
 | Profiles | Installed per profile (`web`, `tui`, …); Settings section and Network Graph require the web surface |
 | Storage | `node:sqlite` + FTS5, one DB per project under the Veyra home |
 | Code Intelligence | Optional; requires external `codebase-memory-mcp` binary (MIT, DeusData) |

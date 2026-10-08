@@ -11,6 +11,138 @@ versions follow [Semantic Versioning](https://semver.org/) on a pre-1.0 `0.1.x` 
 > version also gets a matching GitHub Release (`vX.Y.Z`) created by the publish
 > workflow.
 
+## [0.1.51] - 2026-10-08
+
+Change intelligence phases 1–4 — trust-classified, change-aware recall —
+plus store-cache isolation hardening.
+
+### Added
+
+- Read-time **trust classification** (`src/trust.mjs`): every record projects
+  `trusted / review_required / stale / contradicted / insufficient_evidence`
+  with reasons and a suggested action. A pure read-time projection — it never
+  writes and never changes a record's authority or validation; candidates can
+  never project as `trusted`; precedence is
+  `contradicted > stale > insufficient_evidence > review_required > trusted`.
+- **`veyra_change_impact` tool**: maps an explicit `changedFiles` list to
+  affected memories, affected evidence anchors, optional review candidates, and
+  per-category summary counts. Without the code-intelligence binary it degrades
+  to direct file-path matching (`degraded: true`) and never fabricates symbol
+  or call-graph evidence.
+- **Change-aware ambient context** (`src/context.mjs`): a repository change
+  summary leads the recall block and every recalled record renders its trust
+  category and action; with no change signal the assembled context stays
+  byte-identical, repeated changes don't accumulate, and the projection fails
+  closed across workspaces.
+- Phase 4 validation harness (`test/phase4-validate.mjs`): standalone, run
+  explicitly (not part of `npm test`) — real DSH host services, real repository
+  edits restored byte-exactly, and store snapshots proving canonical memory is
+  never mutated by the change pipeline.
+
+### Fixed
+
+- `src/store.mjs` cache keys now include the resolved database path
+  (`project:${projectDbPath(veyraHome, projectId)}` and
+  `reusable:${reusableDbPath(veyraHome)}`) instead of the bare project id and
+  the `'reusable'` literal, so the same project id opened under two different
+  Veyra homes can never share a cached store.
+
+Full suite: 755 tests passing.
+
+## [0.1.48] – 0.1.50 - 2026-10-07
+
+Tool-output validation, skill-routing boundaries, and memory-title shape.
+
+### Fixed
+
+- Records without `source.context` omit the `context` key instead of emitting
+  `null`, which DSH's tool-output validator rejects for object-typed fields.
+- Skill routing tightened: bundled skill frontmatter trigger words re-synced
+  with `skills/`, the "when health findings accumulate" trigger removed from
+  `memory-maintenance` (maintenance now gates on explicit user intent — health
+  findings are never authorization), and the `memory-review` workflow order
+  corrected.
+- Activity-shaped memory titles eliminated: `deriveTitle` drops the
+  `Fix: work on X` / `Worked on X` / `Used X` fallbacks, a first-line title must
+  pass a claim gate (minimum length plus claim keywords), and only genuine
+  causal claims get claim-bearing titles — anything else becomes a neutral
+  "Engineering observation". Covered by 23 regression tests.
+
+## [0.1.45] – 0.1.47 - 2026-10-06
+
+False-positive fixes, plus the memory-maintenance skill.
+
+### Added
+
+- Bundled **`memory-maintenance`** skill: applies lifecycle actions (keep /
+  supersede / invalidate / forget / tombstone / revalidate / defer) over the
+  memory-health findings with before/after reporting.
+- Memory-maintenance safety limits enforced by the skill definition itself,
+  with a dedicated test suite.
+
+### Fixed
+
+- False positives in change diffing, evidence health, and contradiction
+  detection (`src/diff.mjs`, `src/evolve.mjs`, `src/health.mjs`), covered by a
+  dedicated regression suite.
+
+## [0.1.42] – 0.1.44 - 2026-10-05
+
+The GOAL-driven memory-lifecycle phases 0–11, and eager Code Intelligence
+startup.
+
+### Added
+
+- Memory-lifecycle phases 0–11: write gate, negative (known-failed) knowledge,
+  retrieval fusion, applicability and temporal validity, causal provenance, and
+  the `veyra_feedback` application loop with recurrence detection (phases 0–6);
+  `veyra_health` memory-health findings and `/veyra health` (phase 7, §21);
+  forgetting with `protect` / `unprotect` (phase 8, §22/§23); safety and
+  reliability hardening — corruption detection, injection warnings, secret
+  scrubbing, fail-closed repair (phase 9, §24/§25); goal-directed retrieval
+  via `veyra_recall`'s
+  `goal` argument (phase 10); and the §30 retrieval benchmark (phase 11).
+- `GOAL.md` rewritten as the dsh-memory capability-integration plan that drove
+  these phases (not published in the npm tarball).
+
+### Changed
+
+- Code Intelligence starts eagerly: the plugin launches the
+  `codebase-memory-mcp` daemon when it loads instead of on the first `cbm_*`
+  call, removing first-use latency; the binary stays optional and every code
+  tool still degrades gracefully without it.
+
+## [0.1.40] – 0.1.41 - 2026-10-02
+
+### Fixed
+
+- Code-intelligence tool results render correctly in the tool output.
+- `veyra_code_status` omits `message` instead of returning `undefined`.
+
+## [0.1.38] – 0.1.39 - 2026-10-01
+
+Dual-Brain — Code Intelligence via `codebase-memory-mcp` — and
+lifecycle-scoped DSH service registrations.
+
+### Added
+
+- **Dual-Brain architecture**: `src/code/` adds a stdio JSON-RPC client,
+  path-confined discovery of the external `codebase-memory-mcp` binary
+  (`CBM_EXE` / `CODEBASE_MEMORY_EXE` / `PATH`) with secret redaction, evidence
+  anchor freshness, dual-brain hybrid retrieval, and a debounced filesystem
+  watcher; seven Code Intelligence tools (six `cbm_*` plus
+  `veyra_code_status`); `/veyra code [status | index | trace | impact]`; the
+  bundled `codebase-memory` skill; `THIRD_PARTY.md`. No binaries ship with the
+  package — when the binary is absent every code tool returns a structured,
+  actionable error and Veyra Memory keeps working.
+
+### Changed
+
+- DSH service registrations and event listeners are bound to the Cordis scope
+  effect, so plugin teardown releases them cleanly.
+- npm publishing switched to Trusted Publishing (OIDC) — CI no longer holds a
+  long-lived npm token.
+
 ## [0.1.37] - 2026-09-29
 
 Veyra Agent Policy — the system-prompt guidance becomes a complete agent

@@ -2,7 +2,7 @@
 
 ## Product Goal
 
-**Give Coding Agents reliable, persistent, change-aware Engineering Memory.**
+**Veyra gives Coding Agents reliable, persistent, change-aware Engineering Memory.**
 
 Veyra is an evidence-backed engineering memory system for coding agents.
 
