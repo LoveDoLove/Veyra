@@ -1,6 +1,6 @@
-# Veyra — Phase 3 Goal
+# Veyra — Phase 4 Goal
 
-## Automatic Change-Aware Context
+## Real Coding-Agent Validation
 
 ### Direction
 
@@ -13,345 +13,340 @@ Change Intelligence
     ↓
 Trusted Context
     ↓
-Automatic Change-Aware Context
+Real Agent Validation
 ```
 
-Phase 1 implemented Change Intelligence.
+Phases 1–3 established the technical pipeline:
 
-Phase 2 implemented Change-Aware Trusted Context.
+```text
+Repository Change
+    ↓
+Change Signal
+    ↓
+Change Impact
+    ↓
+Trust Classification
+    ↓
+Ambient Agent Context
+```
 
-Phase 3 connects the existing repository change signal to the existing agent context injection path.
+Phase 4 validates whether this pipeline provides useful information to a real coding-agent workflow.
 
-The goal is:
-
-> **When the repository changes, Veyra should be able to expose the resulting trust impact to the coding agent context without requiring the agent to manually call `veyra_change_impact`.**
+This phase is primarily a **validation phase**, not a feature-expansion phase.
 
 ---
 
 # Primary Goal
 
-Connect the existing:
+Demonstrate that Veyra's change-aware context helps a coding agent avoid relying on knowledge that may no longer be trustworthy after a repository change.
+
+The practical question is:
+
+> **When an agent changes code, does Veyra help the agent recognize affected or stale knowledge and verify it before relying on it?**
+
+---
+
+# Validation Method
+
+Use the existing Veyra repository and existing coding-agent integration.
+
+Do not create a synthetic architecture solely for testing.
+
+Each scenario should follow:
 
 ```text
-RepositoryWatcher / existing change signal
+Initial Repository State
         ↓
-Change Impact
+Known Veyra Knowledge
+        ↓
+Agent / Code Change
+        ↓
+RepositoryWatcher
+        ↓
+Change Intelligence
         ↓
 Trust Classification
         ↓
 Ambient Agent Context
+        ↓
+Agent Decision
 ```
 
-Do not redesign repository watching.
-
-Do not create a second event system.
-
-Do not create a new background daemon.
-
-Reuse the existing Veyra watcher, lifecycle, context injection, and Change Intelligence primitives.
+The validation should inspect the actual context exposed to the agent.
 
 ---
 
-# Required Behavior
+# Scenario A — Relevant Change
 
-When Veyra receives an existing repository change event:
+Create a controlled repository change that affects code referenced by existing Veyra knowledge.
 
-1. Identify the changed files using the existing change mechanism.
-2. Evaluate the change using existing Change Intelligence.
-3. Classify affected knowledge using existing trust classification.
-4. Make the resulting change-aware context available through the existing ambient context injection path.
-5. Preserve all existing trust and authority rules.
-
-The agent should not need to manually invoke:
+Expected behavior:
 
 ```text
-veyra_change_impact
+Changed code
+    ↓
+Affected knowledge detected
+    ↓
+Knowledge becomes review_required / stale
+    ↓
+Ambient context exposes the warning
 ```
 
-for the ambient context to become change-aware.
+Verify that:
+
+* the affected knowledge is identified;
+* the trust state is correct;
+* the reason is understandable;
+* the agent can recognize that the knowledge requires verification;
+* canonical memory remains unchanged.
 
 ---
 
-# Context Behavior
+# Scenario B — Unrelated Change
 
-Ambient context should clearly distinguish:
+Make a repository change that is unrelated to existing knowledge.
+
+Expected behavior:
 
 ```text
-TRUSTED
-REVIEW_REQUIRED
-STALE
-CONTRADICTED
-INSUFFICIENT_EVIDENCE
+Unrelated code change
+    ↓
+Unrelated knowledge remains trusted
 ```
 
-Only include classifications supported by actual evidence.
+Verify that:
 
-Do not fabricate change impact.
-
-Do not treat absence of change information as evidence that knowledge is current.
-
-When no usable change signal exists, preserve the existing context behavior rather than inventing a change state.
+* unrelated knowledge is not incorrectly marked stale;
+* no false change impact is reported;
+* ambient context does not introduce unnecessary warnings.
 
 ---
 
-# Change State
+# Scenario C — Assumption-Breaking Change
 
-The ambient context may expose a concise change summary such as:
+Create a change that directly invalidates an existing engineering assumption.
+
+For example:
 
 ```text
-Repository changes detected:
-- src/auth/middleware.mjs
+Existing knowledge:
+"Component A uses implementation X."
 
-Knowledge impact:
-- 2 review required
-- 1 stale
-- 5 trusted
+Repository change:
+Component A is changed to implementation Y.
 ```
 
-The exact presentation should follow existing Veyra context conventions.
-
-Do not expose unnecessary internal implementation details.
-
----
-
-# Existing Architecture
-
-Reuse:
-
-* existing `RepositoryWatcher`
-* existing plugin lifecycle
-* existing change events/signals
-* `veyra_change_impact`
-* `classifyRecordTrust`
-* existing freshness logic
-* existing retrieval
-* existing applicability / temporal logic
-* existing authority / validation logic
-* existing context injection
-* existing project isolation
-
-Do not introduce:
-
-* another watcher
-* another event bus
-* another context system
-* another retrieval engine
-* persistent trust state
-* a processing ledger unless strictly required for correctness
-
----
-
-# Canonical Safety
-
-Repository changes may automatically affect **context**.
-
-They must never automatically modify canonical truth.
-
-The following remain forbidden:
+Expected behavior:
 
 ```text
-Change
-  ↓
-Automatic canonical update
+Old assumption
+    ↓
+Repository change
+    ↓
+REVIEW_REQUIRED / STALE
+    ↓
+Agent is warned before relying on old knowledge
 ```
+
+Verify that the agent-facing context clearly communicates:
+
+* what knowledge is affected;
+* why it is affected;
+* what action is appropriate.
+
+---
+
+# Scenario D — Degraded Code Intelligence
+
+Run an equivalent relevant-change scenario with Code Intelligence unavailable.
+
+Expected behavior:
 
 ```text
-Change
-  ↓
-Automatic promotion
+Code Intelligence unavailable
+        ↓
+Reduced evidence
+        ↓
+Explicit uncertainty
 ```
+
+Verify:
+
+* path-based evidence still works where available;
+* symbol/call-graph impact is not fabricated;
+* insufficient evidence is visible;
+* no unsafe trust escalation occurs.
+
+---
+
+# Scenario E — Canonical Safety
+
+For every scenario verify:
 
 ```text
-Change
-  ↓
-Silent rewrite
+Before Change
+    ↓
+Repository Change
+    ↓
+Agent Context
+    ↓
+After Change
 ```
 
-Automatic behavior may only produce:
+The canonical memory store must remain unchanged unless an explicit existing Veyra write/promotion operation is invoked.
+
+Automatic change-aware context must never modify canonical truth.
+
+---
+
+# Agent Evaluation
+
+The validation should evaluate both:
+
+## System Correctness
+
+Whether Veyra correctly reports:
+
+* changed files
+* affected knowledge
+* trust classification
+* reasons
+* degraded state
+* project scope
+
+## Agent Usefulness
+
+Whether a coding agent can reasonably understand:
+
+* which information may be stale;
+* why it may be stale;
+* whether verification is required;
+* which information remains trustworthy.
+
+The context should be useful without requiring the agent to understand Veyra's internal implementation.
+
+---
+
+# Evidence
+
+Do not rely only on statements such as:
 
 ```text
-Change
-  ↓
-Impact
-  ↓
-Trust classification
-  ↓
-Agent context
+"Test passed."
 ```
 
----
+Collect concrete evidence from the actual workflow, such as:
 
-# State Freshness
+* repository change;
+* emitted change signal;
+* ambient context;
+* trust classification;
+* agent-visible warning;
+* canonical store state before/after;
+* degraded behavior where applicable.
 
-Trust classification should remain a read-time projection.
-
-Do not persist trust state merely because a repository changed.
-
-The current repository state must remain authoritative.
-
-If the repository changes again, context should be recalculated using the latest available change information.
-
----
-
-# Degraded Behavior
-
-If Code Intelligence is unavailable:
-
-* preserve existing degraded behavior
-* expose insufficient evidence where appropriate
-* allow safe path-based matching when supported
-* never fabricate symbol or call-graph relationships
-* never claim stronger confidence than the available evidence supports
-
-If the watcher/change signal itself is unavailable:
-
-* Veyra must continue operating normally
-* do not fabricate changed files
-* preserve normal context behavior
+Keep the evidence concise and reproducible.
 
 ---
 
-# Isolation
+# Success Criteria
 
-Change-aware ambient context must remain scoped to the current project/workspace.
+Phase 4 succeeds when the validation demonstrates:
 
-A repository change from Project A must never affect:
+### 1. Relevant Change Detection
 
-* Project B
-* another workspace
-* unrelated repositories
-* unrelated reusable/global knowledge
+A meaningful code change produces an appropriate change-aware context.
 
-unless existing Veyra scope rules explicitly permit it.
+### 2. Trust Awareness
 
-Fail closed when scope cannot be established safely.
+Affected knowledge is clearly marked as requiring review or being stale.
 
----
+### 3. Unrelated Safety
 
-# Tests
+Unrelated changes do not produce false warnings.
 
-Add focused tests for:
+### 4. Agent Comprehension
 
-### 1. Watcher → Context
+A coding agent can understand the warning and recognize that verification is required.
 
-An existing repository change event can reach ambient context.
+### 5. Degraded Safety
 
-### 2. Changed Files
+Reduced Code Intelligence produces reduced confidence rather than fabricated confidence.
 
-Changed files are propagated correctly.
+### 6. Canonical Safety
 
-### 3. Impact
+Automatic context generation does not modify canonical memory.
 
-Affected knowledge is classified using existing Change Intelligence.
+### 7. Isolation
 
-### 4. Trust
+The validation does not expose knowledge from another project/workspace.
 
-Stale/review-required/contradicted knowledge is exposed correctly.
+### 8. Reproducibility
 
-### 5. Unchanged Context
-
-When no change signal exists, existing context behavior remains unchanged.
-
-### 6. Repeated Changes
-
-Repeated processing does not create duplicate state or accumulate stale context.
-
-### 7. Latest Change
-
-A newer repository change replaces or supersedes obsolete ambient change information safely.
-
-### 8. Isolation
-
-Change events cannot leak across projects/workspaces.
-
-### 9. Degraded Code Intelligence
-
-Missing Code Intelligence does not cause fabricated context.
-
-### 10. Canonical Safety
-
-Automatic context propagation never modifies canonical memory.
-
-### 11. Existing Regression Suite
-
-All existing tests continue to pass.
+The scenarios can be repeated with consistent results.
 
 ---
 
 # Scope Boundary
 
-Do NOT implement:
+This phase must NOT introduce major new functionality.
 
-* watcher redesign
-* new event bus
-* background daemon
-* persistent trust-state database
+Do not implement:
+
+* new retrieval architecture
+* graph impact engine
 * embeddings
 * vector database
-* graph database
-* new retrieval engine
-* security scanning
+* security scanner
 * automatic canonicalization
 * automatic promotion
-* agent framework
+* new watcher architecture
+* persistent change ledger
+* new agent framework
 * dependency upgrades
 * portfolio changes
 * unrelated refactoring
 
-Do not expand the tool surface unless the existing architecture genuinely requires it.
+If a missing capability prevents validation, document the limitation first.
 
-`veyra_change_impact` already exists and should remain the explicit/manual inspection interface.
+Only implement a minimal fix when it is clearly required to validate an existing Phase 1–3 requirement.
+
+---
+
+# Deliverable
+
+Produce a concise validation report containing:
+
+1. scenarios executed;
+2. repository changes used;
+3. expected behavior;
+4. observed behavior;
+5. agent-visible context;
+6. canonical store verification;
+7. degraded-mode result;
+8. failures or limitations;
+9. final Phase 4 conclusion.
+
+Do not claim success without concrete evidence.
 
 ---
 
 # Definition of Done
 
-Phase 3 is complete when:
-
-1. Existing repository change signals reach ambient context.
-2. Changed files are propagated correctly.
-3. Existing Change Intelligence evaluates their impact.
-4. Existing trust classification is reflected in ambient context.
-5. The agent no longer needs to manually call `veyra_change_impact` to receive basic change-aware context.
-6. No canonical memory is automatically modified.
-7. No persistent trust state is required.
-8. Existing watcher behavior remains intact.
-9. Project/workspace isolation remains intact.
-10. Degraded behavior remains safe.
-11. Repeated changes do not accumulate incorrect context.
-12. Focused Phase 3 tests pass.
-13. The complete Veyra test suite passes.
-
----
-
-# Success Criterion
-
-The practical question is:
-
-> **When a coding agent changes repository code, can Veyra automatically expose the relevant trust impact in the agent's existing context without changing what Veyra considers canonical truth?**
-
-If yes, Phase 3 is complete.
-
----
-
-# Future Direction
-
-After Phase 3:
+Phase 4 is complete when the real coding-agent workflow demonstrates that:
 
 ```text
-Repository Change
-        ↓
-Automatic Impact
-        ↓
-Automatic Trust Context
-        ↓
-Agent-aware Engineering Intelligence
+Code Change
+    ↓
+Veyra detects impact
+    ↓
+Veyra evaluates trust
+    ↓
+Agent receives useful context
+    ↓
+Agent can recognize uncertainty
+    ↓
+Canonical truth remains protected
 ```
 
-Only after this pipeline is stable should deeper capabilities be considered:
-
-* richer historical change analysis
-* deeper graph impact analysis
-* security risk analysis
-* AI-generated code security
-* research-oriented risk prioritisation
+At that point Veyra has demonstrated not only that Change Intelligence works technically, but that it provides meaningful value to coding agents.
