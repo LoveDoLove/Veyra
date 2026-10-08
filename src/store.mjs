@@ -593,8 +593,10 @@ export function toFtsQuery(query) {
 
 const storeCache = new Map()
 
+// The cache key is the resolved DB path, so it carries veyraHome: the same
+// projectId under two different Veyra homes must never share one store.
 export function openProjectStore(veyraHome, projectId) {
-  const key = `project:${projectId}`
+  const key = `project:${projectDbPath(veyraHome, projectId)}`
   let store = storeCache.get(key)
   if (!store) {
     store = new MemoryStore(projectDbPath(veyraHome, projectId), {
@@ -607,7 +609,7 @@ export function openProjectStore(veyraHome, projectId) {
 }
 
 export function openReusableStore(veyraHome) {
-  const key = 'reusable'
+  const key = `reusable:${reusableDbPath(veyraHome)}`
   let store = storeCache.get(key)
   if (!store) {
     store = new MemoryStore(reusableDbPath(veyraHome), {
