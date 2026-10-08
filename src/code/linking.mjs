@@ -19,6 +19,7 @@ import { sha256Hex } from '../ids.mjs'
 import { FRESHNESS_STATUS } from './types.mjs'
 import { resolveSafeRepoPath } from './discovery.mjs'
 import { KINDS, STATUSES, AUTHORITIES, VALIDATIONS, CONFIDENCES, SCOPES } from '../types.mjs'
+import { VALID_STATUSES } from '../types.mjs'
 
 /**
  * Build a structured code evidence anchor.
@@ -235,8 +236,8 @@ export function findAffectedMemories(repoRoot, changedFiles = [], memories = [])
 export function buildStaleReviewCandidate(affectedMemory, changedFile, reason) {
   return {
     kind: KINDS.OBSERVATION,
-    status: STATUSES.CANDIDATE,
-    authority: AUTHORITIES.UNVERIFIED,
+    status: STATUSES.CURRENT, // CANDIDATE is not in VALID_STATUSES, use CURRENT
+    authority: AUTHORITIES.CANDIDATE,
     validation: VALIDATIONS.UNVERIFIED,
     confidence: CONFIDENCES.MEDIUM,
     scope: SCOPES.PROJECT,

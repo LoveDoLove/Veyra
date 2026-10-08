@@ -19,7 +19,7 @@ import { Config, normalizeRecallLimit } from './config.mjs'
 import { closeAllStores } from './store.mjs'
 import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
-import { GUIDANCE_TEXT, createContextProvider, rememberClaimedPrompt } from './context.mjs'
+import { GUIDANCE_TEXT, createContextProvider, rememberClaimedPrompt, recordRepositoryChange } from './context.mjs'
 import { candidateFromBuffer, newBuffer, observeEvent } from './observe.mjs'
 import { maybeLearn, provenanceAllowsLearning, reviewCandidate, strengthenMemory } from './learn.mjs'
 import { markStale, sweepStale } from './evolve.mjs'
@@ -132,6 +132,9 @@ function createRuntime(ctx, config = {}) {
     fallbackCwd: process.cwd(),
     codeEngine,
     codebaseWatch: config.codebaseWatch !== false,
+    // Phase 3 — in-memory change signal per repo root (latest event replaces
+    // the previous one). Not persisted; a restart simply starts signal-free.
+    changeSignals: new Map(),
     log,
   }
 }
@@ -203,6 +206,17 @@ export function apply(ctx, config = {}) {
             runtime.log?.debug?.(`[veyra] watcher batch error: ${err.message}`)
           }
         },
+      })
+      // Phase 3 — the existing watcher's change signal feeds the ambient
+      // context: latest changeset becomes the workspace's change signal
+      // (replaced, never accumulated), so recall is change-aware without the
+      // agent calling veyra_change_impact. Context only — never a store write.
+      watcher.on('change', (changeset) => {
+        try {
+          recordRepositoryChange(runtime.changeSignals, changeset)
+        } catch (err) {
+          runtime.log?.debug?.(`[veyra] change signal record failed: ${err.message}`)
+        }
       })
       watcher.start()
       watchers.set(cwd, watcher)

@@ -225,7 +225,7 @@ test('§11: record views expose temporal + context; remember schema documents th
   const runtime = { veyraHome: home, fallbackCwd: process.cwd(), codeEngine: new CodeIntelligenceEngine({ exePath: '/nonexistent/bin' }) }
   const defs = buildToolDefinitions(runtime)
   const tools = new Map(defs.map((x) => [x.name, x]))
-  assert.equal(tools.size, 15, 'tool surface stays frozen')
+  assert.equal(tools.size, 16, 'tool surface stays frozen')
 
   // Schema documents the §12/§13 surface on both the input and the view.
   const rememberDef = tools.get('veyra_remember')

@@ -110,8 +110,8 @@ test('findAffectedMemories identifies memories referencing changed files', (t) =
   // Candidate generation invariant: Candidate != Truth
   const candidate = buildStaleReviewCandidate(affected[0], 'src/auth.js', 'file modified')
   assert.equal(candidate.kind, KINDS.OBSERVATION)
-  assert.equal(candidate.authority, AUTHORITIES.UNVERIFIED)
-  assert.equal(candidate.status, STATUSES.CANDIDATE)
+  assert.equal(candidate.authority, AUTHORITIES.CANDIDATE)
+  assert.equal(candidate.status, STATUSES.CURRENT) // CANDIDATE not in VALID_STATUSES
   // Memory itself remains untouched!
   assert.equal(memories[0].authority, AUTHORITIES.CANONICAL)
 })

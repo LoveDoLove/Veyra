@@ -40,7 +40,9 @@ import { detectRecurrence, eligibleForCandidate, recordFeedback, recurrenceCandi
 import { memoryHealth, renderHealth } from './health.mjs'
 import { CodeIntelligenceEngine } from './code/engine.mjs'
 import { FRESHNESS_STATUS } from './code/types.mjs'
-import { checkRecordFreshness } from './code/linking.mjs'
+import { checkRecordFreshness, findAffectedMemories, buildStaleReviewCandidate } from './code/linking.mjs'
+import { classifyRecordTrust, TRUST_CATEGORIES } from './trust.mjs'
+import { annotateContradictions } from './evolve.mjs'
 
 function loadDefineTool() {
   try {
@@ -904,6 +906,285 @@ export function buildToolDefinitions(runtime) {
         }
       },
       presentCall: (args) => ({ card: 'generic', title: 'Code Status', kind: 'read', rawInput: args.repo || '' }),
+    },
+    {
+      name: 'veyra_change_impact',
+      description: 'Analyze the impact of code changes on Veyra engineering memory. Identifies potentially affected knowledge, evaluates freshness, classifies each evaluated record into a trusted-context category (trusted / review_required / stale / contradicted / insufficient_evidence), and generates review candidates without auto-promoting to canonical.',
+      parameters: {
+        changedFiles: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'List of changed file paths (relative to repo root). If omitted, evaluates all memories against current repository state.',
+        },
+        repo: { type: 'string', description: 'Repository root path (defaults to current workspace).' },
+        createCandidates: { type: 'boolean', description: 'Whether to create review candidate observations for affected memories (default: false).' },
+        query: {
+          type: 'string',
+          description: 'Optional retrieval query. When changedFiles are given, retrieval-relevant knowledge is added to the trusted-context classification so unaffected fresh knowledge can be reported as trusted alongside change-affected knowledge.',
+        },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            ok: { type: 'boolean' },
+            repo: { type: 'string' },
+            changedFiles: { type: 'array', items: { type: 'string' } },
+            degraded: { type: 'boolean' },
+            degradedReason: { type: 'string' },
+            affectedMemories: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: true,
+                properties: {
+                  memoryId: { type: 'string' },
+                  title: { type: 'string' },
+                  authority: { type: 'string' },
+                  validation: { type: 'string' },
+                  status: { type: 'string' },
+                  freshness: { type: 'string' },
+                  affectedAnchors: { type: 'array', items: { type: 'string' } },
+                },
+              },
+            },
+            candidatesCreated: { type: 'number' },
+            candidateIds: { type: 'array', items: { type: 'string' } },
+            context: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: true,
+                properties: {
+                  memoryId: { type: 'string' },
+                  title: { type: 'string' },
+                  category: {
+                    type: 'string',
+                    enum: [
+                      TRUST_CATEGORIES.TRUSTED,
+                      TRUST_CATEGORIES.REVIEW_REQUIRED,
+                      TRUST_CATEGORIES.STALE,
+                      TRUST_CATEGORIES.CONTRADICTED,
+                      TRUST_CATEGORIES.INSUFFICIENT_EVIDENCE,
+                    ],
+                  },
+                  reasons: { type: 'array', items: { type: 'string' } },
+                  action: { type: 'string' },
+                  authority: { type: 'string' },
+                  validation: { type: 'string' },
+                  freshness: { type: 'string' },
+                  temporal: { type: 'string' },
+                  affected: { type: 'boolean' },
+                  evidence: { type: 'array', items: { type: 'string' } },
+                },
+              },
+            },
+            summary: {
+              type: 'object',
+              additionalProperties: true,
+              properties: {
+                trusted: { type: 'number' },
+                reviewRequired: { type: 'number' },
+                stale: { type: 'number' },
+                contradicted: { type: 'number' },
+                insufficientEvidence: { type: 'number' },
+              },
+            },
+          },
+        },
+        render: (_args, value) => {
+          if (!value?.ok) return textBlocks(`Change impact analysis failed: ${value?.message || 'unknown error'}`)
+          const lines = [
+            `Change Impact Analysis for ${value.repo}`,
+            `Changed files: ${value.changedFiles.length > 0 ? value.changedFiles.join(', ') : '(all memories evaluated)'}`,
+            `Affected memories: ${value.affectedMemories.length}`,
+            value.degraded ? `⚠️ Degraded: ${value.degradedReason}` : 'Code intelligence: available',
+          ]
+          if (value.affectedMemories.length > 0) {
+            lines.push('\nAffected Memories:')
+            for (const am of value.affectedMemories) {
+              lines.push(`  - [${am.memoryId}] ${am.title} (${am.authority}/${am.validation}) [${am.freshness}]`)
+              if (am.affectedAnchors.length > 0) {
+                lines.push(`    Anchors: ${am.affectedAnchors.join(', ')}`)
+              }
+            }
+          } else {
+            lines.push('\nNo memories directly affected by the changed files.')
+          }
+          if (value.candidatesCreated > 0) {
+            lines.push(`\nCreated ${value.candidatesCreated} review candidate(s): ${value.candidateIds.join(', ')}`)
+          }
+          if (Array.isArray(value.context) && value.context.length > 0) {
+            const s = value.summary || {}
+            lines.push('\nTrusted-context classification:')
+            lines.push(`  trusted: ${s.trusted ?? 0} · review required: ${s.reviewRequired ?? 0} · stale: ${s.stale ?? 0} · contradicted: ${s.contradicted ?? 0} · insufficient evidence: ${s.insufficientEvidence ?? 0}`)
+            const notable = value.context.filter((c) => c.category !== TRUST_CATEGORIES.TRUSTED)
+            for (const c of notable.slice(0, 30)) {
+              lines.push(`  - [${c.memoryId}] ${String(c.category).toUpperCase()}: ${(c.reasons || []).slice(0, 2).join('; ')} (action: ${c.action})`)
+            }
+            if (notable.length > 30) lines.push(`  ... +${notable.length - 30} more`)
+          }
+          return textBlocks(lines.join('\n'))
+        },
+      },
+      async execute(args, exec) {
+        const cwd = resolveWorkspace(exec?.agent) || runtime.fallbackCwd
+        const targetRepo = args.repo || cwd
+        const engine = runtime.codeEngine || new CodeIntelligenceEngine()
+        const projectId = projectIdFor(targetRepo)
+        const projectStore = openProjectStore(runtime.veyraHome, projectId)
+        const memories = projectStore ? projectStore.list({ limit: 500, includeForgotten: false }) : []
+
+        const changedFiles = args.changedFiles && args.changedFiles.length > 0
+          ? args.changedFiles
+          : null
+
+        let affectedMemories = []
+        let degraded = false
+        let degradedReason = null
+
+        if (engine.isDegraded) {
+          degraded = true
+          degradedReason = 'Code intelligence binary unavailable; running in degraded mode. Only direct file-path matching is available.'
+        }
+
+        // If no specific changed files provided, evaluate all memories for freshness
+        if (!changedFiles) {
+          for (const mem of memories) {
+            const f = checkRecordFreshness(mem, targetRepo)
+            if (f.status !== FRESHNESS_STATUS.FRESH) {
+              affectedMemories.push({
+                memoryId: mem.id,
+                title: mem.title,
+                authority: mem.authority,
+                validation: mem.validation,
+                status: mem.status,
+                freshness: f.status,
+                affectedAnchors: f.anchors.map((a) => a.anchor?.path || a.reason).filter(Boolean),
+              })
+            }
+          }
+        } else {
+          // Use existing findAffectedMemories to match changed files against memory anchors
+          const affected = findAffectedMemories(targetRepo, changedFiles, memories)
+          for (const item of affected) {
+            // item has memoryId, title, authority, validation, status, freshness, affectedAnchors, details
+            affectedMemories.push({
+              memoryId: item.memoryId,
+              title: item.title,
+              authority: item.authority,
+              validation: item.validation,
+              status: item.status,
+              freshness: item.freshness,
+              affectedAnchors: item.affectedAnchors.map((a) => a.path).filter(Boolean),
+            })
+          }
+        }
+
+        // Optionally create review candidates
+        let candidatesCreated = 0
+        const candidateIds = []
+        if (args.createCandidates && projectStore && affectedMemories.length > 0) {
+          // We need to get the full memory records for candidate creation
+          for (const am of affectedMemories) {
+            if (am.freshness === FRESHNESS_STATUS.POTENTIALLY_STALE || am.freshness === FRESHNESS_STATUS.INVALID) {
+              const memRecord = projectStore.get(am.memoryId)
+              if (memRecord) {
+                const candidate = buildStaleReviewCandidate(
+                  { memoryId: memRecord.id, title: memRecord.title, authority: memRecord.authority },
+                  am.affectedAnchors[0] || changedFiles?.[0] || 'modified code',
+                  am.freshness,
+                )
+                const result = projectStore.put(candidate)
+                if (result?.record?.id) {
+                  candidatesCreated++
+                  candidateIds.push(result.record.id)
+                }
+              }
+            }
+          }
+        }
+
+        // Phase 2 — change-aware trusted-context classification (read-only).
+        // Classifies the evaluated records into trusted / review_required /
+        // stale / contradicted / insufficient_evidence with reasons. Never
+        // writes: no promotion, no rewrite, no merge, no deletion.
+        const annotated = annotateContradictions(memories)
+        const byId = new Map(annotated.map((r) => [r.id, r]))
+        const affectedIds = new Set(affectedMemories.map((a) => a.memoryId))
+        const selectedIds = []
+        const seenIds = new Set()
+        const select = (id) => {
+          if (id && !seenIds.has(id)) {
+            seenIds.add(id)
+            selectedIds.push(id)
+          }
+        }
+        if (changedFiles) {
+          for (const id of affectedIds) select(id)
+          if (args.query) {
+            const recalled = recall({
+              projectStore,
+              reusableStore: null,
+              query: args.query,
+              limit: 20,
+              includeReusable: false,
+            })
+            for (const r of recalled) select(r.id)
+          }
+        } else {
+          // Phase 1 semantics: without an explicit change list every memory
+          // is evaluated against the current repository state.
+          for (const m of memories) select(m.id)
+        }
+
+        const context = []
+        for (const id of selectedIds) {
+          const rec = byId.get(id) || projectStore.get(id)
+          if (!rec) continue
+          const t = classifyRecordTrust(rec, {
+            workspace: targetRepo,
+            changedFiles: changedFiles || null,
+            degraded,
+          })
+          context.push({
+            memoryId: rec.id,
+            title: rec.title,
+            category: t.category,
+            reasons: t.reasons,
+            action: t.action,
+            authority: t.authority ?? '',
+            validation: t.validation ?? '',
+            freshness: t.freshness || 'unknown',
+            temporal: t.temporal,
+            affected: affectedIds.has(rec.id),
+            evidence: t.evidence,
+          })
+        }
+        const summary = { trusted: 0, reviewRequired: 0, stale: 0, contradicted: 0, insufficientEvidence: 0 }
+        for (const c of context) {
+          if (c.category === TRUST_CATEGORIES.TRUSTED) summary.trusted++
+          else if (c.category === TRUST_CATEGORIES.REVIEW_REQUIRED) summary.reviewRequired++
+          else if (c.category === TRUST_CATEGORIES.STALE) summary.stale++
+          else if (c.category === TRUST_CATEGORIES.CONTRADICTED) summary.contradicted++
+          else summary.insufficientEvidence++
+        }
+
+        return {
+          ok: true,
+          repo: targetRepo,
+          changedFiles: changedFiles || [],
+          degraded,
+          degradedReason,
+          affectedMemories,
+          candidatesCreated,
+          candidateIds,
+          context,
+          summary,
+        }
+      },
+      presentCall: (args) => ({ card: 'generic', title: 'Change Impact', kind: 'read', rawInput: args.changedFiles?.join(', ') || '(full evaluation)' }),
     },
   ]
 }

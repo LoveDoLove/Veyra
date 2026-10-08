@@ -14,6 +14,7 @@ import { openProjectStore, openReusableStore } from './store.mjs'
 import { injectionWarning } from './redact.mjs'
 import { recall, temporalState } from './retrieve.mjs'
 import { checkRecordFreshness } from './code/linking.mjs'
+import { classifyRecordTrust, TRUST_CATEGORIES } from './trust.mjs'
 
 /** Evidence items rendered per record before the rest are summarised as a count. */
 export const CONTEXT_EVIDENCE_LIMIT = 3
@@ -119,7 +120,7 @@ function renderEvidenceItem(item) {
  * column, or table is introduced. This is a read-time projection, not a
  * subsystem.
  */
-export function composeAgentContext(records, { stores = [], workspace = null } = {}) {
+export function composeAgentContext(records, { stores = [], workspace = null, changedFiles = null, degraded = false } = {}) {
   if (!Array.isArray(records) || records.length === 0) return []
   const sup = resolveSupersession(records, stores)
   return records.map((rec) => {
@@ -134,6 +135,20 @@ export function composeAgentContext(records, { stores = [], workspace = null } =
         codeFreshness = checkRecordFreshness(rec, workspace)
       } catch {}
     }
+    // Phase 2 — change-aware trusted-context classification. A read-time
+    // projection over fields the record already persists plus the actual
+    // repository state; it never writes anything.
+    let trust = null
+    try {
+      // Only claim a computed freshness when one was actually attempted; a
+      // missing workspace must read as "unverified", not as "verified null".
+      trust = classifyRecordTrust(rec, {
+        workspace,
+        changedFiles,
+        degraded,
+        ...(workspace ? { freshness: codeFreshness } : {}),
+      })
+    } catch {}
     return {
       record: rec,
       status: rec.status,
@@ -143,6 +158,7 @@ export function composeAgentContext(records, { stores = [], workspace = null } =
       evidence: shown,
       evidenceOverflow: extra > 0 ? extra : 0,
       codeFreshness,
+      trust,
     }
   })
 }
@@ -152,7 +168,7 @@ export function composeAgentContext(records, { stores = [], workspace = null } =
  * nothing that already worked regresses; lifecycle, evidence, and supersession
  * are added as bounded extra lines.
  */
-export function renderAgentContext(composed, { heading = 'Veyra recalled engineering memory' } = {}) {
+export function renderAgentContext(composed, { heading = 'Veyra recalled engineering memory', changes = null } = {}) {
   if (!Array.isArray(composed) || composed.length === 0) return ''
   const lines = [
     heading,
@@ -161,6 +177,9 @@ export function renderAgentContext(composed, { heading = 'Veyra recalled enginee
     'Verify against the current codebase before acting. Similarity is not authority.',
     '',
   ]
+  // Phase 3 — automatic change-aware context: the current change signal (if
+  // any) leads the block, with the trust impact of THIS recall.
+  lines.push(...changeSummaryLines(changes, composed))
   for (const entry of composed) {
     const rec = entry.record
     const statusTag = entry.status && entry.status !== 'current' ? `/${entry.status}` : ''
@@ -196,6 +215,18 @@ export function renderAgentContext(composed, { heading = 'Veyra recalled enginee
       lines.push('  • ⚠️ [CODE EVIDENCE STALE: anchored file was modified]')
     } else if (entry.codeFreshness?.status === 'invalid') {
       lines.push('  • ⚠️ [CODE EVIDENCE INVALID: anchored file missing or symbol unresolvable]')
+    }
+
+    // Phase 2 — agent-facing trust status. Every classified record states its
+    // category and why, so trusted context is distinguishable from
+    // review-required / stale / contradicted / insufficient evidence at a
+    // glance. Hand-built entries without a classification render as before.
+    if (entry.trust) {
+      const t = entry.trust
+      const head = t.category === TRUST_CATEGORIES.TRUSTED
+        ? 'trust: TRUSTED'
+        : `⚠️ trust: ${String(t.category).toUpperCase()}`
+      lines.push(`  • ${head} — ${t.reasons.join('; ')} · action: ${t.action}`)
     }
 
     if (entry.replaces) {
@@ -357,7 +388,86 @@ export function queryFromAssemble(assembleContext) {
   return ''
 }
 
-export function buildRecallContext({ veyraHome, cwd, query = '', limit = DEFAULT_RECALL_LIMIT, includeReusable = true, goal = null }) {
+// ── Phase 3 — automatic change-aware context ────────────────────────────────
+//
+// The existing RepositoryWatcher emits a 'change' event per repository. The
+// runtime keeps ONE in-memory change signal per repo root (latest replaces
+// obsolete — nothing accumulates, nothing is persisted). The context provider
+// looks up the signal for the agent's own workspace and threads the changed
+// files into the existing recall → compose → classify → render path.
+// Fail closed: no signal for this workspace → no change block at all.
+
+/** Bound the per-repo signal and its rendering. */
+const MAX_CHANGE_FILES = 200
+const MAX_RENDER_CHANGES = 20
+
+/** GOAL.md Phase 3 — "Knowledge impact" presentation order. */
+const TRUST_IMPACT_ORDER = [
+  [TRUST_CATEGORIES.REVIEW_REQUIRED, 'review required'],
+  [TRUST_CATEGORIES.STALE, 'stale'],
+  [TRUST_CATEGORIES.CONTRADICTED, 'contradicted'],
+  [TRUST_CATEGORIES.INSUFFICIENT_EVIDENCE, 'insufficient evidence'],
+  [TRUST_CATEGORIES.TRUSTED, 'trusted'],
+]
+
+/**
+ * Record an existing RepositoryWatcher changeset as the CURRENT change signal
+ * for its repo root. The latest changeset replaces the previous one — repeated
+ * or newer changes never accumulate state, and an obsolete change never
+ * lingers next to a newer one. Read-time only: no store is touched.
+ *
+ * @param {Map<string, object>|null} signalMap  runtime.changeSignals
+ * @param {{repoRoot: string, added?: string[], modified?: string[], deleted?: string[]}} changeset
+ * @returns {object|null} the stored signal, or null when nothing usable exists
+ */
+export function recordRepositoryChange(signalMap, changeset) {
+  if (!signalMap || typeof signalMap.set !== 'function') return null
+  if (!changeset || typeof changeset !== 'object') return null
+  const repoRoot = typeof changeset.repoRoot === 'string' ? changeset.repoRoot : ''
+  if (!repoRoot) return null
+  const flat = [
+    ...(Array.isArray(changeset.added) ? changeset.added : []),
+    ...(Array.isArray(changeset.modified) ? changeset.modified : []),
+    ...(Array.isArray(changeset.deleted) ? changeset.deleted : []),
+  ].filter((f) => typeof f === 'string' && f.length > 0)
+  const changedFiles = [...new Set(flat)].slice(0, MAX_CHANGE_FILES)
+  // Never fabricate a change state from an empty changeset.
+  if (changedFiles.length === 0) return null
+  const signal = { repoRoot, changedFiles, timestamp: Date.now() }
+  signalMap.set(repoRoot, signal)
+  return signal
+}
+
+/**
+ * The concise change summary (GOAL.md §Change State): changed files plus a
+ * knowledge-impact tally over whatever the composed entries actually classify.
+ * Counts only entries that carry a trust classification — no signal, no
+ * fabricated impact.
+ */
+function changeSummaryLines(changes, composed) {
+  if (!Array.isArray(changes) || changes.length === 0) return []
+  const lines = ['Repository changes detected:']
+  for (const f of changes.slice(0, MAX_RENDER_CHANGES)) lines.push(`- ${f}`)
+  if (changes.length > MAX_RENDER_CHANGES) {
+    lines.push(`- +${changes.length - MAX_RENDER_CHANGES} more`)
+  }
+  const counts = new Map()
+  for (const entry of composed || []) {
+    const cat = entry?.trust?.category
+    if (cat) counts.set(cat, (counts.get(cat) || 0) + 1)
+  }
+  if (counts.size > 0) {
+    lines.push('Knowledge impact:')
+    for (const [cat, label] of TRUST_IMPACT_ORDER) {
+      const n = counts.get(cat)
+      if (n) lines.push(`- ${n} ${label}`)
+    }
+  }
+  lines.push('')
+  return lines
+}
+
+export function buildRecallContext({ veyraHome, cwd, query = '', limit = DEFAULT_RECALL_LIMIT, includeReusable = true, goal = null, changedFiles = null, degraded = false }) {
   if (limit === 0) return ''
   const workspace = cwd || process.cwd()
   const projectId = projectIdFor(workspace)
@@ -376,19 +486,27 @@ export function buildRecallContext({ veyraHome, cwd, query = '', limit = DEFAULT
     // not silence: an agent has to be able to tell apart "known solution /
     // known failed solution / known unresolved / nothing remembered here".
     // `limit: 0` above stays silent — recall is disabled there.
+    // Phase 3 — a change signal still reaches the agent even when no memory
+    // was recalled (changed files are context, not only an impact verdict).
     return [
       'Veyra recalled engineering memory',
       '',
       'No known engineering history: Veyra has no eligible recall for this query.',
       'Absence of memory is not evidence. Verify against the repository.',
       '',
+      ...changeSummaryLines(changedFiles, []),
     ].join('\n')
   }
   projectStore.touch(records.filter((r) => r.scope !== 'reusable').map((r) => r.id))
   if (reusableStore) reusableStore.touch(records.filter((r) => r.scope === 'reusable').map((r) => r.id))
   // M6 Phase-1: compose the engineering-aware view (lifecycle, evidence,
   // inbound supersession) before rendering. Read-time projection only.
-  return renderAgentContext(composeAgentContext(records, { stores: [projectStore, reusableStore], workspace }))
+  return renderAgentContext(composeAgentContext(records, {
+    stores: [projectStore, reusableStore],
+    workspace,
+    changedFiles,
+    degraded,
+  }), { changes: changedFiles })
 }
 
 export function createContextProvider(runtime) {
@@ -398,12 +516,20 @@ export function createContextProvider(runtime) {
       const cwd = resolveWorkspace(agent) || runtime.fallbackCwd
       runtime.ensureWatcher?.(cwd)
       const query = queryFromAssemble(assembleContext)
+      // Phase 3 — the existing change signal for THIS workspace only. Fail
+      // closed: no signal / foreign workspace → unchanged context behavior.
+      const signal = runtime.changeSignals instanceof Map ? runtime.changeSignals.get(cwd) : null
+      const changedFiles = signal?.changedFiles?.length ? signal.changedFiles : null
       return buildRecallContext({
         veyraHome: runtime.veyraHome,
         cwd,
         query,
         limit: runtime.recallLimit,
         includeReusable: runtime.includeReusable,
+        // Phase 2 — degraded Code Intelligence must stay observable in the
+        // agent-facing context (reduced evidence, never fabricated symbols).
+        degraded: Boolean(runtime.codeEngine?.isDegraded),
+        changedFiles,
       })
     } catch (err) {
       runtime.log?.warn?.(`[veyra] recall context failed: ${err instanceof Error ? err.message : String(err)}`)
