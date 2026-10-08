@@ -1,540 +1,352 @@
-# Veyra — Engineering Goal
+# Veyra — Phase 2 Goal
 
 ## Direction
 
 **AI Coding Agents → Repository Intelligence → Change Intelligence → Trusted Context**
 
-Veyra is an engineering intelligence layer for coding agents.
+Phase 1 established Change Intelligence:
 
-Its purpose is not to become another memory system, code search engine, or autonomous agent framework.
+```text
+Code Change
+    ↓
+Affected Knowledge
+    ↓
+Freshness / Review Signal
+```
 
-Veyra should help coding agents understand:
+Phase 2 connects this capability to agent context.
 
-1. what the repository knows,
-2. what the repository changed,
-3. which knowledge may be affected,
-4. which knowledge is still trustworthy,
-5. what context can safely be provided to the agent.
+The goal is:
 
----
-
-# Current Position
-
-Veyra already provides the foundation for:
-
-* structured memory
-* knowledge and evidence
-* negative and unresolved knowledge
-* validation states
-* authority levels
-* confidence
-* scope and project isolation
-* temporal applicability
-* relations
-* contradiction and supersession
-* FTS5-based retrieval
-* hybrid retrieval signals
-* code intelligence integration
-* graceful degradation
-* DSH integration
-
-The current system can answer questions similar to:
-
-> **"What does this repository know?"**
-
-The next capability must answer:
-
-> **"What changed, and what knowledge might no longer be trustworthy because of that change?"**
+> **When repository code changes, Veyra should help a coding agent distinguish trustworthy context from context that may require review.**
 
 ---
 
 # Primary Goal
 
-## Build Change Intelligence
+Build the smallest production-quality **Change-Aware Trusted Context** capability using the existing Veyra architecture.
 
-Implement the smallest production-quality Change Intelligence capability using the existing Veyra architecture.
-
-The target flow is:
+Target flow:
 
 ```text
-Repository / Code Change
-        ↓
-Change Observation
-        ↓
-Affected Code / Knowledge Detection
-        ↓
-Applicability / Temporal Evaluation
-        ↓
-Potentially Stale / Review-Required Knowledge
-        ↓
-Explicit Change-Impact Result
-        ↓
-Human / Agent Validation
-        ↓
-Canonical update only when existing authority rules permit
-```
-
-The critical rule is:
-
-> **A code change must never automatically become canonical memory.**
-
-Change detection produces evidence and candidates.
-
-It does not bypass Veyra's existing truth, validation, authority, or isolation model.
-
----
-
-# Phase 1 — Change Observation
-
-Veyra must be able to represent a repository/code change using existing primitives where possible.
-
-A change should be represented as an observation or change signal containing enough information to reason about its impact.
-
-At minimum, the system should be able to distinguish:
-
-* changed files
-* changed code areas when available
-* repository/project scope
-* change identity
-* processing state
-
-Do not introduce a second change database.
-
-Do not create a competing graph.
-
-Reuse existing Veyra storage and relation mechanisms.
-
----
-
-# Phase 2 — Change Impact
-
-Given a change, identify potentially affected knowledge.
-
-Use existing:
-
-* code intelligence
-* relations
-* retrieval
-* applicability
-* temporal information
-* project/workspace scope
-* knowledge metadata
-
-The system should be able to produce an explicit result such as:
-
-```text
-Change
-  ↓
-Affected code
-  ↓
-Related knowledge
-  ↓
-Impact assessment
-```
-
-Possible outcomes include:
-
-* unaffected
-* potentially affected
-* stale candidate
-* review required
-* insufficient evidence
-
-The result must remain explainable.
-
-Veyra should be able to show **why** knowledge was considered affected.
-
----
-
-# Phase 3 — Staleness and Review Signals
-
-When a change conflicts with or potentially invalidates existing knowledge:
-
-* do not silently rewrite the knowledge
-* do not silently delete it
-* do not silently promote a new candidate
-* do not silently merge conflicting information
-
-Instead, produce an explicit signal.
-
-For example:
-
-```text
-Knowledge K
+Code Change
     ↓
-Related to changed code
+Change Impact
     ↓
-Current applicability uncertain
+Affected Knowledge
     ↓
-Review required
+Freshness / Authority / Applicability
+    ↓
+Trusted Context Result
+    ↓
+Agent
 ```
 
-Existing validation states and authority levels must remain authoritative.
+The output must help an agent understand:
 
-A change may cause knowledge to become:
-
-* potentially stale
-* review-required
-* contradicted
-* invalid
-
-only through the existing Veyra rules.
+* what knowledge is relevant
+* what knowledge is still trustworthy
+* what knowledge may be stale
+* what knowledge requires review
+* why the knowledge received that status
 
 ---
 
-# Phase 4 — Candidate Updates
+# Core Rule
 
-Change Intelligence may identify candidate updates.
+Change-aware context must **not** create a second truth system.
 
-Examples:
+The existing Veyra rules remain authoritative.
+
+In particular:
 
 ```text
-Existing knowledge:
-"Module A uses Redis for session storage."
-
-Code change:
-Module A session storage implementation changed.
-
-Result:
-Candidate:
-"Module A may no longer use Redis for session storage."
-
-Status:
-Candidate / Unverified
-```
-
-The candidate must not become canonical automatically.
-
-Canonical promotion must continue to require the existing validation and authority rules.
-
----
-
-# Phase 5 — Safe Reprocessing
-
-Processing the same change repeatedly must be safe.
-
-Repeated processing must not create:
-
-* duplicate state
-* duplicate memories
-* silent merges
-* conflicting canonical records
-* unbounded derived records
-
-Change processing should be deterministic or idempotent where practical.
-
-A repository change should have a stable identity when the available source permits it.
-
----
-
-# Core Invariants
-
-All existing Veyra invariants remain mandatory.
-
-## Truth
-
-```text
-Observation ≠ Store
-Candidate ≠ Truth
+Candidate ≠ Canonical
 Similarity ≠ Authority
 Similarity ≠ Applicability
 Historical Memory ≠ Current Truth
 Memory ≠ Executable Instruction
 ```
 
-## Authority
+Change Intelligence may affect context selection.
 
-Automatic processing must never bypass:
+It must not silently promote, rewrite, merge, or delete canonical knowledge.
 
-* validation
-* authority
-* contradiction handling
-* supersession
-* canonical promotion rules
+---
 
-## Repository Authority
+# Phase 2 Capability
 
-Repository truth remains authoritative.
+Extend the existing Change Intelligence result into an explicit trusted-context result.
 
-Memory must not override verified repository evidence.
+For a given repository change and context query, Veyra should be able to classify relevant knowledge into categories such as:
 
-## Isolation
+```text
+TRUSTED
+REVIEW_REQUIRED
+STALE
+CONTRADICTED
+INSUFFICIENT_EVIDENCE
+```
 
-All change intelligence must preserve:
+Use existing validation, authority, applicability, temporal, relation, and freshness information.
 
-* project isolation
-* workspace isolation
-* reusable/global isolation
-* fail-closed behavior
+Do not introduce a new truth model merely to represent these categories.
 
-A change from one project must never affect knowledge belonging to another project.
+If existing enums or result types already express the distinction, reuse them.
 
-## Security
+---
 
-All existing secret-scrubbing and sensitive-data protections remain unchanged.
+# Context Selection
 
-Do not weaken them for change processing.
+The system should prefer knowledge that has stronger evidence and applicability.
 
-## Degradation
+Conceptually:
+
+```text
+Relevant
+    +
+Applicable
+    +
+Fresh
+    +
+Sufficient Authority
+    ↓
+Trusted Context
+```
+
+Knowledge that is relevant but stale or uncertain must remain visible as such.
+
+Do not silently discard uncertainty.
+
+---
+
+# Explainability
+
+Every change-aware context result should provide enough information to understand why a record was included or excluded.
+
+For example:
+
+```text
+Knowledge:
+    K123
+
+Status:
+    REVIEW_REQUIRED
+
+Reason:
+    Related repository file changed
+
+Evidence:
+    file anchor match
+
+Freshness:
+    stale
+
+Authority:
+    canonical
+
+Action:
+    review before relying on this knowledge
+```
+
+The exact output structure should follow existing Veyra conventions.
+
+Do not invent a large new explanation framework.
+
+---
+
+# Existing Retrieval
+
+Reuse the existing retrieval system.
+
+Do not create:
+
+* a second search engine
+* a second ranking system
+* a vector database
+* an embedding pipeline
+
+Use existing retrieval and ranking signals where appropriate.
+
+Change impact should act as an additional trust/context signal rather than replacing retrieval.
+
+---
+
+# Agent Context
+
+The capability should be usable by coding agents through the existing Veyra interface.
+
+Prefer extending existing tools or context injection points over creating a large new tool surface.
+
+If an existing tool can expose the required information safely, extend it rather than creating another overlapping API.
+
+The final agent-facing context must clearly distinguish:
+
+```text
+Trusted context
+```
+
+from:
+
+```text
+Review-required context
+```
+
+and:
+
+```text
+Insufficient evidence
+```
+
+---
+
+# Safety
+
+Change-aware context must never:
+
+* automatically canonicalize candidates
+* silently rewrite memories
+* silently delete stale knowledge
+* hide contradictions
+* cross project boundaries
+* treat similarity as authority
+* treat historical memory as current repository truth
+* fabricate code relationships when Code Intelligence is unavailable
+
+---
+
+# Code Intelligence Degradation
 
 If Code Intelligence is unavailable:
 
-* Veyra must continue operating safely
-* the change signal may remain incomplete
-* the system must expose the limitation
-* it must not fabricate affected-code relationships
-
----
-
-# Retrieval Integration
-
-Change Intelligence should reuse the existing retrieval system.
-
-Do not create a separate retrieval engine.
-
-Existing signals may be used to identify related knowledge, including:
-
-* lexical relevance
-* BM25
-* token overlap
-* intent
-* relations
-* applicability
-* temporal relevance
-* authority
-* validation
-* code intelligence
-
-The change-impact result must remain explainable.
-
-The system should prefer:
-
 ```text
-Evidence + relation + applicability
+Change-aware context
+        ↓
+Reduced evidence
+        ↓
+Lower confidence / insufficient evidence
 ```
 
-over:
+The system may still use safe direct evidence such as file anchors.
 
-```text
-Similarity alone
-```
+It must not fabricate symbol-level or call-graph relationships.
 
----
-
-# Code Intelligence Integration
-
-Code Intelligence remains an external capability.
-
-Veyra should reuse the existing Code Intelligence integration.
-
-Do not embed another code analysis engine into Veyra.
-
-If the external code intelligence binary is unavailable:
-
-```text
-Change detected
-    ↓
-Code impact analysis unavailable
-    ↓
-Return limited / insufficient-evidence result
-```
-
-Never fabricate code relationships.
+The degraded state must remain observable.
 
 ---
 
 # Testing Requirements
 
-Change Intelligence is not complete until it has focused regression coverage.
+Add focused tests for:
 
-At minimum, tests must verify:
+### 1. Trusted Context
 
-### 1. Unrelated Change
+Relevant, fresh, sufficiently authoritative knowledge can be returned as trusted context.
 
-An unrelated code change does not affect unrelated knowledge.
+### 2. Changed Knowledge
 
-### 2. Related Change
+Relevant knowledge affected by a repository change is marked appropriately.
 
-A relevant code change can identify potentially affected knowledge.
+### 3. Review Required
 
-### 3. Stale Knowledge
+Stale or uncertain knowledge is surfaced as requiring review.
 
-Potentially stale knowledge is surfaced explicitly.
+### 4. Contradiction
 
-It is not silently rewritten.
+Contradictory knowledge remains visible.
 
-### 4. Candidate Safety
+### 5. Candidate Safety
 
-A detected update remains candidate/unverified unless existing rules permit promotion.
+Candidates cannot become canonical through context generation.
 
-### 5. Canonical Safety
+### 6. Applicability
 
-Change processing cannot bypass canonical authority.
+Knowledge outside the applicable project/scope is not returned as trusted context.
 
-### 6. Contradiction Visibility
+### 7. Temporal Validity
 
-Conflicting evidence remains visible.
-
-### 7. Isolation
-
-A change in Project A cannot affect Project B.
+Expired or stale temporal knowledge is not presented as current trusted context.
 
 ### 8. Degraded Code Intelligence
 
-Missing Code Intelligence does not cause fabricated results or unsafe failures.
+Missing Code Intelligence does not produce fabricated trusted context.
 
-### 9. Reprocessing
+### 9. Isolation
 
-Processing the same change repeatedly does not create duplicate or silently merged state.
+Context from another project cannot leak into the current project.
 
-### 10. Existing Regression Suite
+### 10. Existing Regression
 
-All existing Veyra tests continue to pass.
+All existing Veyra tests remain passing.
 
 ---
 
 # Scope Boundary
 
-The following are explicitly **out of scope** for this phase.
+Do not implement these in this phase:
 
-Do not implement them unless they are directly required by Change Intelligence.
-
-* new database
-* graph database
+* autonomous agent behavior
+* automatic canonical promotion
+* security scanning
+* vulnerability detection
 * embeddings
-* vector database
-* new memory system
-* autonomous agent framework
-* swarm / hive architecture
-* automatic canonicalization
-* speculative security scanner
-* full static-analysis engine
-* large new tool surface
-* portfolio changes
-* DSH Web restart/replacement
+* vector databases
+* graph database
+* new memory architecture
+* large tool surface
+* watcher redesign
 * dependency upgrades
+* portfolio changes
 * unrelated refactoring
-* secrets/config changes
-* architecture rewrite
+* new external services
 
-Do not solve future problems before the current Change Intelligence capability works.
-
----
-
-# Implementation Principle
-
-Prefer:
-
-```text
-Existing primitive
-        ↓
-Small extension
-        ↓
-Focused tests
-        ↓
-Verified behavior
-```
-
-over:
-
-```text
-New abstraction
-        ↓
-New subsystem
-        ↓
-Migration
-        ↓
-More complexity
-```
-
-Reuse existing Veyra primitives wherever they already express the required behavior.
-
-Do not redesign working architecture merely to make the new capability look cleaner.
+Do not redesign existing architecture.
 
 ---
 
 # Definition of Done
 
-Phase 1 is complete when:
+Phase 2 is complete when:
 
-* Veyra can represent a repository/code change.
-* Veyra can identify potentially affected knowledge using existing mechanisms.
-* Veyra can produce an explicit change-impact result.
-* Potentially stale knowledge is surfaced.
-* Candidate updates remain candidates.
-* Canonical truth cannot be bypassed.
+* Change Intelligence can influence agent context selection.
+* Relevant fresh knowledge can be identified as trusted.
+* Potentially stale knowledge is explicitly marked.
 * Contradictions remain visible.
+* Applicability and temporal validity are respected.
+* Authority remains authoritative.
+* Candidate knowledge cannot silently become canonical.
+* Code Intelligence degradation remains safe.
 * Project/workspace isolation remains intact.
-* Code Intelligence failure degrades safely.
-* Reprocessing is safe.
-* Focused Change Intelligence tests pass.
-* The complete existing test suite passes.
-* No unrelated architecture or project changes are required.
+* Agent-facing context clearly communicates trust/review status.
+* Focused Phase 2 tests pass.
+* The complete existing Veyra test suite passes.
 
 ---
 
-# Next Direction
+# Product Outcome
 
-Once Change Intelligence is stable, the next progression is:
+After Phase 2, Veyra should be able to move from:
+
+```text
+"What changed?"
+```
+
+to:
+
+```text
+"What changed, and which context should my coding agent trust?"
+```
+
+That is the intended next step toward:
 
 ```text
 Repository Intelligence
         ↓
 Change Intelligence
         ↓
-Change → Knowledge Impact
-        ↓
 Trusted Context
         ↓
-Agent-aware Context
+Agent-aware Engineering Intelligence
 ```
 
-The long-term goal is for Veyra to help a coding agent understand:
-
-```text
-What is true?
-What changed?
-What may now be stale?
-What evidence supports it?
-What context is safe to use?
-```
-
-This is the core engineering direction.
-
----
-
-# Long-Term Research Direction
-
-A future research direction may connect Veyra with:
-
-**AI-generated code security**
-
-The intended relationship is:
-
-```text
-AI Coding Agents
-        ↓
-Generated / Modified Code
-        ↓
-Repository Change Intelligence
-        ↓
-Affected Knowledge / Components
-        ↓
-Risk / Trust Analysis
-        ↓
-Security Review Prioritisation
-```
-
-This is a later research direction, not part of the current implementation phase.
-
-Do not prematurely turn Veyra into a security scanner.
-
-The immediate objective is to make Change Intelligence correct, explainable, isolated, and trustworthy.
-
----
-
-# Guiding Principle
-
-> **Veyra should not merely remember what happened.**
->
-> **Veyra should understand when repository changes make previously known information less trustworthy — and expose that uncertainty without pretending it is truth.**
+The implementation must remain small, explainable, and grounded in repository evidence.
