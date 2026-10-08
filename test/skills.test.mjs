@@ -224,3 +224,17 @@ test('regression: memory-review stays review-only, never destructive maintenance
     'memory-review must not call veyra_forget',
   )
 })
+
+test('regression: veyra skill explicitly excludes session continuity and bounds STALE/test-failed', () => {
+  const veyra = BUNDLED_SKILL_DEFINITIONS.find((d) => d.name === 'veyra')
+  assert.ok(veyra)
+  assert.ok(veyra.description.includes('Do NOT load for immediate session continuity'))
+  assert.ok(veyra.whenToUse.includes('Never for in-session turn progress or session continuity'))
+
+  const raw = readFileSync(skillFileFor('veyra'), 'utf8')
+  const parsed = parseSkillMarkdown(raw, 'veyra')
+  assert.ok(parsed.content.includes('Durable memory ≠ Session continuity'))
+  assert.ok(parsed.content.includes('STALE and INSUFFICIENT_EVIDENCE are not current truth'))
+  assert.ok(parsed.content.includes('Outcome: test-failed is a failed attempt, not completed work'))
+  assert.ok(parsed.content.match(/NEVER call `veyra_recall`\s+for session continuity/))
+})

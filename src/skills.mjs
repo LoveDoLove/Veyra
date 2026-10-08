@@ -30,17 +30,18 @@ export const BUNDLED_SKILL_DEFINITIONS = Object.freeze([
     name: 'veyra',
     description:
       'Use Veyra, the engineering-memory and RAG intelligence brain for this DSH session. '
-      + 'Load it when the user refers to earlier work ("like last time", "what did we decide"), '
-      + 'asks to remember or forget something, wants a lesson, root cause, constraint, or fix '
-      + 'pattern kept, needs project documentation/knowledge retrieved via hybrid search, or '
-      + 'when the task needs project context this turn does not already have — even if nobody '
-      + 'says "memory". Covers when to call veyra_remember / veyra_recall / veyra_inspect / '
-      + 'veyra_forget / veyra_promote, how candidate vs derived vs canonical differ, causal facets, '
-      + 'and that repo truth wins.',
+      + 'Load it for durable engineering decisions, historical lessons, root causes, constraints, '
+      + 'fix patterns, project documentation/knowledge retrieved via hybrid search, or cross-session '
+      + 'architecture context. Do NOT load for immediate session continuity ("上一轮/刚才做了什么", '
+      + '"where did we leave off", current conversation progress) — those belong to conversation '
+      + 'history, git status, and task tracking. Covers when to call veyra_remember / veyra_recall / '
+      + 'veyra_inspect / veyra_forget / veyra_promote, how candidate vs derived vs canonical differ, '
+      + 'causal facets, and that repo truth wins.',
     whenToUse:
-      'Earlier-session context, remember/forget/promote requests, durable engineering '
-      + 'decisions, project RAG documentation, causal troubleshooting, or when automatic '
-      + 'recall is missing or too thin.',
+      'Cross-session engineering context, durable decisions, project RAG documentation, '
+      + 'causal troubleshooting, remember/forget/promote requests, or when automatic recall '
+      + 'for durable knowledge is missing or too thin. Never for in-session turn progress or '
+      + 'session continuity.',
   },
   {
     name: 'codebase-memory',

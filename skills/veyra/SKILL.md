@@ -2,17 +2,18 @@
 name: veyra
 description: >
   Use Veyra, the engineering-memory and RAG intelligence brain for this DSH session.
-  Load it when the user refers to earlier work ("like last time", "what did we decide"),
-  asks to remember or forget something, wants a lesson, root cause, constraint, or fix
-  pattern kept, needs project documentation/knowledge retrieved via hybrid search, or
-  when the task needs project context this turn does not already have — even if nobody
-  says "memory". Covers when to call veyra_remember / veyra_recall / veyra_inspect /
-  veyra_forget / veyra_promote, how candidate vs derived vs canonical differ, causal facets,
-  and that repo truth wins.
+  Load it for durable engineering decisions, historical lessons, root causes, constraints,
+  fix patterns, project documentation/knowledge retrieved via hybrid search, or cross-session
+  architecture context. Do NOT load for immediate session continuity ("上一轮/刚才做了什么",
+  "where did we leave off", current conversation progress) — those belong to conversation
+  history, git status, and task tracking. Covers when to call veyra_remember / veyra_recall /
+  veyra_inspect / veyra_forget / veyra_promote, how candidate vs derived vs canonical differ,
+  causal facets, and that repo truth wins.
 whenToUse: >
-  Earlier-session context, remember/forget/promote requests, durable engineering
-  decisions, project RAG documentation, causal troubleshooting, or when automatic
-  recall is missing or too thin.
+  Cross-session engineering context, durable decisions, project RAG documentation,
+  causal troubleshooting, remember/forget/promote requests, or when automatic recall
+  for durable knowledge is missing or too thin. Never for in-session turn progress or
+  session continuity.
 ---
 
 # Veyra
@@ -24,11 +25,16 @@ relevant context via unified Hybrid Search. Treat it as an assistant, not as tru
 ## A session's lifecycle
 
 1. **Start** — the plugin has usually already injected a recall snapshot
-   (look for a Veyra context block). If it already answers the question, use
-   it and skip a tool call.
-2. **During the task** — call `veyra_recall` for targeted hybrid search when the
-   injected snapshot is missing or too thin. Call `veyra_inspect` to read one
-   record by id with full evidence anchors, causal facets, and relationships.
+   (look for a Veyra context block). Recalled items are background engineering
+   context and constraints, NEVER chronological turn logs or conversation history.
+   Never use recalled items to answer session-continuity questions ("上一轮我们做了什么",
+   "where were we", current progress). If the injected snapshot already provides
+   the necessary engineering background, skip the tool call.
+2. **During the task** — call `veyra_recall` for targeted hybrid search when
+   needing cross-session engineering knowledge (prior architecture decisions,
+   constraints, postmortems) that the snapshot lacks. NEVER call `veyra_recall`
+   for session continuity, recent turn progress, or git status. Call `veyra_inspect`
+   to read one record by id with full evidence anchors, causal facets, and relationships.
 3. **Data in** — when a durable decision, root cause, constraint, fix pattern,
    or project guideline appears, call `veyra_remember`. Use `kind: 'memory'` for
    engineering experience, or `kind: 'knowledge'` for project documentation.
@@ -107,6 +113,17 @@ Humans can explore Veyra's internal state via the `/veyra observatory` slash com
 - Memory assists engineering; it does not replace verification.
 - Similarity ≠ identity. Overlapping memories are linked, never silently merged.
 - If two recalled items contradict, keep both and believe the repository.
+- Durable memory ≠ Session continuity. Veyra stores cross-session engineering
+  knowledge, NOT conversational turn history or recent work progress. To answer
+  "上一轮我们做了什么" / "刚才做到哪里" / "继续之前的工作", consult conversation
+  history, ACP summaries, git status/diff, or task state — never Veyra.
+- STALE and INSUFFICIENT_EVIDENCE are not current truth. Records marked
+  `trust: STALE` have broken code anchors or outdated validation; records marked
+  `trust: INSUFFICIENT_EVIDENCE` lack verifiable evidence. Never rely on them
+  as current status or verified facts without revalidating against the repository.
+- Outcome: test-failed is a failed attempt, not completed work. A remedy or
+  action marked `Outcome: test-failed` represents a falsified trial, never
+  successful progress or an accepted solution.
 
 ## Where memory lives
 

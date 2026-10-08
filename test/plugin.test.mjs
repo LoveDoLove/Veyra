@@ -330,6 +330,11 @@ test('Veyra Agent Policy covers availability, triggers, and preserved invariants
   assert.ok(GUIDANCE_TEXT.includes('does not replace verification'))
   // Static policy text must not contain prompt-variable references.
   assert.ok(!GUIDANCE_TEXT.includes('{{'))
+  // 10. Session continuity boundary and trust standing.
+  assert.ok(GUIDANCE_TEXT.includes('Session continuity boundary'))
+  assert.ok(GUIDANCE_TEXT.includes('DO NOT use Veyra for current turn/session progress'))
+  assert.ok(GUIDANCE_TEXT.includes('STALE or INSUFFICIENT_EVIDENCE'))
+  assert.ok(GUIDANCE_TEXT.includes('Outcome: test-failed'))
 })
 
 test('tools remember → persist → recall across a fresh harness (session A/B)', async () => {
