@@ -1,205 +1,100 @@
-# Veyra — Phase 5 Goal
+# Veyra — Product Direction
 
-## Correctness Hardening After Real-Agent Validation
+## Product Goal
 
-### Direction
+**Give Coding Agents reliable, persistent, change-aware Engineering Memory.**
 
-Phase 4 demonstrated that Veyra's core Change Intelligence → Trusted Context pipeline works in a real DSH runtime.
+Veyra is an evidence-backed engineering memory system for coding agents.
 
-Phase 5 is not a feature expansion.
+Its purpose is to help agents retain engineering knowledge across sessions while understanding whether that knowledge is still applicable as the repository changes.
 
-It is a focused correctness-hardening phase based on issues discovered during real validation.
-
-The goal is:
-
-> **Remove correctness risks that can violate Veyra's existing invariants without changing the architecture or expanding scope.**
-
----
-
-# Primary Goal
-
-Fix only correctness issues that were demonstrated or directly identified during Phase 4 validation.
-
-Priority:
-
-1. Project / workspace isolation correctness
-2. Runtime configuration correctness
-3. Regression protection
-4. No behavioral expansion
-
----
-
-# Issue 1 — Store Cache Isolation
-
-## Problem
-
-`openProjectStore` currently caches stores using a project-only cache key.
-
-Conceptually:
+## Core Model
 
 ```text
-project:${projectId}
+Repository Truth + Engineering Memory
+                ↓
+      Applicability / Freshness
+                ↓
+              Trust
+                ↓
+          Agent Context
 ```
 
-This can cause two different Veyra homes in the same process to share the first opened store when they use the same project id.
+* **Repository Truth** — current code and repository structure.
+* **Engineering Memory** — decisions, knowledge, observations, evidence, relationships, and historical context.
+* **Applicability** — whether remembered knowledge still applies to the current project and context.
+* **Freshness** — whether repository changes may have invalidated or weakened previous knowledge.
+* **Trust** — the resulting confidence/state presented to the agent.
+* **Agent Context** — useful memory supplied to the coding agent without turning memory into executable instructions.
 
-That violates the intended isolation model.
+## Current State
 
-## Required Behavior
+The core technical foundation is substantially complete.
 
-Different Veyra homes must never share a cached store instance merely because they have the same project id.
+Implemented capabilities include:
 
-Conceptually:
+* Persistent SQLite + FTS5 engineering memory
+* Evidence and authority tracking
+* Candidate / canonical lifecycle
+* Write-gate and canonical safety
+* Contradiction, supersession, and relationship handling
+* Negative and unresolved knowledge
+* Applicability and temporal reasoning
+* Causal and goal-directed retrieval
+* Retrieval ranking and RRF
+* Memory health and maintenance
+* Safe forgetting and protection
+* Corruption detection and fail-closed behavior
+* Project/workspace isolation
+* Secret protection
+* Repository change intelligence
+* Trust-aware agent context
+* Ambient change-aware context
+* Optional AST/code intelligence through the Dual-Brain integration
+* Real DSH runtime validation
 
-```text
-Veyra Home A + Project X
-        ≠
-Veyra Home B + Project X
-```
+## Product Boundaries
 
-The cache identity must include the storage/home boundary required by the existing architecture.
+Veyra is **not** intended to:
 
-Do not redesign storage.
+* Guarantee coding-agent correctness
+* Replace repository truth
+* Become an autonomous coding agent
+* Become a generic cognitive architecture
+* Implement multi-agent/swarm intelligence
+* Treat memory as executable instructions
+* Automatically promote observations into canonical truth
+* Add complexity without a clear Engineering Memory benefit
 
-Do not create another database.
+Core invariants remain:
 
-Do not change canonical storage.
+* Observe ≠ Store
+* Candidate ≠ Truth
+* Similarity ≠ Authority
+* Similarity ≠ Applicability
+* Historical memory ≠ Current truth
+* Memory ≠ Executable instruction
+* Automatic behavior never silently becomes canonical
+* No silent merge
+* Contradictions remain visible
+* Repository truth remains authoritative
+* Isolation fails closed
 
-Make the smallest correct cache-key fix.
+## Next Direction
 
----
+The next stage is **product consolidation, not feature expansion**.
 
-# Issue 2 — Runtime `recallLimit`
+Priorities:
 
-## Problem
+1. Keep the existing Engineering Memory architecture stable.
+2. Align project documentation with the actual implementation.
+3. Clearly communicate Veyra's product identity and differentiation.
+4. Remove obsolete roadmap statements and stale capability claims.
+5. Improve usability only where it directly strengthens reliable, contextual, change-aware Engineering Memory.
+6. Avoid introducing new intelligence subsystems merely to create another development phase.
 
-Phase 4 identified that configured `recallLimit` does not reach the runtime.
+Any future feature should answer:
 
-A boot configuration such as:
+> **Does this make an agent's engineering memory more reliable, contextual, or able to adapt to project changes?**
 
-```text
-recallLimit: 10
-```
-
-currently results in the existing runtime limit instead of the configured value.
-
-## Required Behavior
-
-If `recallLimit` is an existing supported configuration field, the configured value must reach the runtime component that consumes it.
-
-Preserve existing defaults when the option is not supplied.
-
-Do not invent new configuration semantics.
-
-Do not change unrelated settings behavior.
-
----
-
-# Regression Requirements
-
-Add focused tests for both issues.
-
-## Store Cache
-
-Verify:
-
-* same project id + different Veyra homes → different stores;
-* data from Home A cannot appear in Home B;
-* closing/reopening stores preserves expected behavior;
-* existing single-home behavior remains unchanged.
-
-## Recall Limit
-
-Verify:
-
-* configured value reaches runtime;
-* default behavior remains unchanged;
-* configured lower limit is respected;
-* configured higher limit is respected where the existing retrieval contract permits it.
-
----
-
-# Existing Invariants
-
-All existing Veyra invariants remain mandatory.
-
-Especially:
-
-```text
-Project isolation
-Workspace isolation
-Fail-closed scope
-Canonical truth safety
-Validation / authority semantics
-```
-
-No fix may weaken these invariants.
-
----
-
-# Scope Boundary
-
-Do NOT:
-
-* redesign the storage layer;
-* introduce a new database;
-* introduce a cache subsystem;
-* redesign retrieval;
-* change Change Intelligence;
-* change Trust Classification;
-* change RepositoryWatcher;
-* change agent context semantics;
-* add security scanning;
-* add embeddings;
-* add graph infrastructure;
-* upgrade dependencies;
-* modify the portfolio;
-* perform unrelated refactoring.
-
-Only fix the identified correctness issues and add regression coverage.
-
-If an issue cannot be safely fixed within the existing architecture, document it instead of expanding the architecture.
-
----
-
-# Verification
-
-Run:
-
-1. focused tests for store isolation;
-2. focused tests for recallLimit;
-3. relevant existing regression tests;
-4. complete `npm test`.
-
-No Phase 4 behavior should regress.
-
-The following must remain true:
-
-```text
-Change Intelligence        → unchanged
-Trust Classification       → unchanged
-Ambient Context            → unchanged
-Canonical Safety           → unchanged
-Project Isolation          → stronger
-```
-
----
-
-# Definition of Done
-
-Phase 5 is complete when:
-
-* Veyra store caching respects the Veyra-home boundary;
-* different homes cannot accidentally share a cached project store;
-* configured `recallLimit` reaches runtime;
-* existing default behavior remains intact;
-* regression tests cover both issues;
-* Phase 1–4 tests continue passing;
-* full test suite passes;
-* no unrelated architecture or feature changes are introduced.
-
----
-
-# Guiding Principle
-
-> **Do not add more intelligence until the existing intelligence is trustworthy at its boundaries.**
+If not, it is outside the current product direction.
