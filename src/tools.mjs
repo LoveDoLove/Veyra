@@ -202,10 +202,10 @@ export function buildToolDefinitions(runtime) {
     {
       name: 'veyra_remember',
       description:
-        'Store durable engineering knowledge in Veyra. Use for decisions, root causes, constraints, '
-        + 'fix patterns, RAG documentation (kind: \'knowledge\'), and reusable lessons. Stored items become '
-        + 'derived memory (never canonical). Secrets are redacted. Project scope is the default; use '
-        + 'reusable only for experience that is truly project-agnostic.',
+        'Store durable engineering knowledge in Veyra. Use after discovering non-obvious root causes, '
+        + 'verifying tricky fix patterns, establishing durable architecture decisions, or recording project '
+        + 'constraints. Stored items become derived memory (never canonical). Secrets are redacted. Project '
+        + 'scope is the default; use reusable only for experience that is truly project-agnostic.',
       parameters: {
         title: { type: 'string', required: true, description: 'Short title for the memory.' },
         body: { type: 'string', required: true, description: 'The knowledge itself, with enough context to reuse later.' },
@@ -214,13 +214,31 @@ export function buildToolDefinitions(runtime) {
         tags: { type: 'array', items: { type: 'string' }, description: 'Optional short tags.' },
         evidence: {
           type: 'array',
-          items: { type: 'object', additionalProperties: true },
           description: 'Optional evidence anchors (path, note, uri).',
+          items: {
+            type: 'object',
+            description: 'Evidence anchor item.',
+            additionalProperties: true,
+            properties: {
+              path: { type: 'string', description: 'Repository file path anchor.' },
+              note: { type: 'string', description: 'Evidence note, symptom, or observation details.' },
+              uri: { type: 'string', description: 'External URI or document reference.' },
+            },
+          },
         },
         confidence: { type: 'string', enum: [...VALID_CONFIDENCES], description: 'low | medium | high. Default medium.' },
         validFrom: { type: 'string', description: 'Optional §13 ISO date: when this knowledge takes effect (before that it reads as not_yet_effective, never hidden).' },
         validUntil: { type: 'string', description: 'Optional §13 ISO date: when this knowledge expires (after that it reads as expired — demoted, never deleted).' },
-        context: { type: 'object', additionalProperties: true, description: 'Optional §12 applicability context (toolchain, version, taskType, …). os/runtime are auto-captured; supplied keys win.' },
+        context: {
+          type: 'object',
+          description: 'Optional §12 applicability context (toolchain, version, taskType, …). os/runtime are auto-captured; supplied keys win.',
+          additionalProperties: true,
+          properties: {
+            toolchain: { type: 'string', description: 'Toolchain or compiler version.' },
+            version: { type: 'string', description: 'Package or software version.' },
+            taskType: { type: 'string', description: 'Task category or type.' },
+          },
+        },
         id: { type: 'string', description: 'Existing record id — updates that record instead of creating one.' },
         repair: { type: 'boolean', description: '§25 explicit repair: rewrite a structurally corrupted record (broken JSON columns or invalid enums). Refused unless the record is actually corrupted; corrupt bytes are preserved otherwise.' },
       },
@@ -290,9 +308,10 @@ export function buildToolDefinitions(runtime) {
     {
       name: 'veyra_recall',
       description:
-        'Unified Hybrid Search across Veyra memory and RAG knowledge. Combines lexical, semantic, '
-        + 'intent, and relationship signals with transparent ranking. Automatic recall already runs '
-        + 'each turn; use this for targeted queries beyond automatic context.',
+        'Search durable engineering memory, architecture decisions, past troubleshooting solutions, '
+        + 'constraints, and RAG knowledge. Use when investigating project history, architecture rationale, '
+        + 'past failure remedies, or domain constraints whenever the initial turn snapshot is absent or '
+        + 'does not cover the specific technical topic.',
       parameters: {
         query: { type: 'string', required: true, description: 'What to look for.' },
         goal: { type: 'string', description: 'Optional goal-directed routing: the task you are working toward. Steers ranking toward relevant experience; it is a direction, never an authority, and never promotes or demotes anything. Omit for ordinary search.' },
@@ -345,8 +364,8 @@ export function buildToolDefinitions(runtime) {
     {
       name: 'veyra_inspect',
       description:
-        'Read one Veyra record by id, including candidates, evidence, causal facets, and relationships. '
-        + 'Inspection is not recall and does not grant authority.',
+        'Read one Veyra record by id in full: evidence anchors, causal facets, provenance, and relationships. '
+        + 'Use when a recalled memory summary needs full details before applying.',
       parameters: {
         id: { type: 'string', required: true, description: 'Record id (vey_…).' },
       },
@@ -485,11 +504,11 @@ export function buildToolDefinitions(runtime) {
       name: 'veyra_feedback',
       description:
         'Report the real-world outcome of APPLYING a Veyra memory (§19 feedback loop). '
-        + 'success = the memory\'s guidance was applied and verified working → the record strengthens '
+        + 'success = the memory guidance was applied and verified working → the record strengthens '
         + '(observation ladder, validation/confidence progression). failure = it was applied and did '
         + 'not work → failure history is recorded and reliability decreases (validation and confidence '
         + 'demote one step; canonical records keep their validation — only history is recorded). '
-        + 'Memory stays evidence, never instructions; feedback never changes authority.',
+        + 'Use after verifying a recalled fix or decision in practice.',
       parameters: {
         id: { type: 'string', required: true, description: 'Record id that was applied.' },
         outcome: { type: 'string', enum: ['success', 'failure'], required: true, description: 'success or failure of the application.' },

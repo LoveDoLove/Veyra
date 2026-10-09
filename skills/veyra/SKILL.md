@@ -24,12 +24,12 @@ relevant context via unified Hybrid Search. Treat it as an assistant, not as tru
 
 ## A session's lifecycle
 
-1. **Start** — the plugin has usually already injected a recall snapshot
+1. **Start** — the plugin may have injected a recall snapshot
    (look for a Veyra context block). Recalled items are background engineering
    context and constraints, NEVER chronological turn logs or conversation history.
    Never use recalled items to answer session-continuity questions ("上一轮我们做了什么",
-   "where were we", current progress). If the injected snapshot already provides
-   the necessary engineering background, skip the tool call.
+   "where were we", current progress). If the injected snapshot does not cover
+   the specific technical topic you need, call `veyra_recall`.
 2. **During the task** — call `veyra_recall` for targeted hybrid search when
    needing cross-session engineering knowledge (prior architecture decisions,
    constraints, postmortems) that the snapshot lacks. NEVER call `veyra_recall`

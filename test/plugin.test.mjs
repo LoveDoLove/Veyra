@@ -187,6 +187,41 @@ test('registerTools keeps going when one tool fails DSH schema checks', async ()
   assert.equal(warnings.length, 0)
 })
 
+test('registerTools provides action-oriented descriptions and explicit parameter schemas', async () => {
+  const registered = new Map()
+  const ctx = {
+    tools: {
+      register(def) {
+        registered.set(def.name, def)
+      },
+    },
+  }
+  await registerTools(ctx, {
+    veyraHome: '/tmp',
+    fallbackCwd: '/tmp',
+    log: { warn: () => {} },
+  })
+
+  const recall = registered.get('veyra_recall')
+  assert.ok(recall.description.includes('Use when investigating'))
+  assert.ok(!recall.description.includes('Automatic recall already runs'))
+
+  const remember = registered.get('veyra_remember')
+  assert.ok(remember.description.includes('Use after discovering'))
+
+  const feedback = registered.get('veyra_feedback')
+  assert.ok(feedback.description.includes('Use after verifying a recalled fix'))
+
+  const rememberEvidence = remember.parameters.evidence
+  assert.equal(rememberEvidence.type, 'array')
+  assert.equal(rememberEvidence.items.type, 'object')
+  assert.ok(rememberEvidence.items.properties.path)
+
+  const rememberContext = remember.parameters.context
+  assert.equal(rememberContext.type, 'object')
+  assert.ok(rememberContext.properties.toolchain)
+})
+
 test('apply recallLimit 0 disables automatic context and leaves tools working', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'veyra-limit0-'))
   const cwd = process.cwd()
@@ -294,15 +329,15 @@ test('Veyra Agent Policy covers availability, triggers, and preserved invariants
   assert.ok(GUIDANCE_TEXT.includes('Veyra engineering intelligence is available'))
   assert.ok(GUIDANCE_TEXT.includes('veyra_remember, veyra_recall'))
   // 2. Retrieval triggers.
-  assert.ok(GUIDANCE_TEXT.includes('Consider retrieval'))
+  assert.ok(GUIDANCE_TEXT.includes('Consider retrieval when'))
   assert.ok(GUIDANCE_TEXT.includes('prior project or architecture decisions'))
   assert.ok(GUIDANCE_TEXT.includes('project constraints and durable implementation conventions'))
   assert.ok(GUIDANCE_TEXT.includes('troubleshooting outcomes'))
   assert.ok(GUIDANCE_TEXT.includes('conflicting historical knowledge'))
   // 3. When NOT to use Veyra: no per-turn obligation, trivial tasks skipped.
-  assert.ok(GUIDANCE_TEXT.includes('never call it every turn'))
+  assert.ok(GUIDANCE_TEXT.includes('Consider retrieval when'))
   assert.ok(GUIDANCE_TEXT.includes('typos, formatting-only edits'))
-  assert.ok(GUIDANCE_TEXT.includes('skip the tool call'))
+  assert.ok(!GUIDANCE_TEXT.includes('skip the tool call'))
   // 4. Recording triggers + transient noise rule.
   assert.ok(GUIDANCE_TEXT.includes('Consider recording'))
   assert.ok(GUIDANCE_TEXT.includes('durable architecture decisions'))
