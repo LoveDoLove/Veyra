@@ -152,10 +152,13 @@ export function resolveSafeRepoPath(repoRoot, targetPath) {
   const absTarget = isAbsolute(targetPath) ? resolve(targetPath) : resolve(absRoot, targetPath)
 
   // Root boundary check
+  // rel === '' means the target IS the repository root — a valid in-repo
+  // location. Only '..'-prefixed or absolute rel paths escape the boundary.
   const rel = relative(absRoot, absTarget)
   if (rel.startsWith('..') || isAbsolute(rel)) {
     return null // Out of bounds
   }
+  if (rel === '') return '.'
 
   // Symlink escape check
   try {

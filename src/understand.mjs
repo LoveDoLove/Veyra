@@ -21,6 +21,8 @@ import {
 import { scrub } from './redact.mjs'
 import { tokenize } from './text.mjs'
 import { provenanceDimensions } from './ids.mjs'
+import { isAbsolute } from 'node:path'
+import { resolveSafeRepoPath } from './code/discovery.mjs'
 
 const CLAIM_HINTS = [
   /\b(decided|decision|always|never|must not|must\b|should not|root cause|workaround|fix was|the cause|lesson|constraint|regression)\b/i,
@@ -102,7 +104,78 @@ export function qualityGateFacet(value) {
   const last = words[words.length - 1].replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, '')
   if (last.length < 3 && !SHORT_END_WORDS.has(last.toLowerCase())) return null
 
+  // P0-2: concreteness gate. A causal facet must carry technical content —
+  // code, a command, a file path, an identifier, a version, or domain
+  // jargon. Pure session narration ("complete and all tests pass",
+  // "fixture freshness") is activity, not engineering knowledge.
+  if (!hasTechnicalSubject(s)) return null
+
   return s
+}
+
+// Facets whose OPENING token is a sentence-boundary artifact — a capture
+// that started mid-sentence or a label coloned onto narration. These are
+// regex slice debris, not engineering facts, even if they contain technical
+// words ("test: assert button disabled" is a session check, not knowledge).
+const GARBAGE_LEAD = /^(?:s\/|\(|\w+\/(?:\w+:|engineering)|continue\b|complete and\b|for (?:durable|the\b)|it and\b|it (?:was|is) I?\b.*I?\b|ture\b|this (?:turn|was)\b|you are\b|the user\b|the agent\b|the session\b|fixture\b|newline\+?|test:|expect:|then run\b|when (?:the|a)\b|while (?:the|a)\b)/
+
+// Domain vocabulary a facet is allowed to rely on instead of code tokens.
+// Prefix matching: 'deadlock' also admits 'deadlocking', 'lock' admits
+// 'locked', 'write' admits 'writers'/'writes'.
+const TECH_SUBJECTS = new Set([
+  'sqlite', 'mutex', 'lock', 'race', 'deadlock', 'index', 'cache', 'schema',
+  'migration', 'wal', 'fts', 'fts5', 'worker', 'writers', 'writer', 'flush',
+  'hash', 'server', 'client', 'plugin', 'config', 'flag', 'pragma', 'timeout',
+  'retry', 'version', 'api', 'cli', 'daemon', 'socket', 'pipeline', 'node',
+  'npm', 'npx', 'git', 'buffer', 'store', 'queue', 'event', 'handler',
+  'callback', 'async', 'logger', 'watcher', 'snapshot', 'diff', 'oops',
+  'checkpoint', 'serialize', 'benchmark', 'gate', 'recall', 'facet',
+  'leak', 'oom', 'heap', 'tsc', 'rg', 'grep', 'concurrent', 'write',
+  'jitter', 'mutex',
+])
+
+// Non-technical facet check: does the facet name anything concrete?
+// A facet subjects a technical thing if it carries a code-structural token
+// (path, extension, flag, call syntax, snake_case, camelCase, quoted
+// string, ALL-CAPS acronym, digit-bearing token) or a domain vocabulary
+// word. Pure session narration has none of these.
+function hasTechnicalSubject(s) {
+  // 1. Leading artifact: capture started mid-sentence — junk outright.
+  if (GARBAGE_LEAD.test(s)) return false
+
+  // 2. Code-structural token anywhere qualifies. Quoted/backtick strings
+  // often span several tokens ("use strict"), so test s as a whole first.
+  if (/["'`].+["'`]/.test(s)) return true
+  const tokens = s.split(/\s+/)
+  for (const raw of tokens) {
+    const t = raw.replace(/^[^A-Za-z0-9_.@/`'"-]+|[^A-Za-z0-9_.@/`'"-]+$/g, '')
+    if (!t) continue
+    if (/\/|\.[A-Za-z][A-Za-z0-9]{1,7}$/.test(t)) return true // path or filename.ext
+    if (/^--?-?[\w-]{2,}/.test(t)) return true                // --flag
+    if (/_/.test(t)) return true                              // snake_case
+    if (/\(\)/.test(raw) || /\([A-Za-z_]/.test(raw)) return true // call syntax
+    if (/^[A-Z0-9_-]{3,}$/.test(t) && /[A-Z]/.test(t)) return true // SQLITE_BUSY
+    if (/[a-z][A-Z]/.test(t) || /^[A-Z].*[A-Z][a-z]/.test(t)) return true // camelCase or PascalCase
+    if (/\d/.test(t) && (/[a-z]/.test(t) || /\d.*\d/.test(t) || t.length > 3)) return true // numbers
+  }
+  // 3. Domain vocabulary fallback (prefix match) plus plural stems:
+  // 'deletes'→'delete', 'queryDies'… strip 'ies'/'es'/'s' when the stem is
+  // itself a technical word and the token stays a real word (>=3 chars).
+  for (const raw of tokens) {
+    const lower = raw.replace(/[^A-Za-z0-9-]/g, '').toLowerCase()
+    if (!lower) continue
+    if (TECH_SUBJECTS.has(lower)) return true
+    for (const t of TECH_SUBJECTS) {
+      if (lower.startsWith(t) && lower.length > t.length) return true
+    }
+    for (const suf of ['ies', 'es', 's']) {
+      if (lower.endsWith(suf) && lower.length >= suf.length + 3) {
+        if (TECH_SUBJECTS.has(lower.slice(0, -suf.length))) return true
+      }
+    }
+  }
+  // 4. Plain prose with no code token and no domain word: junk.
+  return false
 }
 
 /**
@@ -260,9 +333,11 @@ export function deriveTitle(user, files, tools, signal, causal = null) {
   const firstLine = String(user || '').split('\n').map((s) => s.trim()).find(Boolean)
   if (firstLine && firstLine.length >= 12 && looksLikeClaim(firstLine)) return firstLine.slice(0, 160)
   
-  // Genuine causal claims from text — the only reliable engineering titles
-  if (causal?.remedy) return `Fix: ${causal.remedy.slice(0, 120)}`
-  if (causal?.rootCause) return `Cause: ${causal.rootCause.slice(0, 120)}`
+  // Genuine causal claims from text — the only reliable engineering titles.
+  // P0-2: only when the facet itself survives the concreteness gate, otherwise
+  // every "fix is for X" regex artifact became a "Fix: <garbage>" title.
+  if (causal?.remedy && qualityGateFacet(causal.remedy)) return `Fix: ${causal.remedy.slice(0, 120)}`
+  if (causal?.rootCause && qualityGateFacet(causal.rootCause)) return `Cause: ${causal.rootCause.slice(0, 120)}`
   
   // No reliable claim found → neutral, non-misleading fallback
   // Never generate "Fix: work on X", "Worked on X", "Used X" — those are activity descriptions, not engineering claims
@@ -300,9 +375,18 @@ function testOutcomeFrom(tools, files) {
   return null
 }
 
-function evidenceFrom(files, symbols, tools) {
+// Evidence anchors carry repository-code weight: trust validation resolves
+// them against the workspace. Paths outside the workspace must stay in
+// source provenance (source.files) but never become {path} anchors.
+function isInsideWorkspace(workspace, absPath) {
+  // Reuses the symlink-aware, traversal-safe repo-path resolution: returns a
+  // truthy relative path when absPath is inside workspace, null otherwise.
+  return resolveSafeRepoPath(workspace, absPath) !== null
+}
+function evidenceFrom(files, symbols, tools, workspace = null) {
   const items = []
   for (const path of files.slice(0, 12)) {
+    if (isAbsolute(path) && workspace && !isInsideWorkspace(workspace, path)) continue
     items.push({ path })
   }
   for (const symbol of symbols.slice(0, 8)) {
@@ -411,7 +495,7 @@ export function distillBuffer(buffer, { projectId, sessionId, cwd, agent } = {})
     title,
     body,
     tags: tagsFor(signal, files, tools, causal),
-    evidence: evidenceFrom(files, symbols, tools),
+    evidence: evidenceFrom(files, symbols, tools, cwd || null),
     source: {
       sessionId: sessionId || null,
       turn: buffer.turn,

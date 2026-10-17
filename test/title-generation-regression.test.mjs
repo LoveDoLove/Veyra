@@ -35,8 +35,8 @@ test('deriveTitle: architectural decision with remedy → Fix: <remedy>', () => 
 })
 
 test('deriveTitle: verified outcome (symptom + root cause + remedy) → meaningful title', () => {
-  const title = deriveTitle('', [], [], 'fix', { rootCause: 'timer race in retry loop', remedy: 'add jitter and cap retries at 3' })
-  assert.equal(title, 'Fix: add jitter and cap retries at 3')
+  const title = deriveTitle('', [], [], 'fix', { rootCause: 'timer race in retry loop', remedy: 'add sleep jitter around each retry to break the timer race' })
+  assert.equal(title, 'Fix: add sleep jitter around each retry to break the timer race')
 })
 
 test('deriveTitle: negative / failed approach → Cause: <rootCause>', () => {
@@ -205,7 +205,7 @@ test('extractCausalFacets: facetCount<2 returns null facets (gate)', () => {
   assert.equal(facets.facets, null)
   
   // Both root cause and remedy - facetCount = 2
-  const facets2 = extractCausalFacets({ user: 'The root cause is the missing mutex. The fix is to add it.', assistant: '', tools: [], files: ['src/store.mjs'], symbols: [] })
+  const facets2 = extractCausalFacets({ user: 'The root cause is the missing mutex. The fix is to add the mutex around each write.', assistant: '', tools: [], files: ['src/store.mjs'], symbols: [] })
   assert.ok(facets2.facets)
   assert.ok(facets2.facets.rootCause)
   assert.ok(facets2.facets.remedy)
@@ -224,4 +224,65 @@ test('canonical still requires explicit user action (unchanged)', () => {
   const title = deriveTitle('Decision: use mutex', ['src/store.mjs'], [], 'decision', { rootCause: 'missing mutex', remedy: 'add mutex' })
   assert.ok(typeof title === 'string')
   // No authority field in title output
+})
+// -- P0 Trust Repair regression contracts (2026-10-17 CEO review)
+
+test('P0-2: garbled auto-capture remedies never become Fix:/Cause: memories', () => {
+  const junk = [
+    's/troubleshooting',
+    'complete and all tests pass',
+    'for durable engineering-memory queries',
+    'test: assert button disabled',
+    'ture and run the full suite',
+    'it and run the real comparison',
+    'fixture freshness',
+    '(wrong flags) is fixed at source',
+    'newline+space',
+  ]
+  for (const s of junk) {
+    const { facets } = extractCausalFacets({ user: `Run it. Remedy: ${s}`, assistant: '', tools: [{ name: 'bash' }], files: [], symbols: [] })
+    if (facets?.remedy) {
+      // if captured, the gate must have dropped it — reaching here means leak
+      assert.fail(`garbled remedy leaked into facets: ${s}`)
+    }
+    const title = deriveTitle('', [], [], 'fix', { rootCause: null, remedy: s })
+    assert.equal(title, 'Engineering observation', `title leaked for: ${s}`)
+  }
+})
+
+test('P0-2: real engineering remedies still pass differentially', () => {
+  const keep = [
+    'serialize every write through a mutex around the shared handle',
+    'npx tsc --noEmit before every release',
+    'supersedeEligible() returns false for canonical records',
+    'the mutex (DatabaseSync) was missing on the FTS writer',
+    'set recallLimit: 0 to disable ambient injection',
+  ]
+  for (const s of keep) {
+    const title = deriveTitle('', [], [], 'fix', { rootCause: null, remedy: s })
+    assert.notEqual(title, 'Engineering observation', `real remedy wrongly rejected: ${s}`)
+  }
+})
+
+test('P0-3: out-of-workspace absolute paths never become evidence anchors', () => {
+  const workspace = '/home/lovedolove/projects/Veyra'
+  const buffer = newBuffer()
+  observeEvent(buffer, {}, { type: 'turn/start', data: { turn: 1 } })
+  observeEvent(buffer, {}, {
+    type: 'turn/message',
+    data: { role: 'user', text: 'The root cause is the missing mutex on the SQLite FTS writer.' },
+  })
+  observeEvent(buffer, {}, {
+    type: 'tool/call',
+    data: { name: 'edit', args: { path: '/tmp/scratch.txt' } },
+  })
+  observeEvent(buffer, {}, {
+    type: 'tool/call',
+    data: { name: 'edit', args: { path: `${workspace}/src/store.mjs` } },
+  })
+  const d = distillBuffer(buffer, { projectId: 'p_p0', sessionId: 's1', cwd: workspace })
+  assert.ok(d)
+  const anchorPaths = d.evidence.filter((e) => e.path).map((e) => e.path)
+  assert.ok(!anchorPaths.some((p) => p.startsWith('/tmp')), 'tmp path leaked as anchor')
+  assert.ok(anchorPaths.some((p) => p.endsWith('src/store.mjs')), 'in-repo anchor lost')
 })
