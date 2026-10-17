@@ -26,6 +26,43 @@ const EVIDENCE_FIELD_CHARS = 120
 const INBOUND_SCAN_LIMIT = 200
 
 /**
+ * Hard cap on the total characters of the rendered recall block (memories,
+ * evidence, banners, trust lines and the truncation notice included — the
+ * final joined string). `recallLimit` alone bounds the record COUNT, not the
+ * SIZE, so an extreme `recallLimit` with long bodies could otherwise expand
+ * the injected context without bound. Applies to the same intake surface the
+ * reference implementation guards (MemoryCore auto-recall applyRecallBudget):
+ * any intake should always be capped to a predictable character budget.
+ */
+export const DEFAULT_RECALL_CHARS = 6000
+
+/** Coerce a recall character budget: invalid/negative/small → default. */
+export function normalizeRecallChars(value) {
+  if (value === undefined || value === null || value === '') return DEFAULT_RECALL_CHARS
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_RECALL_CHARS
+  // The header alone needs room; never clamp below its length.
+  return Math.max(Math.trunc(n), 200)
+}
+
+/**
+ * Join rendered lines under a total character budget. The heading and the
+ * trust framing always survive; usable content is cut between lines, so a
+ * line in progress is dropped whole (never a half line) and the cut is
+ * stated explicitly. Lines already above the ceiling are still joined —
+ * the budget is enforced on the FINAL string, truncating the tail.
+ */
+function joinWithBudget(lines, budget) {
+  const text = lines.join('\n')
+  if (text.length <= budget) return text
+  const notice = '  …recalled context truncated at the character budget. Use veyra_recall for details.'
+  let out = text.slice(0, Math.max(budget - notice.length - 1, 0))
+  const lastBreak = out.lastIndexOf('\n')
+  if (lastBreak > 0) out = out.slice(0, lastBreak) // drop the partial line whole
+  return out + '\n' + notice
+}
+
+/**
  * Resolve which recalled records a record RETIRED, and which recalled records
  * retired it.
  *
@@ -168,7 +205,7 @@ export function composeAgentContext(records, { stores = [], workspace = null, ch
  * nothing that already worked regresses; lifecycle, evidence, and supersession
  * are added as bounded extra lines.
  */
-export function renderAgentContext(composed, { heading = 'Veyra recalled engineering memory', changes = null } = {}) {
+export function renderAgentContext(composed, { heading = 'Veyra recalled engineering memory', changes = null, budget = DEFAULT_RECALL_CHARS } = {}) {
   if (!Array.isArray(composed) || composed.length === 0) return ''
   const lines = [
     heading,
@@ -263,7 +300,7 @@ export function renderAgentContext(composed, { heading = 'Veyra recalled enginee
       if (body) lines.push(`  ${body.slice(0, 360)}`)
     }
   }
-  return lines.join('\n')
+  return joinWithBudget(lines, budget)
 }
 
 export const GUIDANCE_TEXT = [
@@ -481,7 +518,7 @@ function changeSummaryLines(changes, composed) {
   return lines
 }
 
-export function buildRecallContext({ veyraHome, cwd, query = '', limit = DEFAULT_RECALL_LIMIT, includeReusable = true, goal = null, changedFiles = null, degraded = false }) {
+export function buildRecallContext({ veyraHome, cwd, query = '', limit = DEFAULT_RECALL_LIMIT, includeReusable = true, goal = null, changedFiles = null, degraded = false, budget = DEFAULT_RECALL_CHARS }) {
   if (limit === 0) return ''
   const workspace = cwd || process.cwd()
   const projectId = projectIdFor(workspace)
@@ -520,7 +557,7 @@ export function buildRecallContext({ veyraHome, cwd, query = '', limit = DEFAULT
     workspace,
     changedFiles,
     degraded,
-  }), { changes: changedFiles })
+  }), { changes: changedFiles, budget })
 }
 
 export function createContextProvider(runtime) {
@@ -540,6 +577,7 @@ export function createContextProvider(runtime) {
         query,
         limit: runtime.recallLimit,
         includeReusable: runtime.includeReusable,
+        budget: runtime.recallChars,
         // Phase 2 — degraded Code Intelligence must stay observable in the
         // agent-facing context (reduced evidence, never fabricated symbols).
         degraded: Boolean(runtime.codeEngine?.isDegraded),

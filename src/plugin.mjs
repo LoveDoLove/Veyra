@@ -19,7 +19,7 @@ import { Config, normalizeRecallLimit } from './config.mjs'
 import { closeAllStores } from './store.mjs'
 import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
-import { GUIDANCE_TEXT, createContextProvider, rememberClaimedPrompt, recordRepositoryChange } from './context.mjs'
+import { DEFAULT_RECALL_CHARS, GUIDANCE_TEXT, createContextProvider, rememberClaimedPrompt, recordRepositoryChange } from './context.mjs'
 import { candidateFromBuffer, newBuffer, observeEvent } from './observe.mjs'
 import { maybeLearn, provenanceAllowsLearning, reviewCandidate, strengthenMemory } from './learn.mjs'
 import { markStale, sweepStale } from './evolve.mjs'
@@ -129,6 +129,12 @@ function createRuntime(ctx, config = {}) {
     includeReusable: config.includeReusable !== false,
     observe: config.observe !== false,
     learn: config.learn !== false,
+    // GOAL.md §11 — the recall intake is bounded in BOTH dimensions: record
+    // count (recallLimit) and total injected characters (DEFAULT_RECALL_CHARS).
+    // The character cap is not a Settings toggle: it is a fixed safety bound
+    // on the agent-facing intake, so a misconfigured recallLimit can never
+    // expand the injected context without bound.
+    recallChars: DEFAULT_RECALL_CHARS,
     fallbackCwd: process.cwd(),
     codeEngine,
     codebaseWatch: config.codebaseWatch !== false,
