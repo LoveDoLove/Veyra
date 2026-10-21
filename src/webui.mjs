@@ -235,7 +235,12 @@ export function handleVeyraHttp(runtime, req, res) {
 
 export function registerWebUi(ctx, runtime) {
   const registerOn = (scope) => {
-    const server = scope?.webServer
+    // A service provided by a SIBLING fiber (the DSH profile mounts webServer and
+    // third-party plugins as siblings) is reachable through ctx.get(), but a direct
+    // property read needs `inject`, which this plugin does not declare. Read it the
+    // same way the availability probe above does, and keep the property path for
+    // plain-object scopes (tests).
+    const server = typeof scope?.get === 'function' ? scope.get('webServer') : scope?.webServer
     if (!server || typeof server.register !== 'function') return false
     const handler = (req, res) => handleVeyraHttp(runtime, req, res)
     const add = () => server.register({ kind: 'prefix', path: WEBUI_PATH, handler })
