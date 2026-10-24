@@ -26,6 +26,9 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Approve staged package
+        run: npm stage approve "$(npm stage list --json | jq -r '.[0].stage_id')"
+
       - name: Upgrade npm to >=11.15.0 (required for npm stage publish)
         run: npm install -g npm@latest
 
@@ -52,6 +55,9 @@ jobs:
 
       - name: Publish to npm
         run: npm stage publish --access public
+
+      - name: Approve staged package
+        run: npm stage approve "$(npm stage list --json | jq -r '.[0].stage_id')"
 
       - name: Commit bumped version
         if: steps.version.outputs.before != steps.version.outputs.after
