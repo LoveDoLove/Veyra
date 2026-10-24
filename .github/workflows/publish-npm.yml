@@ -30,7 +30,16 @@ jobs:
       - name: Upgrade npm to >=11.15.0 (required for npm stage publish)
 
       - name: Approve staged package
-        run: npm stage approve "$(npm stage list --json | jq -r '.[0].stage_id')"
+        run: |
+          set -euo pipefail
+          STAGE_ID=$(npm stage list --json | jq -r '.stage_id // .stages[0].stage_id // .items[0].stage_id // .[0].stage_id // empty')
+          if [ -n "$STAGE_ID" ]; then
+            echo "Approving stage: $STAGE_ID"
+            npm stage approve "$STAGE_ID"
+          else
+            echo "No staged package found to approve"
+            exit 1
+          fi
         run: npm install -g npm@latest
 
       - run: npm test
@@ -60,7 +69,16 @@ jobs:
         run: npm stage publish --access public
 
       - name: Approve staged package
-        run: npm stage approve "$(npm stage list --json | jq -r '.[0].stage_id')"
+        run: |
+          set -euo pipefail
+          STAGE_ID=$(npm stage list --json | jq -r '.stage_id // .stages[0].stage_id // .items[0].stage_id // .[0].stage_id // empty')
+          if [ -n "$STAGE_ID" ]; then
+            echo "Approving stage: $STAGE_ID"
+            npm stage approve "$STAGE_ID"
+          else
+            echo "No staged package found to approve"
+            exit 1
+          fi
 
 
 
