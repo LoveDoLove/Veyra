@@ -30,6 +30,7 @@ import { existsSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { AUTHORITIES, RELATIONS, STATUSES, VALIDATIONS } from './types.mjs'
 import { DIFF, diffMemory, replacementEvidence, sharesSubject, strongestMatch } from './diff.mjs'
+import { jaccard } from './text.mjs'
 
 const STALE_AFTER_MS = 120 * 86_400_000
 
@@ -39,6 +40,66 @@ const STALE_AFTER_MS = 120 * 86_400_000
  * without changing the store. Paging is a later phase.
  */
 const SWEEP_LIST_LIMIT = 200
+
+/**
+ * Relation-linking candidate pool.
+ *
+ * The old pool was a pure recency slice (`store.list({ limit: 60 })`), so in a
+ * mature store with more than 60 records a new record was only ever compared
+ * against the 60 most recently UPDATED rows. Knowledge that went quiet was
+ * invisible to relation evolution: no `extends` / `updates` / `contradicts` /
+ * `supersedes` edge ever pointed at it, and downstream contradiction
+ * surfacing and one-hop expansion inherited the same blind spot. Recency is a
+ * retention signal, not a relevance signal (Mnemon
+ * `ComputeEffectiveImportance`, refs/mnemon/internal/memory/store/node.go:312-335):
+ * relevance has to come from content.
+ *
+ * The pool is now two tiers with a hard cap:
+ *   1. content — the store's own FTS5 OR-query (refs/tencentdb-agent-memory
+ *      MemoryCore/src/core/store/tokenize.ts:73-99 builds the same quoted
+ *      OR terms; store.mjs `toFtsQuery` already implements it), ranked by
+ *      BM25. Zero FTS hits (e.g. CJK-only claims, which the FTS tokenizer
+ *      does not bigram) fall back to recency on that tier only.
+ *   2. recency — `store.list` capped at 200 (the store's own hard cap),
+ *      keeping recently touched rows comparable for cases FTS misses.
+ *
+ * Every candidate is then scored with the same Jaccard claim-token overlap
+ * that `diffMemory` uses (refs/mnemon/internal/memory/search/keyword.go:100-203),
+ * so the pool is content-relevant before `evolveAgainst` runs its own diff.
+ * Project isolation needs no extra check: a store is its own database,
+ * exactly as the recency pool already assumed.
+ */
+export const RELATION_POOL_CAP = 120
+
+export function relationCandidates(store, candidate) {
+  if (!store) return []
+  const tiers = []
+  const claimText = [String(candidate?.title || '').trim(), String(candidate?.body || '').trim()].filter(Boolean).join('\n')
+  const ftsRows = (() => {
+    try {
+      return store.search?.(claimText, { limit: RELATION_POOL_CAP }) || []
+    } catch {
+      return [] // FTS unavailable — recency tier still bounds the pool
+    }
+  })()
+  if (ftsRows.length > 0) tiers.push(...ftsRows)
+  tiers.push(...(store.list?.({ limit: 200 }) || []))
+  const seen = new Set()
+  const pool = []
+  for (const r of tiers) {
+    if (!r || r.id === candidate?.id || r.forgotten || seen.has(r.id)) continue
+    seen.add(r.id)
+    pool.push(r)
+  }
+  const scored = pool.map((r) => ({
+    r,
+    // Tie-breaks keep the store order (content tier first, then recency).
+    score: claimText.trim() ? jaccard(claimText, [String(r.title || '').trim(), String(r.body || '').trim()].filter(Boolean).join('\n')) : 0,
+  }))
+  scored.sort((a, b) => b.score - a.score)
+  return scored.slice(0, RELATION_POOL_CAP).map((s) => s.r)
+}
+
 
 function uniqueRelations(list) {
   const seen = new Set()
@@ -161,7 +222,12 @@ function linkUpdate(store, incoming, neighbor) {
  */
 export function evolveAgainst(store, incoming, existing = []) {
   if (!incoming) return { record: incoming, action: 'skip', neighbor: null }
-  const known = existing.length ? existing : (store?.list?.({ limit: 60 }) || [])
+  // No explicit pool (maintenance-only callers, e.g. consolidate with a null
+  // store): fall back to the store's own content-relevant candidate pool,
+  // not a recency slice — see `relationCandidates` in this file (capped,
+  // content-relevant). Explicit
+  // pools always win, so `null`-store callers that pass one are untouched.
+  const known = existing.length ? existing : relationCandidates(store, incoming)
   const peers = known.filter((r) => r && r.id !== incoming.id && !r.forgotten)
   const diff = diffMemory(incoming, peers)
   const relations = [...(incoming.relations || [])]

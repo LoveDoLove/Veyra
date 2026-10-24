@@ -37,7 +37,28 @@ import {
 } from './types.mjs'
 import { contentHash, newRecordId, projectDbPath, reusableDbPath } from './ids.mjs'
 import { scrub } from './redact.mjs'
+import { tokenize } from './text.mjs'
 import { closeAllWatchers } from './code/watcher.mjs'
+
+/**
+ * Merge evidence arrays, deduplicating by the path:note:uri:anchor key.
+ * Cap at 32 entries. Used in put() duplicate branch.
+ */
+function mergeEvidence(existing, incoming) {
+  const seen = new Set()
+  const out = []
+  for (const item of [...(existing || []), ...(incoming || [])]) {
+    if (!item) continue
+    const key = typeof item === 'string'
+      ? item
+      : `${item.path || ''}:${item.note || ''}:${item.uri || ''}:${item.anchor || ''}`
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    out.push(item)
+  }
+  return out.slice(0, 32)
+}
+
 
 const SCHEMA_DDL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -92,6 +113,37 @@ CREATE TRIGGER IF NOT EXISTS memory_fts_update AFTER UPDATE ON memory BEGIN
     VALUES ('delete', old.rowid, old.id, old.title, old.body, old.tags);
   INSERT INTO memory_fts(rowid, id, title, body, tags)
     VALUES (new.rowid, new.id, new.title, new.body, new.tags);
+END;
+
+-- Supplementary search index. The primary FTS5 index above can only see
+-- title/body/tags, and its unicode61 tokenizer keeps a whole CJK run as ONE
+-- token — so evidence anchors and partial CJK queries were invisible to it.
+-- This table holds the scrubbed evidence text plus CJK bigrams. It is derived
+-- data: rebuilt from memory at open time and kept in step by put().
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_search_fts USING fts5(
+  id UNINDEXED,
+  search_text,
+  tokenize='unicode61'
+);
+
+-- Triggers to keep memory_search_fts in step with memory.
+-- Uses a deterministic SQL function to extract searchable text from the record.
+-- INSERT: build search_text from title + body + tags + evidence + CJK bigrams.
+-- UPDATE: delete old row, insert new search_text.
+-- DELETE: delete the row by id.
+CREATE TRIGGER IF NOT EXISTS memory_search_fts_insert AFTER INSERT ON memory BEGIN
+  INSERT INTO memory_search_fts(rowid, id, search_text)
+    VALUES (new.rowid, new.id, veyra_search_text(new.title, new.body, new.tags, new.evidence));
+END;
+
+CREATE TRIGGER IF NOT EXISTS memory_search_fts_update AFTER UPDATE ON memory BEGIN
+  DELETE FROM memory_search_fts WHERE id = old.id;
+  INSERT INTO memory_search_fts(rowid, id, search_text)
+    VALUES (new.rowid, new.id, veyra_search_text(new.title, new.body, new.tags, new.evidence));
+END;
+
+CREATE TRIGGER IF NOT EXISTS memory_search_fts_delete BEFORE DELETE ON memory BEGIN
+  DELETE FROM memory_search_fts WHERE id = old.id;
 END;
 
 CREATE INDEX IF NOT EXISTS idx_memory_project ON memory(project_id);
@@ -372,12 +424,56 @@ function openDatabase(filePath) {
     throw new Error(`Veyra refuses to open corrupted store: ${filePath} (${integrity?.quick_check ?? 'quick_check failed'})`)
   }
   db.exec(SCHEMA_DDL)
+  // Register the deterministic SQL function for building supplementary search text.
+  // Must run AFTER SCHEMA_DDL so the triggers exist and can call it.
+  db.function('veyra_search_text', { deterministic: true }, (title, body, tags, evidence) => {
+    const t = String(title ?? '').trim()
+    const b = String(body ?? '').trim()
+    const tg = typeof tags === 'string' ? tags : '[]'
+    const ev = typeof evidence === 'string' ? evidence : '[]'
+    let parts = [t, b]
+    try {
+      const tagArr = JSON.parse(tg)
+      if (Array.isArray(tagArr)) parts = parts.concat(tagArr.map(t => String(t ?? '').trim()))
+    } catch { /* ignore malformed JSON */ }
+    try {
+      const evArr = JSON.parse(ev)
+      if (Array.isArray(evArr)) {
+        for (const e of evArr) {
+          if (!e) continue
+          if (typeof e === 'string') parts.push(e.trim())
+          else {
+            const note = typeof e.note === 'string' ? e.note.trim() : ''
+            const path = typeof e.path === 'string' ? e.path.trim() : ''
+            const uri = typeof e.uri === 'string' ? e.uri.trim() : ''
+            const anchor = typeof e.anchor === 'string' ? e.anchor.trim() : ''
+            if (note) parts.push(note)
+            if (path) parts.push(path)
+            if (uri) parts.push(uri)
+            if (anchor) parts.push(anchor)
+          }
+        }
+      }
+    } catch { /* ignore malformed JSON */ }
+    const allText = parts.join(' ')
+    const tokens = new Set()
+    const LATIN_TOKEN = /[a-z0-9_]{2,}/g
+    const HAN_RUN = /[\u4e00-\u9fff]+/g
+    const STOPWORDS = new Set(['a','an','the','is','are','was','were','be','been','being','have','has','had','do','does','did','will','would','could','should','may','might','shall','can','to','of','in','for','on','with','at','by','from','as','into','about','that','this','it','its','or','and','but','if','not','no','so','up','out','than','then','too','very','just','also','more','some','any','all','each','i','me','my','we','you','your','he','she','they','them','his','her','our','their','what','which','who','how','when','where','why'])
+    const lower = allText.toLowerCase()
+    const words = lower.match(LATIN_TOKEN) || []
+    for (const word of words) if (!STOPWORDS.has(word)) tokens.add(word)
+    const hans = lower.match(HAN_RUN) || []
+    for (const run of hans) {
+      if (run.length === 1) tokens.add(run)
+      else for (let i = 0; i < run.length - 1; i++) tokens.add(run.slice(i, i + 2))
+    }
+    return Array.from(tokens).join(' ')
+  })
   const version = db.prepare('SELECT value FROM meta WHERE key = ?').get('schema_version')
   if (!version) {
     db.prepare('INSERT INTO meta(key, value) VALUES (?, ?)').run('schema_version', String(SCHEMA_VERSION))
   } else if (Number(version.value) !== SCHEMA_VERSION) {
-    // Forward-only: unknown future versions fail closed rather than silently
-    // corrupting data. Older versions can be migrated here later.
     throw new Error(`unsupported Veyra schema version ${version.value} (expected ${SCHEMA_VERSION})`)
   }
   return db
@@ -463,7 +559,33 @@ export class MemoryStore {
       // A corrupt content-twin is NOT a duplicate: returning it would hand
       // degraded state to the caller as if it were authoritative. A fresh
       // intact row is written instead; the corrupt bytes stay untouched.
-      if (dup && !dup.corrupt?.length) return { record: dup, created: false, duplicate: true, redacted: record.redacted }
+      if (dup && !dup.corrupt?.length) {
+        // Merge incoming evidence into the existing record (§24 dedupe + evidence merge)
+        const merged = mergeEvidence(dup.evidence, record.evidence)
+        if (merged.length !== dup.evidence.length) {
+          this._update.run({ 
+            id: dup.id,
+            kind: dup.kind,
+            status: dup.status,
+            validation: dup.validation,
+            authority: dup.authority,
+            confidence: dup.confidence,
+            scope: dup.scope,
+            projectId: dup.projectId,
+            title: dup.title,
+            body: dup.body,
+            tags: asJson(dup.tags, []),
+            evidence: asJson(merged, []),
+            relations: asJson(dup.relations, []),
+            source: asJson(dup.source, {}),
+            contentHash: dup.contentHash,
+            forgotten: dup.forgotten ? 1 : 0,
+            updatedAt: nowIso(),
+            lastRecalledAt: dup.lastRecalledAt
+          })
+        }
+        return { record: this.get(dup.id), created: false, duplicate: true, redacted: record.redacted }
+      }
     }
 
     // node:sqlite rejects named-parameter objects that contain keys the
@@ -540,20 +662,47 @@ export class MemoryStore {
   search(query, { limit = 20, includeForgotten = false, recallOnly = false } = {}) {
     const safeLimit = Math.max(1, Math.min(Number(limit) || 20, 100))
     const ftsQuery = toFtsQuery(query)
-    let rows
+    let rows = []
     let fromFts = false
     if (ftsQuery) {
-      const forgottenClause = includeForgotten ? '' : 'AND m.forgotten = 0'
-      const sql = `
-        SELECT m.*, f.rank AS rank
+      const forgottenClause = includeForgotten ? '' : 'AND forgotten = 0'
+      // Query both FTS indexes separately, then merge and deduplicate in JS
+      // to preserve correct ftsPosition based on the merged ORDER BY rank.
+      const sqlPrimary = `
+        SELECT m.*, f.rank
         FROM memory_fts f
         JOIN memory m ON m.id = f.id
         WHERE memory_fts MATCH ? ${forgottenClause}
         ORDER BY f.rank
         LIMIT ?
       `
+      const sqlSupplementary = `
+        SELECT m.*, f.rank
+        FROM memory_search_fts f
+        JOIN memory m ON m.id = f.id
+        WHERE memory_search_fts MATCH ? ${forgottenClause}
+        ORDER BY f.rank
+        LIMIT ?
+      `
       try {
-        rows = this.db.prepare(sql).all(ftsQuery, safeLimit)
+        const primaryRows = this.db.prepare(sqlPrimary).all(ftsQuery, safeLimit)
+        const supplementaryRows = this.db.prepare(sqlSupplementary).all(ftsQuery, safeLimit)
+        // Merge and deduplicate by id, keeping the best (lowest) rank
+        const merged = new Map()
+        for (const row of primaryRows) {
+          merged.set(row.id, { row, rank: row.rank })
+        }
+        for (const row of supplementaryRows) {
+          const existing = merged.get(row.id)
+          if (!existing || row.rank < existing.rank) {
+            merged.set(row.id, { row, rank: row.rank })
+          }
+        }
+        // Sort by rank and take top safeLimit
+        rows = Array.from(merged.values())
+          .sort((a, b) => a.rank - b.rank)
+          .slice(0, safeLimit)
+          .map(v => v.row)
         fromFts = rows.length > 0
       } catch {
         rows = []
@@ -635,6 +784,51 @@ export function openEphemeralStore(filePath = ':memory:', identity = { scope: SC
     db.exec('PRAGMA foreign_keys = ON;')
     db.exec('PRAGMA busy_timeout = 5000;')
     db.exec(SCHEMA_DDL)
+    // Register the deterministic SQL function for building supplementary search text.
+    db.function('veyra_search_text', { deterministic: true }, (title, body, tags, evidence) => {
+      const t = String(title ?? '').trim()
+      const b = String(body ?? '').trim()
+      const tg = typeof tags === 'string' ? tags : '[]'
+      const ev = typeof evidence === 'string' ? evidence : '[]'
+      let parts = [t, b]
+      try {
+        const tagArr = JSON.parse(tg)
+        if (Array.isArray(tagArr)) parts = parts.concat(tagArr.map(t => String(t ?? '').trim()))
+      } catch { /* ignore malformed JSON */ }
+      try {
+        const evArr = JSON.parse(ev)
+        if (Array.isArray(evArr)) {
+          for (const e of evArr) {
+            if (!e) continue
+            if (typeof e === 'string') parts.push(e.trim())
+            else {
+              const note = typeof e.note === 'string' ? e.note.trim() : ''
+              const path = typeof e.path === 'string' ? e.path.trim() : ''
+              const uri = typeof e.uri === 'string' ? e.uri.trim() : ''
+              const anchor = typeof e.anchor === 'string' ? e.anchor.trim() : ''
+              if (note) parts.push(note)
+              if (path) parts.push(path)
+              if (uri) parts.push(uri)
+              if (anchor) parts.push(anchor)
+            }
+          }
+        }
+      } catch { /* ignore malformed JSON */ }
+      const allText = parts.join(' ')
+      const tokens = new Set()
+      const LATIN_TOKEN = /[a-z0-9_]{2,}/g
+      const HAN_RUN = /[\u4e00-\u9fff]+/g
+      const STOPWORDS = new Set(['a','an','the','is','are','was','were','be','been','being','have','has','had','do','does','did','will','would','could','should','may','might','shall','can','to','of','in','for','on','with','at','by','from','as','into','about','that','this','it','its','or','and','but','if','not','no','so','up','out','than','then','too','very','just','also','more','some','any','all','each','i','me','my','we','you','your','he','she','they','them','his','her','our','their','what','which','who','how','when','where','why'])
+      const lower = allText.toLowerCase()
+      const words = lower.match(LATIN_TOKEN) || []
+      for (const word of words) if (!STOPWORDS.has(word)) tokens.add(word)
+      const hans = lower.match(HAN_RUN) || []
+      for (const run of hans) {
+        if (run.length === 1) tokens.add(run)
+        else for (let i = 0; i < run.length - 1; i++) tokens.add(run.slice(i, i + 2))
+      }
+      return Array.from(tokens).join(' ')
+    })
     db.prepare('INSERT INTO meta(key, value) VALUES (?, ?)').run('schema_version', String(SCHEMA_VERSION))
     const store = Object.create(MemoryStore.prototype)
     store.filePath = ':memory:'

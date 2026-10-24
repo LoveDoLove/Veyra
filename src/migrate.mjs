@@ -320,6 +320,51 @@ export function applyMirrorRemoval(filePath, deletions) {
   if (!deletions || deletions.length === 0) return result
 
   const db = new DatabaseSync(filePath)
+  // Register veyra_search_text so triggers work (required by schema DDL)
+  db.function('veyra_search_text', { deterministic: true }, (title, body, tags, evidence) => {
+    const t = String(title ?? '').trim()
+    const b = String(body ?? '').trim()
+    const tg = typeof tags === 'string' ? tags : '[]'
+    const ev = typeof evidence === 'string' ? evidence : '[]'
+    let parts = [t, b]
+    try {
+      const tagArr = JSON.parse(tg)
+      if (Array.isArray(tagArr)) parts = parts.concat(tagArr.map(t => String(t ?? '').trim()))
+    } catch { /* ignore malformed JSON */ }
+    try {
+      const evArr = JSON.parse(ev)
+      if (Array.isArray(evArr)) {
+        for (const e of evArr) {
+          if (!e) continue
+          if (typeof e === 'string') parts.push(e.trim())
+          else {
+            const note = typeof e.note === 'string' ? e.note.trim() : ''
+            const path = typeof e.path === 'string' ? e.path.trim() : ''
+            const uri = typeof e.uri === 'string' ? e.uri.trim() : ''
+            const anchor = typeof e.anchor === 'string' ? e.anchor.trim() : ''
+            if (note) parts.push(note)
+            if (path) parts.push(path)
+            if (uri) parts.push(uri)
+            if (anchor) parts.push(anchor)
+          }
+        }
+      }
+    } catch { /* ignore malformed JSON */ }
+    const allText = parts.join(' ')
+    const tokens = new Set()
+    const LATIN_TOKEN = /[a-z0-9_]{2,}/g
+    const HAN_RUN = /[\u4e00-\u9fff]+/g
+    const STOPWORDS = new Set(['a','an','the','is','are','was','were','be','been','being','have','has','had','do','does','did','will','would','could','should','may','might','shall','can','to','of','in','for','on','with','at','by','from','as','into','about','that','this','it','its','or','and','but','if','not','no','so','up','out','than','then','too','very','just','also','more','some','any','all','each','i','me','my','we','you','your','he','she','they','them','his','her','our','their','what','which','who','how','when','where','why'])
+    const lower = allText.toLowerCase()
+    const words = lower.match(LATIN_TOKEN) || []
+    for (const word of words) if (!STOPWORDS.has(word)) tokens.add(word)
+    const hans = lower.match(HAN_RUN) || []
+    for (const run of hans) {
+      if (run.length === 1) tokens.add(run)
+      else for (let i = 0; i < run.length - 1; i++) tokens.add(run.slice(i, i + 2))
+    }
+    return Array.from(tokens).join(' ')
+  })
   const select = db.prepare('SELECT status, forgotten, relations FROM memory WHERE id = ?')
   const update = db.prepare('UPDATE memory SET relations = ? WHERE id = ? AND relations = ?')
 

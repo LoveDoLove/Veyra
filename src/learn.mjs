@@ -25,8 +25,9 @@ import {
 } from './types.mjs'
 import { contentHash } from './ids.mjs'
 import { looksLikeClaim } from './understand.mjs'
-import { evolveAgainst } from './evolve.mjs'
+import { evolveAgainst, relationCandidates } from './evolve.mjs'
 import { addRejected, addUnresolved } from './negative.mjs'
+
 
 export function looksDurable(text) {
   return looksLikeClaim(text) && typeof text === 'string' && text.length >= 60
@@ -214,7 +215,7 @@ export function provenanceAllowsLearning(record) {
  *
  * Returns `{ hash, existing }` on pass, or `{ blocked: { decision, reason } }`.
  */
-function learningGuards(store, candidate, { limit = 60 } = {}) {
+function learningGuards(store, candidate) {
   if (!store || !candidate) return { blocked: { decision: WRITE_GATES.DROP, reason: 'no-record' } }
   if (!provenanceAllowsLearning(candidate)) {
     return { blocked: { decision: WRITE_GATES.DEFER, reason: 'provenance-gated' } }
@@ -227,7 +228,9 @@ function learningGuards(store, candidate, { limit = 60 } = {}) {
   }
 
   const hash = contentHash(candidate.title, candidate.body)
-  const existing = store.list({ limit }).filter((r) => !r.forgotten)
+  // Content-relevant candidate pool (see `relationCandidates`): forgotten
+  // rows are already excluded, so the pool IS the existing-memory set.
+  const existing = relationCandidates(store, candidate)
   return { hash, existing }
 }
 
@@ -414,8 +417,9 @@ export function remember(store, input, { explicitCanonical = false, repair = fal
   }, { explicitCanonical, repair })
   if (!written.record || written.duplicate) return written
 
-  const existing = store.list({ limit: 60 }).filter((r) => !r.forgotten && r.id !== written.record.id)
-  const evolved = evolveAgainst(store, written.record, existing)
+  // Same content-relevant pool as the write gate, so an explicit remember
+  // links relations across the whole store, not just its last 60 rows.
+  const evolved = evolveAgainst(store, written.record, relationCandidates(store, written.record))
   const before = JSON.stringify(written.record.relations || [])
   const after = JSON.stringify(evolved.record.relations || [])
   if (before === after) return written

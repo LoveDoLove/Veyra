@@ -75,7 +75,7 @@ test('a zero-signal record with perfect metadata cannot outrank a genuine match'
   s.put({ ...BASE, id: 'PERFECT_META', title: 'Release branch naming convention',
     body: 'Release branches use release/x.y.z prefixes and are tagged before merging to main.',
     validation: 'verified', confidence: 'high',
-    evidence: [{ path: 'src/ci.yml', note: 'test-passed' }],
+    evidence: [{ path: 'src/release.yml', note: 'test-passed' }],
     createdAt: FRESH(), updatedAt: FRESH(),
     source: { causal: {
       symptom: 'CI jobs fail intermittently on release builds',

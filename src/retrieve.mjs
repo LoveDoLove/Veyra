@@ -68,6 +68,22 @@ export function validationTier(validation) {
   }
 }
 
+/**
+ * Authority tier — graded sort-only channel.
+ * CANONICAL+VERIFIED > DERIVED+VERIFIED > CANONICAL+REVIEWED > DERIVED+REVIEWED >
+ * CANONICAL+UNVERIFIED > DERIVED+UNVERIFIED > CANDIDATE.
+ * RQB-4: verified derived MUST outrank unverified canonical.
+ * Placed BELOW query-signal tier, ABOVE composite/fusion.
+ */
+export function authorityTier(record) {
+  const auth = record.authority
+  const val = record.validation
+  // Use a wider spread so verified derived (0.95) > unverified canonical (0.85)
+  const base = auth === AUTHORITIES.CANONICAL ? 0.8 : (auth === AUTHORITIES.DERIVED ? 0.6 : 0.0)
+  const valBoost = val === VALIDATIONS.VERIFIED ? 0.35 : (val === VALIDATIONS.REVIEWED ? 0.15 : 0.05)
+  return base + valBoost
+}
+
 export function scopeProximity(scope, preferProject = true) {
   if (scope === SCOPES.PROJECT) return preferProject ? 1.0 : 0.7
   if (scope === SCOPES.REUSABLE) return preferProject ? 0.55 : 1.0
@@ -469,6 +485,7 @@ const FUSION_CHANNELS = Object.freeze([
   'applicability',       // §12 context compatibility (Phase 4, new)
   'temporal_validity',   // §13 validity window (Phase 4, new)
   'goal_affinity',       // explicit-goal routing (Phase 10, new; flat → inactive)
+  'authority',           // authority tier: canonical+verified > derived+verified > canonical+unverified > candidate (sort-only, below signal tier)
 ])
 
 export function reciprocalRankFusion(scored) {
@@ -558,6 +575,7 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
         applicability: contextCompatibility(rec),
         temporal_validity: temporalState(rec) === 'expired' ? 0 : 1,
         goal_affinity: Number(goalHit.toFixed(3)),
+        authority: Number(authorityTier(rec).toFixed(3)),
       },
     }
   })
@@ -674,6 +692,13 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
   // the composite order — recency — is untouched). Empty query: no query
   // to have signal against, so the tier is inactive by construction.
   const signalTier = (r) => ((r.scores.relevance > 0 || r.scores.semantic > 0) ? 1 : 0)
+
+  // Authority tier: graded sort key placed BELOW fusion (which includes
+  // polarity_compatible from RRF), ABOVE composite. Does not touch composite.
+  // Canonical+verified outranks derived+verified, both outrank canonical+unverified, etc.
+  // RQB-4: verified derived must outrank unverified canonical.
+  // Placed after fusion so polarity/negative signals in RRF are respected first.
+  const authorityKey = (r) => r.scores.authority || 0
   scored.sort((a, b) => {
     // Goal routing sits ABOVE the query-signal tier: the caller has stated
     // what they are trying to do, which is stronger evidence about what to
@@ -688,7 +713,15 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
       const tier = signalTier(b) - signalTier(a)
       if (tier !== 0) return tier
     }
-    return (b.scores.fusion - a.scores.fusion) || (b.scores.composite - a.scores.composite) || (sortKey(b) - sortKey(a))
+    // Fusion (includes polarity via RRF) comes before authority
+    const fusionT = (b.scores.fusion - a.scores.fusion)
+    if (fusionT !== 0) return fusionT
+    // Authority tier: below fusion, above composite
+    if (hasQuery) {
+      const authT = authorityKey(b) - authorityKey(a)
+      if (authT !== 0) return authT
+    }
+    return (b.scores.composite - a.scores.composite) || (sortKey(b) - sortKey(a))
   })
   return scored
 }
@@ -796,6 +829,7 @@ const COVERAGE_ZERO_SCORES = Object.freeze({
   rrf: NEG_COVERAGE_SCORE,
   fusion: NEG_COVERAGE_SCORE,
   goal_affinity: NEG_COVERAGE_SCORE,
+  authority: NEG_COVERAGE_SCORE,
 })
 
 /**
