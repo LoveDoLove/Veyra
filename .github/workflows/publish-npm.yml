@@ -28,12 +28,13 @@ jobs:
 
 
       - name: Upgrade npm to >=11.15.0 (required for npm stage publish)
+
+      - name: Approve staged package
+        run: npm stage approve "$(npm stage list --json | jq -r '.[0].stage_id')"
         run: npm install -g npm@latest
 
       - run: npm test
 
-      - name: Approve staged package
-        run: npm stage approve "$(npm stage list --json | jq -r '.[0].stage_id')"
 
       # Every push to main publishes. npm versions are immutable, so if
       # package.json already exists on the registry, bump the patch first
@@ -58,9 +59,10 @@ jobs:
       - name: Publish to npm
         run: npm stage publish --access public
 
-
       - name: Approve staged package
         run: npm stage approve "$(npm stage list --json | jq -r '.[0].stage_id')"
+
+
 
       - name: Commit bumped version
         if: steps.version.outputs.before != steps.version.outputs.after
