@@ -26,13 +26,14 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Approve staged package
-        run: npm stage approve "$(npm stage list --json | jq -r '.[0].stage_id')"
 
       - name: Upgrade npm to >=11.15.0 (required for npm stage publish)
         run: npm install -g npm@latest
 
       - run: npm test
+
+      - name: Approve staged package
+        run: npm stage approve "$(npm stage list --json | jq -r '.[0].stage_id')"
 
       # Every push to main publishes. npm versions are immutable, so if
       # package.json already exists on the registry, bump the patch first
@@ -53,8 +54,10 @@ jobs:
           echo "before=${before}" >> "$GITHUB_OUTPUT"
           echo "after=${after}" >> "$GITHUB_OUTPUT"
 
+
       - name: Publish to npm
         run: npm stage publish --access public
+
 
       - name: Approve staged package
         run: npm stage approve "$(npm stage list --json | jq -r '.[0].stage_id')"
