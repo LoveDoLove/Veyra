@@ -356,7 +356,8 @@ function testOutcomeFrom(tools, files) {
   for (const t of tools || []) {
     const name = String(t.name || '')
     const cmd = String(t.args?.command || '')
-    const isTestCall = /test/i.test(name) || /test|spec/i.test(cmd)
+    const desc = String(t.args?.description || '')
+    const isTestCall = /test/i.test(name) || /test|spec/i.test(cmd) || /test|spec/i.test(desc)
     if (isTestCall) hasTestTool = true
 
     if (name.includes(':result')) {
@@ -409,7 +410,11 @@ function tagsFor(signal, files, tools, causal = null) {
   const outcome = testOutcomeFrom(tools, files)
   if (outcome === 'test-passed') tags.push('verified-test')
   const names = new Set(tools.map((t) => String(t.name).split(':')[0]))
-  if (names.has('edit') || names.has('write') || names.has('str_replace_editor')) tags.push('edited')
+  const hasEdit = names.has('edit') || names.has('write') || names.has('str_replace_editor')
+    || tools.some((t) => String(t.name).split(':')[0] === 'run_code' && (
+      /(?:edit|write)/i.test(t.args?.description || '') || /(?:tools\.edit|tools\.write)/.test(t.args?.code || '')
+    ))
+  if (hasEdit) tags.push('edited')
   return [...new Set(tags)].slice(0, 16)
 }
 
@@ -433,7 +438,7 @@ export function distillBuffer(buffer, { projectId, sessionId, cwd, agent } = {})
   const meaningfulTools = tools.filter((t) => {
     const name = String(t.name).split(':')[0]
     return name === 'bash' || name === 'edit' || name === 'write' || name === 'read'
-      || name === 'grep' || name === 'glob' || name === 'str_replace_editor'
+      || name === 'grep' || name === 'glob' || name === 'str_replace_editor' || name === 'run_code'
   })
 
   const hasClaim = looksLikeClaim(combined)

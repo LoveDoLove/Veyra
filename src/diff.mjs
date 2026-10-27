@@ -131,13 +131,19 @@ export function replacementEvidence(record) {
  * similarity and can never by itself produce an UPDATE.
  */
 export function sharesSubject(a, b) {
+  const clean = (p) => {
+    if (typeof p !== 'string') return ''
+    return p.replace(/^(?:\.\/|\.\\)/, '').replace(/(?::\d+(?:-\d+)?|#L?\d+(?:-L?\d+)?|:L\d+(?:-L?\d+)?)$/, '').replace(/\\/g, '/').trim()
+  }
   const paths = (record) => {
     const out = new Set()
     for (const item of record?.evidence || []) {
-      if (item && typeof item.path === 'string' && item.path) out.add(item.path)
+      const p = clean(item?.path)
+      if (p) out.add(p)
     }
     for (const item of record?.source?.files || []) {
-      if (typeof item === 'string' && item) out.add(item)
+      const p = clean(item)
+      if (p) out.add(p)
     }
     return out
   }

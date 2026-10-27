@@ -351,7 +351,7 @@ export function verifyEvidenceHealth(record, workspace) {
 
   for (const rel of filePaths) {
     const cleanRel = stripLineSuffix(rel)
-    const isTemp = isTemporaryPath(rel, workspace)
+    const isTemp = isTemporaryPath(cleanRel, workspace)
     // An evidence path recorded absolute must be checked as given. `join(ws, abs)`
     // would fabricate '<ws>/<abs>' and report a file that exists as missing,
     // which wrongly marks the record broken (-> stale / outdated proposal).

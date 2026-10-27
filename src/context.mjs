@@ -531,6 +531,7 @@ export function buildRecallContext({ veyraHome, cwd, query = '', limit = DEFAULT
     goal,
     limit,
     includeReusable,
+    changedFiles,
   })
   if (records.length === 0) {
     // GOAL.md Phase 2 — "no known history" must be a distinguishable state,

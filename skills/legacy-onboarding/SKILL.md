@@ -93,22 +93,35 @@ Hold → Baseline → Continue`
    or `/veyra` for record counts). Classify the situation (A–E) and pick a
    depth. A baseline that is current, substantive, and covers the task means
    scenario B: skip discovery and go straight to targeted investigation.
-2. **Discover.** Establish what the project *is*: README/docs, manifests and
-   lockfiles, configuration, entry points, directory layout, tests, CI, and
-   agent instruction files (AGENTS.md/CLAUDE.md and friends). Confirm doc
-   claims against code — code is the authority.
+2. **Discover.** Establish what the project *is*:
+   - **AST & Structural Code Discovery:** Prefer Codebase Memory MCP tools when
+     available (`cbm_arch` for directory component dependencies and architecture
+     overview, `cbm_search` for key entry points and symbols). Check
+     `veyra_code_status` to evaluate AST index freshness and anchor validity.
+   - **Configuration & Boundaries:** Inspect README/docs, manifests and
+     lockfiles, entry points, directory layout, tests, CI pipelines, and agent
+     instruction files (AGENTS.md/CLAUDE.md). Confirm doc claims against code —
+     code is the authority.
+   - **Anti-bloat budget:** Never dump recursive directory trees, full git logs,
+     or read generated build artifacts (`node_modules/`, `dist/`, `.wrangler/`,
+     `build/`). Bounded inspections preserve context and prevent prompt exhaustion.
 3. **Investigate.** At the chosen depth, gather history only where it matters:
    git log/blame on the touched paths, migration and revert commits, changelogs,
    decision records, config evolution. Note *when* things changed, not just
    *that* they changed.
-4. **Extract.** Select only knowledge with long-term engineering value:
+4. **Extract.** Select only knowledge with long-term engineering value, organized
+   into the **4-Part Project Memory Baseline Schema** (target 4–8 records total):
 
-   **Record:** architecture decisions and their rationale; system and
-   compatibility constraints; important migrations (from → to, when, what broke);
-   legacy behavior that still ships; known workarounds and why they exist;
-   recurring incidents; security-sensitive design constraints; deployment
-   constraints; non-obvious dependencies; decisions whose original author and
-   reason are gone.
+   - **Part 1: Identity & Architecture Topology** — Core stack, runtime, main
+     entry points, module boundaries, datastore/state management, and why this
+     architecture was chosen.
+   - **Part 2: Invariants & System Constraints** — Concurrency rules, serialization,
+     transaction boundaries, error propagation, public API invariants, security
+     assumptions, and non-obvious dependencies.
+   - **Part 3: Build, Test & CI Pipeline** — Exact test commands, linting, pre-commit
+     rules, build flags, and deployment targets.
+   - **Part 4: Historical Pitfalls & Workarounds** — Non-obvious workarounds, in-flight
+     migrations, legacy behaviors that must not be broken, and why strange patterns exist.
 
    **Skip:** routine implementation details, one-off debug findings, commit
    messages without durable content, anything the code already states plainly,
@@ -151,9 +164,10 @@ Hold → Baseline → Continue`
    "unverified" framing, low confidence, and evidence noting exactly what is
    missing — then surface it as an open question to the user. Never upgrade
    held knowledge by repetition.
-8. **Baseline.** A completed baseline is a recallable *set* of focused
-   records, not one giant project summary. It is done when a future agent,
-   using only recall, can answer:
+8. **Baseline.** A completed baseline is a recallable *set* of 4–8 focused
+   records fitting the 4-Part Schema, not one giant project summary. Each record
+   must have at least one repository file anchor (`path=...`). It is done when a
+   future agent, using only recall, can answer:
 
    ```text
    What is this project?  Current main stack?  Major architecture?
@@ -163,8 +177,14 @@ Hold → Baseline → Continue`
    What must be checked before touching the core?
    ```
 
-9. **Continue.** Return to the actual task. On later visits, recall first and
-   investigate only deltas.
+   **Validation Gate:** Run `veyra_health` to verify that no orphaned or broken
+   records were created, and execute a sample `veyra_recall` on the primary subsystem
+   to ensure the baseline is retrievable.
+
+9. **Continue & Handoff.** Transition immediately to the actual coding task. On later
+   turns or subsequent agent sessions, the baseline memories are automatically
+   injected into the prompt context — proceed directly with implementation without
+   re-running onboarding or re-investigating established architecture.
 
 ## Veyra integration
 

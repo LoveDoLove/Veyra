@@ -359,6 +359,46 @@ export function goalAffinity(goal, record) {
 }
 
 /**
+ * Code anchor affinity for changed files (Coding Agent Intelligence).
+ * Returns 1.0 if any evidence path matches a changed file, 0.5 if basename matches, 0 otherwise.
+ */
+export function codeAnchorAffinity(record, changedFiles) {
+  if (!Array.isArray(changedFiles) || changedFiles.length === 0) return 0
+  const clean = (p) => {
+    if (typeof p !== 'string') return ''
+    return p.replace(/^(?:\.\/|\.\\)/, '').replace(/(?::\d+(?:-\d+)?|#L?\d+(?:-L?\d+)?|:L\d+(?:-L?\d+)?)$/, '').replace(/\\/g, '/').trim()
+  }
+  const changedList = changedFiles.map(clean).filter(Boolean)
+  if (changedList.length === 0) return 0
+  const changedSet = new Set(changedList)
+  const changedBases = new Set(changedList.map((f) => f.split('/').pop()).filter(Boolean))
+
+  const candidatePaths = []
+  if (Array.isArray(record?.evidence)) {
+    for (const item of record.evidence) {
+      const raw = typeof item === 'string' ? item : item?.path
+      if (raw) candidatePaths.push(raw)
+    }
+  }
+  if (Array.isArray(record?.source?.files)) {
+    for (const item of record.source.files) {
+      if (typeof item === 'string' && item) candidatePaths.push(item)
+    }
+  }
+  if (candidatePaths.length === 0) return 0
+
+  let best = 0
+  for (const raw of candidatePaths) {
+    const p = clean(raw)
+    if (!p) continue
+    if (changedSet.has(p)) return 1.0
+    const base = p.split('/').pop()
+    if (base && changedBases.has(base)) best = Math.max(best, 0.5)
+  }
+  return best
+}
+
+/**
  * Temporal validity bounds (GOAL.md Phase 4, §13).
  *
  * Canonical shape lives on `source.temporal` — same JSON-bag precedent as
@@ -479,6 +519,7 @@ const FUSION_CHANNELS = Object.freeze([
   'relationship',        // relations
   'causal',              // causal relevance (Phase 3, new)
   'evidence_strength',   // evidence strength
+  'anchor_affinity',     // anchor overlap with changed files (Coding Agent Intelligence)
   'polarity_compatible', // negative / polarity history
   'freshness_tier',      // recency tiers
   'scope_proximity',     // scope applicability
@@ -517,11 +558,12 @@ export function reciprocalRankFusion(scored) {
  * Rank records with a full dimensional breakdown.
  * Never returns a single opaque score.
  */
-export function rankRecords(records, { weights = {}, preferProject = true, intent = null, query = '', goal = null } = {}) {
+export function rankRecords(records, { weights = {}, preferProject = true, intent = null, query = '', goal = null, changedFiles = null } = {}) {
   if (!Array.isArray(records) || records.length === 0) return []
   const w = { ...DEFAULT_WEIGHTS, ...intentWeights(intent), ...weights }
   const hasQuery = Boolean(String(query ?? '').trim())
   const hasGoal = Boolean(String(goal ?? '').trim())
+  const hasChangedFiles = Array.isArray(changedFiles) && changedFiles.length > 0
   const poolIds = new Set(records.map((r) => r.id).filter(Boolean))
   const scored = records.map((rec, idx) => {
     const lex = lexicalScore(rec, query, idx)
@@ -540,6 +582,8 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
     // supplied: without one every value is 0, the channel is flat, and it
     // drops out of the RRF exactly like the other neutral channels.
     const goalHit = hasGoal ? goalAffinity(goal, rec) : 0
+    const anchorHit = hasChangedFiles ? codeAnchorAffinity(rec, changedFiles) : 0
+    const anchorBonus = hasChangedFiles && anchorHit > 0 ? 0.15 * anchorHit : 0
     const composite = Number((
       relevance * w.relevance
       + sem * (w.semantic ?? 0.10)
@@ -550,6 +594,7 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
       + confidence * w.confidence
       + rel * (w.relationship ?? 0.04)
       + affinity
+      + anchorBonus
     ).toFixed(4))
     return {
       ...rec,
@@ -575,6 +620,7 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
         applicability: contextCompatibility(rec),
         temporal_validity: temporalState(rec) === 'expired' ? 0 : 1,
         goal_affinity: Number(goalHit.toFixed(3)),
+        anchor_affinity: Number(anchorHit.toFixed(3)),
         authority: Number(authorityTier(rec).toFixed(3)),
       },
     }
@@ -896,6 +942,7 @@ export function hybridRetrieve({
   intent = null,
   kind = null,
   goal = null,
+  changedFiles = null,
 } = {}) {
   const detectedIntent = intent || detectIntent(query)
   // Phase 10 — an explicit goal is caller-supplied routing context, not a
@@ -941,8 +988,18 @@ export function hybridRetrieve({
   for (const r of projectRecent) addCandidate(r, false)
   for (const r of reusableRecent) addCandidate(r, true)
 
+  // Candidate pooling for code changes (Coding Agent Intelligence):
+  // When files are modified, pool project records whose evidence anchors intersect those files.
+  if (Array.isArray(changedFiles) && changedFiles.length > 0 && projectStore) {
+    for (const r of (projectStore.list?.({ limit: 100 }) || [])) {
+      if (codeAnchorAffinity(r, changedFiles) > 0) {
+        addCandidate(r, false)
+      }
+    }
+  }
+
   const merged = Array.from(candidateMap.values())
-  const ranked = annotateContradictions(rankRecords(merged, { query, intent: detectedIntent, preferProject: true, goal: activeGoal }))
+  const ranked = annotateContradictions(rankRecords(merged, { query, intent: detectedIntent, preferProject: true, goal: activeGoal, changedFiles }))
   // Deduplicate before the top-K cut so freed slots go to the next distinct
   // record; contradiction extras and graph expansion below still see only
   // what survived, and both sides of a contradiction are relation-connected
@@ -985,7 +1042,7 @@ export function hybridRetrieve({
   extras.push(...neighbors)
 
   if (extras.length === 0) return withCoverage(limited)
-  return withCoverage(annotateContradictions(rankRecords([...limited, ...extras], { query, intent: detectedIntent, preferProject: true, goal: activeGoal })))
+  return withCoverage(annotateContradictions(rankRecords([...limited, ...extras], { query, intent: detectedIntent, preferProject: true, goal: activeGoal, changedFiles })))
 }
 
 /**

@@ -80,12 +80,15 @@ export function hasNegation(text) {
   return NEGATION_MARKERS.test(String(text || ''))
 }
 
-const REPLACEMENT_PHRASES = [
+export const REPLACEMENT_PHRASES = [
   // Directional replacement only. Plain negation (not / no / never) is polarity
   // evidence and must never, on its own, prove that a claim replaces another.
   'switched from', 'moved from', 'replaced', 'instead of', 'rather than',
   'no longer', 'in favor of', 'deprecated',
+  'migrated from', 'upgraded from', 'supersedes', 'superseded by',
+  'now using', 'now uses', 'switched to', 'refactored from',
   '不再', '取代', '替换为', '改为', '切换到', '放弃',
+  '迁移自', '升级为', '现在使用', '重构为',
 ]
 
 export function hasReplacementLanguage(text) {

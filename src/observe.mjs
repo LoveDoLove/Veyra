@@ -29,6 +29,7 @@ const TOOL_SIGNAL = new Set([
   'grep',
   'glob',
   'str_replace_editor',
+  'run_code',
 ])
 
 const INTERESTING_TOOLS = new Set([
@@ -141,8 +142,11 @@ export function newBuffer() {
 function summarizeArgs(args) {
   if (!args || typeof args !== 'object') return {}
   const out = {}
-  for (const key of ['command', 'path', 'file_path', 'pattern', 'glob', 'old_string', 'new_string']) {
+  for (const key of ['command', 'path', 'file_path', 'pattern', 'glob', 'old_string', 'new_string', 'description']) {
     if (typeof args[key] === 'string') out[key] = args[key].slice(0, 240)
+  }
+  if (typeof args.code === 'string') {
+    out.code = args.code.slice(0, 240)
   }
   return out
 }
@@ -150,6 +154,13 @@ function summarizeArgs(args) {
 function collectFiles(files, args) {
   for (const key of ['path', 'file_path']) {
     if (typeof args?.[key] === 'string' && args[key].trim()) files.add(args[key].trim())
+  }
+  if (typeof args?.code === 'string') {
+    const re = /(?:file_path|path)\s*:\s*["']([^"'\r\n]+)["']/g
+    let match
+    while ((match = re.exec(args.code)) !== null) {
+      if (match[1] && match[1].trim()) files.add(match[1].trim())
+    }
   }
 }
 

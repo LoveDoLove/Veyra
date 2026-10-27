@@ -651,7 +651,7 @@ export function buildToolDefinitions(runtime) {
         const { cwd, projectStore, reusableStore } = storesFor(runtime, exec, SCOPES.PROJECT)
         const failureThreshold = Math.max(2, Math.min(50, Number(args.failureThreshold) || 2))
         const byId = new Map()
-        for (const r of [...projectStore.list({ limit: 200 }), ...reusableStore.list({ limit: 200 })]) {
+        for (const r of [...projectStore.list({ limit: 1000 }), ...reusableStore.list({ limit: 1000 })]) {
           if (r?.id && !byId.has(r.id)) byId.set(r.id, r)
         }
         const report = memoryHealth([...byId.values()], { workspace: cwd, failureThreshold })

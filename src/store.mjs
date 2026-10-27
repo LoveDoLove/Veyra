@@ -643,7 +643,7 @@ export class MemoryStore {
     }
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
     const sql = `SELECT * FROM memory ${where} ORDER BY updated_at DESC LIMIT ?`
-    params.push(Math.max(1, Math.min(Number(limit) || 50, 200)))
+    params.push(Math.max(1, Math.min(Number(limit) || 50, 1000)))
     return this.db.prepare(sql).all(...params).map(rowToRecord)
   }
 

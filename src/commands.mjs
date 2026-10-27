@@ -117,8 +117,8 @@ export function handleVeyraCommand(runtime, invocation) {
   if (verb === 'health') {
     // §21 automated maintenance findings — read-only, never mutates records.
     const threshold = Number(arg) > 0 ? Number(arg) : 2
-    const projectRecords = projectStore.list({ limit: 200 })
-    const reusableRecords = reusableStore.list({ limit: 200 })
+    const projectRecords = projectStore.list({ limit: 1000 })
+    const reusableRecords = reusableStore.list({ limit: 1000 })
     const merged = new Map()
     for (const record of [...projectRecords, ...reusableRecords]) merged.set(record.id, record)
     const report = memoryHealth([...merged.values()], { workspace: cwd, failureThreshold: threshold })
