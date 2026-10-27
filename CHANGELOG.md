@@ -4,11 +4,9 @@ All notable changes to `@lovedolove/veyra` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/) on a pre-1.0 `0.1.x` line.
 
-> **Note on version ranges.** Every push to `main` publishes to npm and patch-bumps
-> automatically, so a change sometimes ships as the version that follows the one in
-> `package.json` at commit time. Entries below are therefore grouped by the version
-> range in which the change actually shipped, not by commit order. Each published
-> version also gets a matching GitHub Release (`vX.Y.Z`) created by the publish
+> **Note on version ranges.** Releases are published by pushing a version tag (e.g., `v0.1.60`).
+> The tag version must match `package.json` and must not already exist on npm.
+> Each published version gets a matching GitHub Release (`vX.Y.Z`) created by the publish
 > workflow.
 
 ## [0.1.51] - 2026-10-08

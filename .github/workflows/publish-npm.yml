@@ -2,16 +2,13 @@ name: Publish @lovedolove/veyra to npm
 
 on:
   push:
-    branches: [main]
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
 
 jobs:
   publish:
-    # NOTE: contains() matches the skip-publish marker anywhere in the WHOLE
-    # commit message (title + body) — including prose that merely quotes it,
-    # which silently skips the run (seen in practice: a commit body that
-    # documented the marker). Keep the literal marker out of commit bodies.
-    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip publish]')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -31,65 +28,41 @@ jobs:
 
       - run: npm test
 
-      # Every push to main publishes. npm versions are immutable, so if
-      # package.json already exists on the registry, bump the patch first
-      # and commit the new version back (marked [skip publish] to avoid a loop).
-      - name: Ensure unpublished version
+      # Validate tag version matches package.json and is unpublished on npm
+      - name: Validate version
         id: version
         run: |
           set -euo pipefail
-          pkg="$(node -p "require('./package.json').name")"
-          before="$(node -p "require('./package.json').version")"
-          if npm view "${pkg}@${before}" version >/dev/null 2>&1; then
-            echo "npm already has ${pkg}@${before}; bumping patch"
-            npm version patch --no-git-tag-version
-          else
-            echo "npm does not have ${pkg}@${before}; publishing as-is"
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          PKG_NAME="$(node -p "require('./package.json').name")"
+
+          echo "Tag version: ${TAG}"
+          echo "Package version: ${PKG_VERSION}"
+
+          if [ "${TAG}" != "${PKG_VERSION}" ]; then
+            echo "::error::Tag version (${TAG}) does not match package.json version (${PKG_VERSION})"
+            exit 1
           fi
-          after="$(node -p "require('./package.json').version")"
-          echo "before=${before}" >> "$GITHUB_OUTPUT"
-          echo "after=${after}" >> "$GITHUB_OUTPUT"
+
+          if npm view "${PKG_NAME}@${TAG}" version >/dev/null 2>&1; then
+            echo "::error::Version ${TAG} already exists on npm registry"
+            exit 1
+          fi
+
+          echo "version=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "Version validation passed: ${TAG}"
 
       - name: Publish to npm
-        run: npm stage publish --access public
-
-      - name: Commit bumped version
-        if: steps.version.outputs.before != steps.version.outputs.after
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json
-          git commit -m "chore: bump version to ${{ steps.version.outputs.after }} [skip publish]"
-          git push
-
-      # One GitHub Release per published version, tag v<version> on the just-
-      # pushed commit. Notes come from CHANGELOG.md when that version has a
-      # `## [X.Y.Z]` section; otherwise gh generates them from the commits
-      # since the previous release. Tag creation does not re-trigger this
-      # workflow (it only listens to pushes on main), and reruns are idempotent.
-      - name: Create GitHub Release
+        run: npm publish --provenance --access public
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VEYRA_VERSION: ${{ steps.version.outputs.after }}
-        run: |
-          set -euo pipefail
-          tag="v${VEYRA_VERSION}"
-          if gh release view "${tag}" >/dev/null 2>&1; then
-            echo "Release ${tag} already exists; skipping."
-            exit 0
-          fi
-          notes="$(mktemp)"
-          awk -v v="${VEYRA_VERSION}" '
-            BEGIN { esc = v; gsub(/\./, "\\.", esc) }
-            $0 ~ "^## \\[" esc "\\]" { found = 1; next }
-            /^## / && found { exit }
-            found { print }
-          ' CHANGELOG.md > "${notes}" || true
-          if [ -s "${notes}" ]; then
-            gh release create "${tag}" --title "${tag}" --notes-file "${notes}"
-          else
-            rm -f "${notes}"
-            gh release create "${tag}" --title "${tag}" --generate-notes
-          fi
-          echo "Created GitHub release ${tag}"
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
