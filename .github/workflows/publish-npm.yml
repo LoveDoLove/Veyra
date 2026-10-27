@@ -102,10 +102,8 @@ jobs:
           echo "version=${TAG}" >> "${GITHUB_OUTPUT}"
           echo "Version validation passed: ${TAG}"
 
-      - name: Publish to npm
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Stage publish to npm
+        run: npm stage publish --provenance --access public
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
