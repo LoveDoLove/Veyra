@@ -36,17 +36,30 @@ jobs:
       # Validate tag version matches package.json and is unpublished on npm
       - name: Validate version
         id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ github.event.inputs.version }}"
+
+          # Determine version from tag or manual input
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            TAG="${INPUT_VERSION}"
             echo "Manual dispatch version: ${TAG}"
           else
             TAG="${GITHUB_REF_NAME#v}"
             echo "Tag version: ${TAG}"
           fi
-          PKG_VERSION="$(node -p "require('./package.json').version")"
-          PKG_NAME="$(node -p "require('./package.json').name")"
+
+          # Strict SemVer validation: X.Y.Z (no prerelease, no build metadata)
+          if ! [[ "${TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version format: ${TAG} (expected X.Y.Z)"
+            exit 1
+          fi
+
+          PKG_VERSION="$(node -p \"require('./package.json').version\")"
+          PKG_NAME="$(node -p \"require('./package.json').name\")"
 
           echo "Package version: ${PKG_VERSION}"
 
@@ -55,10 +68,18 @@ jobs:
             exit 1
           fi
 
-          if npm view "${PKG_NAME}@${TAG}" version >/dev/null 2>&1; then
+          # Safe npm version check: distinguish "not found" from errors
+          # npm view returns exit code 0 if found, 1 if not found (ENOENT), other codes for errors
+          npm view "${PKG_NAME}@${TAG}" version >/dev/null 2>&1
+          NPM_EXIT=$?
+          if [ ${NPM_EXIT} -eq 0 ]; then
             echo "::error::Version ${TAG} already exists on npm registry"
             exit 1
+          elif [ ${NPM_EXIT} -ne 1 ]; then
+            echo "::error::npm registry query failed (exit code ${NPM_EXIT}). Aborting for safety."
+            exit 1
           fi
+          # Exit code 1 = version not found (ENOENT) - this is what we want
 
           echo "version=${TAG}" >> "${GITHUB_OUTPUT}"
           echo "Version validation passed: ${TAG}"
