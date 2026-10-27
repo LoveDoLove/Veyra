@@ -8,6 +8,8 @@ Veyra is a plugin for [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek
 [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/LoveDoLove/Veyra/blob/main/LICENSE)
 [![CI](https://github.com/LoveDoLove/Veyra/actions/workflows/ci.yml/badge.svg)](https://github.com/LoveDoLove/Veyra/actions/workflows/ci.yml)
 
+> **Want to go deeper?** The [technical whitepaper](docs/WHITEPAPER.md) covers design principles, Dual-Brain architecture, the memory lifecycle, search internals, security and trust mechanisms, evaluation results, and known limitations — with a matching [繁體中文 (Traditional Chinese) edition](docs/WHITEPAPER.zh-TW.md).
+
 ---
 
 ## The Dual-Brain architecture
@@ -53,6 +55,7 @@ Veyra runs two complementary layers that answer different questions:
 - [Development](#development)
 - [Compatibility](#compatibility)
 - [License](#license)
+- [Whitepaper](docs/WHITEPAPER.md) / [Whitepaper (zh-TW)](docs/WHITEPAPER.zh-TW.md)
 
 ---
 
@@ -301,6 +304,8 @@ The local graph is a **derived projection, not a second store**. Code Intelligen
 
 Full write-up: [docs/architecture-graph.md](https://github.com/LoveDoLove/Veyra/blob/main/docs/architecture-graph.md)
 
+Design rationale and a guided tour of every mechanism: the [technical whitepaper](docs/WHITEPAPER.md) (English) and its [Traditional Chinese edition](docs/WHITEPAPER.zh-TW.md).
+
 ---
 
 ## Troubleshooting
@@ -328,7 +333,7 @@ Full write-up: [docs/architecture-graph.md](https://github.com/LoveDoLove/Veyra/
 ## Development
 
 ```sh
-npm test               # node --test test/*.test.mjs  (755 tests)
+npm test               # node --test test/*.test.mjs  (782 tests)
 npm run pack:check     # npm pack --dry-run — what would be published
 ```
 
@@ -341,7 +346,7 @@ Publishing is automatic: every push to `main` publishes to npm (patch-bumped fir
 
 | | |
 | --- | --- |
-| Current release | `0.1.51` |
+| Current release | `0.1.58` |
 | Node | `>=22.5.0 <25.0.0` |
 | DSH | `>=0.1.2-rc.1 <0.3.0-0` |
 | Verified on | DSH `0.1.7-rc.2` (plugin boot, tools, `/veyra` + `/veyra/graph`); DSH `0.2.0-rc.1` (real compatibility gate + composed-host-service runtime); DSH `0.2.0-rc.2` (composed host-service runtime + real `ToolRuntime` tool-output validation against the declared range); CI on Node 22 and 24 |
