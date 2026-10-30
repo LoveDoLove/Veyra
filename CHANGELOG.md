@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.61] - 2026-10-30
+
+Fix engineering memory recall after DSH Compaction.
+
+### Fixed
+
+- **Compaction continuity**: restore task intent from compact checkpoints and handle continuation prompts, preserving session and project isolation.
+- **Query resolution**: accept `compact-checkpoint` messages, extract intent from `Primary Request and Intent` and `Key Technical Concepts`, and fall back to session-scoped task intent cache.
+
+### Added
+
+- **Regression tests**: `test/compaction-continuity.test.mjs` covering intent extraction, trivial prompt filtering, message walkback, session/project isolation, and end-to-end recall after compaction.
+
 All notable changes to `@lovedolove/veyra` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/) on a pre-1.0 `0.1.x` line.
