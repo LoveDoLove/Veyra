@@ -19,7 +19,7 @@ import { Config, normalizeRecallLimit } from './config.mjs'
 import { closeAllStores } from './store.mjs'
 import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
-import { DEFAULT_RECALL_CHARS, GUIDANCE_TEXT, createContextProvider, rememberClaimedPrompt, recordRepositoryChange } from './context.mjs'
+import { DEFAULT_RECALL_CHARS, GUIDANCE_TEXT, createContextProvider, rememberClaimedPrompt, rememberCompactedCheckpoint, recordRepositoryChange } from './context.mjs'
 import { candidateFromBuffer, newBuffer, observeEvent } from './observe.mjs'
 import { maybeLearn, provenanceAllowsLearning, reviewCandidate, strengthenMemory } from './learn.mjs'
 import { markStale, sweepStale } from './evolve.mjs'
@@ -324,22 +324,28 @@ export function apply(ctx, config = {}) {
     if (typeof offClaimed === 'function') ctx.effect(() => offClaimed)
   }
 
-  if (typeof ctx.on === 'function' && runtime.observe) {
+  if (typeof ctx.on === 'function') {
     const offEvent = ctx.on('session/event', (session, event) => {
       try {
-        let buffer = buffers.get(session)
-        if (!buffer) {
-          buffer = newBuffer()
-          buffers.set(session, buffer)
+        if (event?.type === 'compaction/end' && event?.data?.error === undefined) {
+          rememberCompactedCheckpoint(session, event)
         }
-        observeEvent(buffer, session, event)
+        if (runtime.observe) {
+          let buffer = buffers.get(session)
+          if (!buffer) {
+            buffer = newBuffer()
+            buffers.set(session, buffer)
+          }
+          observeEvent(buffer, session, event)
+        }
       } catch {
-        // observation is best-effort and must never break the agent loop
+        // observation and compaction recovery are best-effort and must never break the agent loop
       }
     })
     if (typeof offEvent === 'function') ctx.effect(() => offEvent)
 
-    const offStopping = ctx.on('agent/turn-stopping', ({ agent } = {}) => {
+    if (runtime.observe) {
+      const offStopping = ctx.on('agent/turn-stopping', ({ agent } = {}) => {
       try {
         const session = agent?.session
         if (!session) return
@@ -423,7 +429,8 @@ export function apply(ctx, config = {}) {
         // learning is best-effort
       }
     })
-    if (typeof offStopping === 'function') ctx.effect(() => offStopping)
+      if (typeof offStopping === 'function') ctx.effect(() => offStopping)
+    }
   }
 
   const cleanup = () => {

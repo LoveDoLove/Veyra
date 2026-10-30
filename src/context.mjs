@@ -380,6 +380,59 @@ export const GUIDANCE_TEXT = [
 // when systemPrompt.assemble runs (preStep claims, then assembles).
 const claimedByAgent = new WeakMap()
 
+
+// Task intent extracted from compaction checkpoints or user prompts, keyed by session.
+// Prevents cross-session leakage because each session gets its own entry.
+export const taskIntentCache = new WeakMap()
+
+/**
+ * Short confirmation or continuation tokens that carry no domain task intent.
+ * When a trivial prompt is claimed (e.g. "continue", "ok"), Veyra falls back
+ * to the session-level task intent or checkpoint so compaction continuity is preserved.
+ */
+const TRIVIAL_PROMPTS = new Set([
+  'continue',
+  'ok',
+  'okay',
+  'yes',
+  'y',
+  'no',
+  'proceed',
+  'go',
+  'go on',
+  'next',
+  'sure',
+  'more',
+  'keep going',
+  'resume',
+  'run',
+  'do it',
+  '好的',
+  '好',
+  '行',
+  '接着',
+  '继续',
+  '继续吧',
+  '开始',
+  '执行',
+  '下一步',
+  '继续执行',
+  '可以',
+  '对',
+  '嗯',
+  '没错',
+])
+
+export function isTrivialPrompt(text) {
+  if (!text || typeof text !== 'string') return true
+  const trimmed = text.trim()
+  if (!trimmed) return true
+  const cleaned = trimmed.toLowerCase().replace(/[\s\p{P}\p{S}]+$/u, '').trim()
+  if (!cleaned) return true
+  if (cleaned.length <= 2) return true
+  return TRIVIAL_PROMPTS.has(cleaned)
+}
+
 const SKIP_QUERY_PREFIXES = [
   'veyra recalled',
   'these items are remembered',
@@ -389,10 +442,16 @@ export function isHumanUserMessage(message) {
   if (!message || typeof message !== 'object') return false
   if (message.role && message.role !== 'user') return false
   const kind = message.source?.kind
-  return !kind || kind === 'user'
+  return !kind || kind === 'user' || kind === 'compact-checkpoint'
 }
 
 export function queryTextFromMessage(message) {
+  // DSH compaction checkpoints are user-role messages whose content is a
+  // structured summary.  The intent section is the right recall query —
+  // raw preamble + summary is too long and would pollute FTS results.
+  if (message?.source?.kind === 'compact-checkpoint') {
+    return extractCheckpointTaskIntent(extractText(message?.content ?? message))
+  }
   const text = extractText(message?.content ?? message).trim()
   if (!text) return ''
   const lower = text.toLowerCase()
@@ -400,10 +459,127 @@ export function queryTextFromMessage(message) {
   return text.slice(0, 800)
 }
 
+
+/**
+ * Extract the engineering task intent from a Compaction Checkpoint message.
+ *
+ * DSH compaction generates a checkpoint with role="user" and source.kind="compact-checkpoint".
+ * The content includes a <compacted-summary> block with markdown sections:
+ * "## Primary Request and Intent", "## Current Work", "## Next Step", etc.
+ *
+ * This extracts the most relevant lines for use as a recall query.
+ * Returns '' if no extractable intent is found.
+ */
+export function extractCheckpointTaskIntent(raw) {
+  if (!raw || typeof raw !== 'string') return ''
+
+  // Strip CHECKPOINT_PREAMBLE if present
+  let text = raw.replace(/^This is an automatically generated checkpoint[\s\S]*?without acknowledging this checkpoint\.\s*/i, '')
+
+  // Extract content from <compacted-summary>...</compacted-summary> if present
+  const summaryMatch = text.match(/<compacted-summary>([\s\S]*?)<\/compacted-summary>/i)
+  if (summaryMatch) {
+    text = summaryMatch[1]
+  }
+
+  // Parse markdown sections
+  const sections = {}
+  const sectionRegex = /(?:^|\n)##\s+([^\n]+)\n([\s\S]*?)(?=(?:\n##\s+)|$)/g
+  let match
+  while ((match = sectionRegex.exec(text)) !== null) {
+    sections[match[1].trim().toLowerCase()] = match[2].trim()
+  }
+
+  // Clean bullet lines for extraction
+  const cleanLines = (block) => {
+    if (!block) return []
+    return block
+      .split('\n')
+      .map(line => line.replace(/^[-*•\d.]+\s*/, '').trim())
+      .filter(line => line && line !== '(none)' && !line.startsWith('('))
+  }
+
+  // Priority 1: Primary Request and Intent + Key Technical Concepts
+  const primary = []
+  for (const [secName, content] of Object.entries(sections)) {
+    if (secName.includes('primary request') || secName.includes('intent') || secName.includes('goal') || secName.includes('key technical concepts')) {
+      const lines = cleanLines(content)
+      if (lines.length) primary.push(...lines)
+    }
+  }
+  if (primary.length) return primary.join(' ').slice(0, 800)
+
+  // Priority 2: Current Work / Pending Jobs / Next Step
+  for (const [secName, content] of Object.entries(sections)) {
+    if (secName.includes('current work') || secName.includes('pending jobs') || secName.includes('next step')) {
+      const lines = cleanLines(content)
+      if (lines.length) return lines.join(' ').slice(0, 800)
+    }
+  }
+
+  // Priority 3: Fallback to all non-empty lines
+  const fallbackLines = cleanLines(text)
+  if (fallbackLines.length) {
+    return fallbackLines.slice(0, 3).join(' ').slice(0, 800)
+  }
+
+  return ''
+}
+
 export function rememberClaimedPrompt(agent, message) {
   if (!agent || !isHumanUserMessage(message)) return
   const text = queryTextFromMessage(message)
-  if (text) claimedByAgent.set(agent, text)
+  if (!text) return
+  claimedByAgent.set(agent, text)
+  const session = agent.session
+  if (session && !isTrivialPrompt(text)) {
+    const cwd = resolveWorkspace(agent)
+    const projectId = cwd ? projectIdFor(cwd) : null
+    taskIntentCache.set(session, {
+      intent: text,
+      projectId,
+      updatedAt: Date.now(),
+    })
+  }
+}
+
+export function rememberCompactedCheckpoint(session, event) {
+  if (!session) return
+  if (event?.data?.error !== undefined || event?.error !== undefined) {
+    // Compaction failed or had error: do not process as valid checkpoint
+    return
+  }
+  let checkpointText = event?.data?.checkpoint || event?.checkpoint
+  const cwd = session?.header?.cwd
+  const projectId = cwd ? projectIdFor(cwd) : null
+
+  if (!checkpointText && typeof session?.deriveMessages === 'function') {
+    try {
+      const messages = session.deriveMessages()
+      if (Array.isArray(messages)) {
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const msg = messages[i]
+          if (msg?.source?.kind === 'compact-checkpoint') {
+            checkpointText = extractText(msg?.content ?? msg)
+            break
+          }
+        }
+      }
+    } catch {
+      // deriveMessages best-effort
+    }
+  }
+
+  if (checkpointText) {
+    const intent = extractCheckpointTaskIntent(checkpointText)
+    if (intent && !isTrivialPrompt(intent)) {
+      taskIntentCache.set(session, {
+        intent,
+        projectId,
+        updatedAt: Date.now(),
+      })
+    }
+  }
 }
 
 function latestHumanQuery(messages) {
@@ -412,7 +588,8 @@ function latestHumanQuery(messages) {
     const msg = messages[i]
     if (!isHumanUserMessage(msg)) continue
     const text = queryTextFromMessage(msg)
-    if (text) return text
+    if (!text || isTrivialPrompt(text)) continue
+    return text
   }
   return ''
 }
@@ -421,9 +598,12 @@ export function queryFromAssemble(assembleContext) {
   const agent = assembleContext?.agent
   if (!agent) return ''
   const claimed = claimedByAgent.get(agent)
-  if (claimed) return claimed
+  if (claimed && !isTrivialPrompt(claimed)) return claimed
 
   const session = agent.session
+  const cwd = resolveWorkspace(agent)
+  const currentProjectId = cwd ? projectIdFor(cwd) : null
+
   try {
     if (typeof session?.deriveMessages === 'function') {
       const fromHistory = latestHumanQuery(session.deriveMessages())
@@ -433,9 +613,23 @@ export function queryFromAssemble(assembleContext) {
     // deriveMessages is host-defined; fall through
   }
 
+  // Session-level task intent cache survives inbox churn and compaction.
+  if (session) {
+    const cached = taskIntentCache.get(session)
+    if (cached) {
+      const intent = typeof cached === 'string' ? cached : cached.intent
+      const cachedProjectId = typeof cached === 'object' ? cached.projectId : null
+      if (!cachedProjectId || !currentProjectId || cachedProjectId === currentProjectId) {
+        if (intent && !isTrivialPrompt(intent)) return intent
+      }
+    }
+  }
+
   // Rare: assemble without a prior claim still seeing queued human text.
   const fromInbox = latestHumanQuery(agent.inbox?.nextStep) || latestHumanQuery(agent.inbox?.nextTurn)
   if (fromInbox) return fromInbox
+
+  if (claimed) return claimed
   return ''
 }
 
