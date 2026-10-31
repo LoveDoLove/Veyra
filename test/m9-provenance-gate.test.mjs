@@ -28,7 +28,7 @@ import {
   VALIDATIONS,
 } from '../src/types.mjs'
 import { openEphemeralStore } from '../src/store.mjs'
-import { maybeLearn, provenanceAllowsLearning, remember, reviewCandidate } from '../src/learn.mjs'
+import { maybeLearn, provenanceAllowsLearning, writeGate, remember, reviewCandidate } from '../src/learn.mjs'
 import { sweepStale } from '../src/evolve.mjs'
 
 const TITLE = 'Serialize DatabaseSync writes'
@@ -418,5 +418,158 @@ test('M9: gate is per-record, not cross-project', () => {
   } finally {
     storeA.close()
     storeB.close()
+  }
+})
+
+// ------------------------------------ user-context-only regression tests
+
+test('M9 Regression: userContextOnly allows auto-learning when test evidence is present', () => {
+  const store = openEphemeralStore()
+  try {
+    const candidate = mkCandidate(
+      {
+        automatic: true,
+        userContextOnly: true,
+        provenance: { origins: ['user', 'assistant'] },
+      },
+      {
+        title: 'Fix null pointer in auth token check',
+        body: 'The root cause was auth.validate reading token.user without null check. The remedy is adding a guard before user access.',
+      },
+    )
+    candidate.evidence = [{ path: 'src/auth.mjs' }, { note: 'test-passed' }]
+
+    const learned = maybeLearn(store, candidate)
+    assert.ok(learned, 'userContextOnly with test evidence must learn')
+    assert.equal(learned.authority, AUTHORITIES.DERIVED)
+    assert.equal(learned.validation, VALIDATIONS.REVIEWED)
+    assert.deepEqual(learned.source.provenance.origins, ['user', 'assistant'])
+    assert.equal(learned.source.userContextOnly, true)
+  } finally {
+    store.close()
+  }
+})
+
+test('M9 Regression: userContextOnly is DEFERred when test evidence is absent', () => {
+  const store = openEphemeralStore()
+  try {
+    const candidate = mkCandidate(
+      {
+        automatic: true,
+        userContextOnly: true,
+        provenance: { origins: ['user', 'assistant'] },
+      },
+      {
+        title: 'Fix null pointer in auth token check',
+        body: 'The root cause was auth.validate reading token.user without null check. The remedy is adding a guard before user access.',
+      },
+    )
+    // No test-passed / test-failed note
+    candidate.evidence = [{ path: 'src/auth.mjs' }]
+
+    const learned = maybeLearn(store, candidate)
+    assert.equal(learned, null, 'userContextOnly without test evidence must not learn')
+
+    // writeGate check to verify exact DEFER reason
+    const gate = writeGate(store, candidate)
+    assert.equal(gate.decision, 'DEFER')
+    assert.equal(gate.reason, 'context-provenance-no-test-evidence')
+  } finally {
+    store.close()
+  }
+})
+
+test('M9 Regression: userClaimBearing turns (user text has claims) stay blocked', () => {
+  const store = openEphemeralStore()
+  try {
+    // User made the claim; userContextOnly is false or absent
+    const candidate = mkCandidate(
+      {
+        automatic: true,
+        provenance: { origins: ['user', 'assistant'] },
+      },
+      {
+        title: 'User claim: DatabaseSync writes have a race',
+        body: 'The user claimed the root cause is DatabaseSync writes corrupting triggers.',
+      },
+    )
+    candidate.evidence = [{ path: 'src/store.mjs' }, { note: 'test-passed' }]
+
+    const learned = maybeLearn(store, candidate)
+    assert.equal(learned, null, 'claim-bearing user turn must stay blocked')
+
+    const gate = writeGate(store, candidate)
+    assert.equal(gate.decision, 'DEFER')
+    assert.equal(gate.reason, 'provenance-gated')
+  } finally {
+    store.close()
+  }
+})
+
+test('M9 Regression: pure user statement (no assistant, no tools) fails closed', () => {
+  const store = openEphemeralStore()
+  try {
+    const candidate = mkCandidate(
+      {
+        automatic: true,
+        provenance: { origins: ['user'] },
+      },
+      {
+        title: 'Pure user prompt with no agent response',
+        body: 'User said: please fix the database locking issue.',
+      },
+    )
+    const learned = maybeLearn(store, candidate)
+    assert.equal(learned, null, 'pure user origin must never learn')
+  } finally {
+    store.close()
+  }
+})
+
+test('M9 Regression: untrusted tool output alone fails closed', () => {
+  const store = openEphemeralStore()
+  try {
+    const candidate = mkCandidate(
+      {
+        automatic: true,
+        provenance: { origins: ['tool'] },
+      },
+      {
+        title: 'Tool activity without assistant claim',
+        body: 'Tool ran bash command with output showing tests failed.',
+      },
+    )
+    const learned = maybeLearn(store, candidate)
+    assert.equal(learned, null, 'tool-only provenance must never learn')
+  } finally {
+    store.close()
+  }
+})
+
+test('M9 Regression: canonical authority is never created automatically even with userContextOnly and test evidence', () => {
+  const store = openEphemeralStore()
+  try {
+    const candidate = mkCandidate(
+      {
+        automatic: true,
+        userContextOnly: true,
+        provenance: { origins: ['user', 'assistant'] },
+      },
+      {
+        authority: AUTHORITIES.CANONICAL,
+        title: 'Fix null pointer in auth token check',
+        body: 'The root cause was auth.validate reading token.user without null check. The remedy is adding a guard before user access.',
+      },
+    )
+    candidate.evidence = [{ path: 'src/auth.mjs' }, { note: 'test-passed' }]
+
+    const learned = maybeLearn(store, candidate)
+    assert.equal(learned, null, 'canonical must never be automatically learned')
+
+    const gate = writeGate(store, candidate)
+    assert.equal(gate.decision, 'DEFER')
+    assert.equal(gate.reason, 'canonical-requires-explicit-promotion')
+  } finally {
+    store.close()
   }
 })

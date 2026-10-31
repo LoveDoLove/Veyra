@@ -189,7 +189,11 @@ export function provenanceAllowsLearning(record) {
   const origins = provenanceOrigins(source)
   if (!Array.isArray(origins)) return false
   if (!origins.every((o) => PROVENANCE_ORIGINS.includes(o))) return false
-  return origins.includes('assistant') && !origins.includes('user')
+  // User context-only: task background from user, claims/evidence from assistant
+  // with tools/files/causal. Allowed only if userContextOnly flag is set on source.
+  const userContextOnly = source?.userContextOnly === true
+  if (origins.includes('user') && !userContextOnly) return false
+  return origins.includes('assistant')
 }
 
 /**
@@ -220,10 +224,30 @@ function learningGuards(store, candidate) {
   if (!provenanceAllowsLearning(candidate)) {
     return { blocked: { decision: WRITE_GATES.DEFER, reason: 'provenance-gated' } }
   }
+  // Evidence gate for user-context-only turns: require verifiable test evidence
+  if (candidate.source?.userContextOnly === true) {
+    const evidence = Array.isArray(candidate.evidence) ? candidate.evidence : []
+    const hasTestEvidence = evidence.some((e) => {
+      const note = typeof e === 'string' ? e : e?.note
+      return note === 'test-passed' || note === 'test-failed'
+    })
+    if (!hasTestEvidence) {
+      return { blocked: { decision: WRITE_GATES.DEFER, reason: 'context-provenance-no-test-evidence' } }
+    }
+  }
   if (candidate.authority === AUTHORITIES.CANONICAL) {
     return { blocked: { decision: WRITE_GATES.DEFER, reason: 'canonical-requires-explicit-promotion' } }
   }
-  if (!looksDurable(`${candidate.title}\n${candidate.body}`)) {
+  // Verified bugfix path: user task context + actual code changes + test evidence
+  // forms a complete knowledge chain. The engineering claim is made through action
+  // (files modified, tests run) rather than text assertions, so looksLikeClaim
+  // in the text is not required. M9 provenance gate and canonical gate remain intact.
+  const isVerifiedFix =
+    candidate.source?.userContextOnly === true &&
+    candidate.tags?.includes('fix') &&
+    (Array.isArray(candidate.evidence) ? candidate.evidence : []).some((e) => e?.note === 'test-passed') &&
+    (Array.isArray(candidate.evidence) ? candidate.evidence : []).some((e) => e?.path)
+  if (!isVerifiedFix && !looksDurable(`${candidate.title}\n${candidate.body}`)) {
     return { blocked: { decision: WRITE_GATES.DROP, reason: 'not-durable' } }
   }
 

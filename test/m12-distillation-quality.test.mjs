@@ -117,6 +117,22 @@ test('C2: valid test-passed outcome is preserved alongside valid facets', () => 
   assert.ok(facets.rootCause)
 })
 
+// -- '0 failed' / '0 failures' are green signals, not failures (regex regression)
+
+test('C2: "0 failed" / "0 failures" output is classified as test-passed, not test-failed', () => {
+  const cases = [
+    ['Y 3 passed, 0 failed', 'test-passed'],
+    ['Tests: 5 passed, 0 failed', 'test-passed'],
+    ['All 0 failed, suite green', 'test-passed'],
+    ['5 passed, 0 failures in 0.32s', 'test-passed'],
+  ]
+  for (const [preview, expected] of cases) {
+    const tools = [{ name: 'bash:result', preview }]
+    const { facets } = extractCausalFacets({ user: 'Fix: deadlock resolved', tools, files: [] })
+    assert.equal(facets?.verifiedOutcome, expected, `expected ${expected} for preview: ${preview}`)
+  }
+})
+
 // -- Multiline input separates cleanly per line (no cross-line facet bleed)
 
 test('C2: multiline capture keeps rootCause and remedy on their own lines', () => {

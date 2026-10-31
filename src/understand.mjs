@@ -339,6 +339,12 @@ export function deriveTitle(user, files, tools, signal, causal = null) {
   if (causal?.remedy && qualityGateFacet(causal.remedy)) return `Fix: ${causal.remedy.slice(0, 120)}`
   if (causal?.rootCause && qualityGateFacet(causal.rootCause)) return `Cause: ${causal.rootCause.slice(0, 120)}`
   
+  // Bugfix with actual files modified: use the user's bug description as the title.
+  // Traceable (the user said it), not fabricated — files confirm actual code changes.
+  if (signal === 'fix' && files?.length > 0 && firstLine && firstLine.length >= 12) {
+    return firstLine.slice(0, 160)
+  }
+
   // No reliable claim found → neutral, non-misleading fallback
   // Never generate "Fix: work on X", "Worked on X", "Used X" — those are activity descriptions, not engineering claims
   return 'Engineering observation'
@@ -362,9 +368,9 @@ function testOutcomeFrom(tools, files) {
 
     if (name.includes(':result')) {
       const prev = String(t.preview || '')
-      if (/(?:exit code:\s*[1-9]|npm ERR!|FAIL|\bfail(?:ed|s)?\b|\b[1-9]\d*\s+failed)/i.test(prev)) {
+      if (/(?<!\b0\s)(?:exit code:\s*[1-9]|npm ERR!|\bFAIL(?:ed|ures?)?\b|\b[1-9]\d*\s+failed)/i.test(prev)) {
         lastResult = 'test-failed'
-      } else if (/(?:✔|✓|\bpass(?:ed)?\b|\bok\b|tests?\s+\d+.*pass|\b0 failed\b)/i.test(prev)) {
+      } else if (/(?:✔|✓|\bpass(?:ed)?\b|\bok\b|tests?\s+\d+.*pass|\b0\s+fail(?:ed|ures?)\b)/i.test(prev)) {
         lastResult = 'test-passed'
       }
     }
@@ -450,7 +456,9 @@ export function distillBuffer(buffer, { projectId, sessionId, cwd, agent } = {})
   const title = deriveTitle(user, files, tools, signal, causal)
   const bodyParts = []
   if (user) bodyParts.push(user.slice(0, 1200))
-  if (assistant && looksLikeClaim(assistant)) {
+  // Include assistant text when it describes an actual fix (fix signal + files modified),
+  // even without independent claim hints — the fix description is traceable engineering content.
+  if (assistant && (looksLikeClaim(assistant) || (signal === 'fix' && files.length > 0))) {
     bodyParts.push(`Agent: ${assistant.slice(0, 600)}`)
   }
   if (causal) {
@@ -489,6 +497,14 @@ export function distillBuffer(buffer, { projectId, sessionId, cwd, agent } = {})
         : toolContent
   ))
 
+  // User context-only: user provided task background but made no engineering
+  // claims; assistant produced claims/causal with evidence (tools/files).
+  // This allows safe auto-learning from normal coding turns while keeping
+  // pure user statements blocked. Flag is on source (not inside provenance)
+  // to preserve m8 provenance shape assertions.
+  const userClaimBearing = Boolean(user) && looksLikeClaim(user)
+  const userContextOnly = Boolean(user) && !userClaimBearing && Boolean(assistant) && (hasClaim || Boolean(causal) || meaningfulTools.length > 0)
+
   return {
     kind: KINDS.OBSERVATION,
     status: STATUSES.CURRENT,
@@ -515,6 +531,7 @@ export function distillBuffer(buffer, { projectId, sessionId, cwd, agent } = {})
       tokens,
       automatic: true,
       causal: causal || null,
+      ...(userContextOnly ? { userContextOnly: true } : {}),
     },
   }
 }
