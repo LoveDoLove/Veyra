@@ -34,6 +34,18 @@ export function looksDurable(text) {
 }
 
 /**
+ * Detect narrative-only content: body starts with "Agent:" (process narration)
+ * and lacks any actionable engineering signal (root cause, remedy, decision).
+ * Used to cap validation promotion and to demote ranking — never to reject
+ * the record itself (it may still be useful context).
+ */
+const ACTIONABLE_RE = /\b(root cause|the cause|caused by|because of|remedy|fix(?:ed|es)?\b|fix:|workaround|resolved by|decision|decided|always|never|must not|constraint|lesson|solution|the fix)\b/i
+export function isNarrativeOnly(body) {
+  if (typeof body !== 'string' || !body.startsWith('Agent:')) return false
+  return !ACTIONABLE_RE.test(body)
+}
+
+/**
  * Write-gate verdicts (GOAL.md Phase 1). Every learning decision is one of
  * these four, and every one carries a human-readable reason so Veyra can
  * explain why an observation was accepted, merged, rejected, or deferred.
@@ -118,6 +130,11 @@ export function strengthenMemory(neighbor, candidate, { workspace = null } = {})
     if (validation === VALIDATIONS.UNVERIFIED || validation === VALIDATIONS.STALE) {
       validation = VALIDATIONS.REVIEWED
     }
+  }
+  // Narrative-only neighbors never escalate past UNVERIFIED via strengthening
+  // alone — repeated process narration is not accumulated engineering knowledge.
+  if (isNarrativeOnly(neighbor.body) && validation !== VALIDATIONS.UNVERIFIED) {
+    validation = VALIDATIONS.UNVERIFIED
   }
 
   // Confidence progression:
@@ -318,7 +335,11 @@ export function writeGate(store, candidate, { related = [], workspace = null } =
   // with the same title/body would collide on content_hash and return
   // the original candidate, so learning would never become recallable.
   const hasPassedTest = (candidate.evidence || []).some((e) => /test-passed/i.test(e?.note || ''))
-  const initialValidation = hasPassedTest ? VALIDATIONS.REVIEWED : VALIDATIONS.UNVERIFIED
+  // Narrative-only records (Agent: prefix, no root cause/remedy/decision) must
+  // not reach REVIEWED even with test-passed evidence — the test proves the
+  // session ran, not that the text carries actionable knowledge.
+  const narrativeCap = isNarrativeOnly(candidate.body) ? VALIDATIONS.UNVERIFIED : null
+  const initialValidation = narrativeCap ?? (hasPassedTest ? VALIDATIONS.REVIEWED : VALIDATIONS.UNVERIFIED)
   const initialConfidence = hasPassedTest ? CONFIDENCES.MEDIUM : (hasGrounding(candidate) ? CONFIDENCES.MEDIUM : CONFIDENCES.LOW)
 
   const written = store.put({

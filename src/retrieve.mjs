@@ -22,6 +22,7 @@ import { injectionWarning } from './redact.mjs'
 import { annotateContradictions } from './evolve.mjs'
 import { expandEligibleNeighbors } from './graph.mjs'
 import { jaccard, tokenOverlap, hasNegation, tokenize } from './text.mjs'
+import { isNarrativeOnly } from './learn.mjs'
 
 export function evidenceStrength(evidence) {
   if (!evidence) return 0.1
@@ -762,6 +763,15 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
     // Fusion (includes polarity via RRF) comes before authority
     const fusionT = (b.scores.fusion - a.scores.fusion)
     if (fusionT !== 0) return fusionT
+    // Actionability tiebreaker (sort-only, below fusion): narrative-only records
+    // (Agent: prefix without root cause/remedy/decision) rank below actionable
+    // ones at equal fusion. Does not touch composite or any score field.
+    if (hasQuery) {
+      const aNarr = isNarrativeOnly(a.body) ? 1 : 0
+      const bNarr = isNarrativeOnly(b.body) ? 1 : 0
+      const narrT = aNarr - bNarr
+      if (narrT !== 0) return narrT
+    }
     // Authority tier: below fusion, above composite
     if (hasQuery) {
       const authT = authorityKey(b) - authorityKey(a)
