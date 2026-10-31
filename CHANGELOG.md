@@ -1,3 +1,13 @@
+## [0.1.63] - 2026-10-31
+
+### Fixed
+
+- **Web UI**: read the host-provided `webServer` service via `ctx.get`, so a sibling-provided service is found — the direct lookup no longer misses services injected by sibling plugins (PR #2, @Wish985-cell).
+
+### Changed
+
+- **Release pipeline**: explicitly set `draft: false` on the GitHub Release step, so every release is published and never left as a draft.
+
 ## [0.1.62] - 2026-10-31
 
 ### Fixed
