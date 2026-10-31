@@ -280,8 +280,14 @@ function claimText(record) {
  * enough: the remaining metadata floor is large enough to let a mismatched
  * record outrank a plain affirmative.
  */
+function polarityTitle(record) {
+  return String(record?.title || '')
+    .replace(/,\s*(?:it\s+)?(?:does\s+not|do\s+not|is\s+not|are\s+not|not|never|no|without|none)\b.*$/i, '')
+    .trim()
+}
+
 function polarityCompatible(query, record) {
-  return hasNegation(query) === hasNegation(claimText(record))
+  return hasNegation(query) === hasNegation(polarityTitle(record))
 }
 
 /**

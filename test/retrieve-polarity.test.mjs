@@ -336,3 +336,99 @@ test('a negated query with only affirmative candidates stays deterministic', () 
   for (const x of a) assert.ok(Number.isFinite(x.scores.composite))
   assert.equal(a[0].id, 'A1')
 })
+
+// ---------------------------------------------------------------------------
+// Title vs Body polarity isolation (regression tests)
+// ---------------------------------------------------------------------------
+
+test('affirmative title with remedy negation in body is compatible with affirmative query', () => {
+  const r1 = rec('R1', 'Fix npm tag conflict', { body: 'Root cause: tag exists. Remedy: never move existing tags.' })
+  const r2 = rec('R2', 'Fix npm version conflict', { body: 'Root cause: version exists. Remedy: bump patch version.' })
+  const ranked = rankRecords([r1, r2], { query: 'npm tag conflict' })
+  const target = ranked.find((x) => x.id === 'R1')
+  assert.equal(target.scores.polarity_mismatch, undefined, 'affirmative title must not be marked mismatched')
+  assert.equal(target.scores.polarity_original_composite, undefined, 'must not be capped by polarity ceiling')
+  assert.equal(target.scores.polarity_compatible, true, 'must be marked polarity_compatible')
+})
+
+test('various remedy negation words in body do not trigger false polarity mismatch on affirmative title', () => {
+  const bodies = [
+    'Root cause: missing lock. Remedy: never write concurrently without lock.',
+    'Root cause: unhandled race. Remedy: no direct store writes.',
+    'Root cause: stale cache. Remedy: do not reuse outdated cache files.',
+    'Root cause: memory leak. Remedy: cannot keep unclosed cursors.',
+    'Root cause: dirty state. Remedy: execute cleanup without delay.',
+  ]
+  const records = bodies.map((b, i) => rec(`BODY_NEG_${i}`, `Fix issue ${i}`, { body: b }))
+  const control = rec('CONTROL', 'Fix issue control', { body: 'Remedy: plain affirmative remedy.' })
+  const ranked = rankRecords([...records, control], { query: 'Fix issue' })
+  for (const item of ranked) {
+    assert.equal(item.scores.polarity_mismatch, undefined, `${item.id} must not be marked mismatched`)
+    assert.equal(item.scores.polarity_original_composite, undefined, `${item.id} must not be capped`)
+    assert.equal(item.scores.polarity_compatible, true, `${item.id} must be compatible`)
+  }
+})
+
+test('negated title with affirmative body is correctly treated as negated', () => {
+  const neg = rec('NEG_TITLE', 'do not serialize writes in MemoryStore', {
+    body: 'WAL mode handles concurrent readers and single writer cleanly.',
+  })
+  const aff = rec('AFF_TITLE', 'serialize writes in MemoryStore', {
+    body: 'Always acquire writer mutex before writing to disk.',
+  })
+
+  // Affirmative query: negated title must be mismatched and capped below affirmative
+  const affQueryRanked = rankRecords([neg, aff], { query: 'serialize writes' })
+  const affTarget = affQueryRanked.find((x) => x.id === 'NEG_TITLE')
+  assert.equal(affTarget.scores.polarity_mismatch, true, 'negated title must be marked mismatched for affirmative query')
+  assert.ok(affTarget.scores.polarity_original_composite !== undefined, 'must be capped below affirmative candidate')
+  assert.equal(affQueryRanked[0].id, 'AFF_TITLE', 'affirmative title must rank first')
+
+  // Negated query: negated title must be compatible and not capped
+  const negQueryRanked = rankRecords([neg, aff], { query: 'do not serialize writes' })
+  const negTarget = negQueryRanked.find((x) => x.id === 'NEG_TITLE')
+  assert.equal(negTarget.scores.polarity_mismatch, undefined, 'negated title matches negated query')
+  assert.equal(negTarget.scores.polarity_compatible, true, 'must be compatible with negated query')
+  assert.equal(negQueryRanked[0].id, 'NEG_TITLE', 'negated title must rank first for negated query')
+})
+
+test('recall end-to-end: record with remedy negation in body is retrieved and not capped in store', () => {
+  const store = tempStore()
+  try {
+    store.put(rec('STORE_NEG_BODY', 'Fix npm tag conflict', {
+      body: 'Root cause: duplicate tag. Remedy: never move existing tags, bump patch version.',
+    }))
+    store.put(rec('STORE_AFF_BODY', 'Fix general build error', {
+      body: 'Root cause: bad config. Remedy: fix configuration file.',
+    }))
+    const results = recall({ projectStore: store, query: 'npm tag conflict', limit: 5 })
+    assert.ok(results.length > 0, 'must return results')
+    const hit = results.find((r) => r.id === 'STORE_NEG_BODY')
+    assert.ok(hit, 'record with remedy negation in body must be recalled')
+    assert.equal(hit.scores?.polarity_mismatch, undefined, 'recalled record must not have polarity mismatch')
+  } finally {
+    store.close?.()
+  }
+})
+
+test('contrastive comma tails in title do not trigger false polarity mismatch on affirmative claims', () => {
+  const r1 = rec('CONTRAST_1', 'Project isolation is enforced at query time, not at write time', {
+    body: 'Filters reusable rows whose projectId equals current project.',
+  })
+  const r2 = rec('CONTRAST_2', 'Goal affinity routes, it does not authorize', {
+    body: 'Feeds the sort comparator without touching authority.',
+  })
+  const control = rec('CONTROL', 'Regular affirmative title', {
+    body: 'Regular affirmative body.',
+  })
+
+  const ranked = rankRecords([r1, r2, control], { query: 'Project isolation reusable record' })
+  const hit1 = ranked.find((x) => x.id === 'CONTRAST_1')
+  assert.equal(hit1.scores.polarity_mismatch, undefined, 'contrastive tail must not cause mismatch')
+  assert.equal(hit1.scores.polarity_compatible, true, 'must be compatible')
+
+  const ranked2 = rankRecords([r1, r2, control], { query: 'Goal affinity routes' })
+  const hit2 = ranked2.find((x) => x.id === 'CONTRAST_2')
+  assert.equal(hit2.scores.polarity_mismatch, undefined, 'contrastive tail must not cause mismatch')
+  assert.equal(hit2.scores.polarity_compatible, true, 'must be compatible')
+})
