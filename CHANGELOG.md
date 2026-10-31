@@ -1,3 +1,13 @@
+## [0.1.62] - 2026-10-31
+
+### Fixed
+
+- **Continuous learning**: evidence-gated auto-learning from normal coding-agent turns. User task context + assistant fix + code edit + test-passed output now produces derived, recallable memory (M9 provenance gate and test-outcome regex fix).
+
+### Added
+
+- **Regression tests**: M9 provenance gate user-context-only path; '0 failed' / '0 failures' test-outcome edge case.
+
 # Changelog
 
 ## [0.1.61] - 2026-10-30
