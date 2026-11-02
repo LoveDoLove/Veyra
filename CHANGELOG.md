@@ -1,3 +1,14 @@
+## [0.1.65] - 2026-11-03
+
+### Added
+
+- **Codebase Memory bundling**: bundle `@lovedolove/dsh-codebase-memory-mcp` as a `bundledDependency`, automatically providing all 6 CBM tools (`cbm_projects`, `cbm_search`, `cbm_snippet`, `cbm_trace`, `cbm_arch`, `cbm_search_code`) upon Veyra installation without requiring a separate plugin.
+
+### Changed
+
+- **CBM extraction and deduplication**: separated CBM ownership into `@lovedolove/dsh-codebase-memory-mcp`, removed duplicate internal CBM modules (`src/code/{client,discovery,engine,types,watcher}.mjs`) from Veyra, and re-routed internal imports to the bundled package.
+- **CI and publish workflows**: added `npm install` before tests and packaging in `.github/workflows/ci.yml` and `.github/workflows/publish-npm.yml` to ensure reproducible test runs and verified bundled package artifacts on clean checkouts.
+
 ## [0.1.63] - 2026-10-31
 
 ### Fixed
