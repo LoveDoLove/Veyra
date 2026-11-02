@@ -22,7 +22,7 @@ import { scrub } from './redact.mjs'
 import { tokenize } from './text.mjs'
 import { provenanceDimensions } from './ids.mjs'
 import { isAbsolute } from 'node:path'
-import { resolveSafeRepoPath } from './code/discovery.mjs'
+import { resolveSafeRepoPath } from '@lovedolove/dsh-codebase-memory-mcp'
 
 const CLAIM_HINTS = [
   /\b(decided|decision|always|never|must not|must\b|should not|root cause|workaround|fix was|the cause|lesson|constraint|regression)\b/i,

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { findCodebaseMemoryExe, CodebaseMemoryClient } from '../src/code/client.mjs'
+import { findCodebaseMemoryExe, CodebaseMemoryClient } from '@lovedolove/dsh-codebase-memory-mcp'
 
 test('findCodebaseMemoryExe detects binary or returns null', () => {
   const exe = findCodebaseMemoryExe()

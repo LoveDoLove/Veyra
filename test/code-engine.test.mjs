@@ -3,9 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { CodeIntelligenceEngine } from '../src/code/engine.mjs'
-import { CodebaseMemoryClient } from '../src/code/client.mjs'
-import { INDEX_STATUS } from '../src/code/types.mjs'
+import { CodeIntelligenceEngine, CodebaseMemoryClient, INDEX_STATUS } from '@lovedolove/dsh-codebase-memory-mcp'
 
 test('engine returns degraded status when client is unavailable', async () => {
   const mockClient = new CodebaseMemoryClient({ exePath: '/nonexistent' })

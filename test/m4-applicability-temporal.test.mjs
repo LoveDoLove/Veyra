@@ -32,7 +32,7 @@ import { KINDS } from '../src/types.mjs'
 import { openEphemeralStore, closeAllStores } from '../src/store.mjs'
 import { remember } from '../src/learn.mjs'
 import { buildToolDefinitions } from '../src/tools.mjs'
-import { CodeIntelligenceEngine } from '../src/code/engine.mjs'
+import { CodeIntelligenceEngine } from '@lovedolove/dsh-codebase-memory-mcp'
 import { rankRecords, temporalBounds, temporalState, contextCompatibility } from '../src/retrieve.mjs'
 
 const PAST = '2020-01-01T00:00:00.000Z'

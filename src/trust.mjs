@@ -25,9 +25,8 @@
  */
 
 import { AUTHORITIES, STATUSES, VALIDATIONS } from './types.mjs'
-import { FRESHNESS_STATUS } from './code/types.mjs'
+import { FRESHNESS_STATUS, resolveSafeRepoPath } from '@lovedolove/dsh-codebase-memory-mcp'
 import { extractAnchorsFromRecord, checkRecordFreshness } from './code/linking.mjs'
-import { resolveSafeRepoPath } from './code/discovery.mjs'
 import { temporalState, contextCompatibility } from './retrieve.mjs'
 
 /** The five Phase 2 trust categories (lowercase enum values, like all Veyra enums). */

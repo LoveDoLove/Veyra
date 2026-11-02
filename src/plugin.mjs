@@ -28,11 +28,17 @@ import { registerTools } from './tools.mjs'
 import { registerCommand } from './commands.mjs'
 import { registerSkills } from './skills.mjs'
 import { registerWebUi } from './webui.mjs'
-import { CodeIntelligenceEngine } from './code/engine.mjs'
-import { RepositoryWatcher } from './code/watcher.mjs'
+import {
+  CodeIntelligenceEngine,
+  RepositoryWatcher,
+  FRESHNESS_STATUS,
+  autoStartCodebaseMemory,
+  findExe,
+  getOrCreateClient,
+  createClient,
+  cbmApply,
+} from '@lovedolove/dsh-codebase-memory-mcp'
 import { findAffectedMemories, buildStaleReviewCandidate } from './code/linking.mjs'
-import { FRESHNESS_STATUS } from './code/types.mjs'
-import { autoStartCodebaseMemory, findExe, getOrCreateClient, createClient, cbmApply } from './code/client.mjs'
 
 export const name = 'veyra'
 export const inject = ['tools']

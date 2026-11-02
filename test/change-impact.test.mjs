@@ -21,7 +21,7 @@ import { createToolHarness } from '../src/tools.mjs'
 import { openProjectStore } from '../src/store.mjs'
 import { projectIdFor, newRecordId } from '../src/ids.mjs'
 import { AUTHORITIES, KINDS, STATUSES, VALIDATIONS, SCOPES, CONFIDENCES } from '../src/types.mjs'
-import { FRESHNESS_STATUS } from '../src/code/types.mjs'
+import { FRESHNESS_STATUS } from '@lovedolove/dsh-codebase-memory-mcp'
 import { findAffectedMemories, buildStaleReviewCandidate, checkRecordFreshness } from '../src/code/linking.mjs'
 
 const testRuntime = (home, cwd, opts = {}) => ({

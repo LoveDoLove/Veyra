@@ -1,0 +1,44 @@
+{
+  "evaluatedAt": "2026-10-31T17:05:50.977Z",
+  "version": "v0.1.64 (commit 0b501e1)",
+  "method": "Isolated temp MemoryStore DBs (mkdtemp in os.tmpdir), project scope, no real DSH DB read or modified",
+  "tasks": 10,
+  "armA_withMemory": {
+    "knowledgeReuseRate_top5": "90% (9/10)",
+    "top1Accuracy": "90% (9/10)",
+    "duplicateInvestigationAvoided": "9/10",
+    "negativeTop1Interference": "0% (0/10)",
+    "negativeWarningsSurfaced": "80% (8/10)"
+  },
+  "armB_withoutMemory": {
+    "knowledgeReuseRate": "0%",
+    "duplicateInvestigationCost": "10/10 full re-investigation",
+    "negativeInterference": "0%"
+  },
+  "v0164_narrativeGate": {
+    "narrativeDetected": true,
+    "cappedAtUnverified": true,
+    "actionableRankedFirst": true
+  },
+  "limitations": [
+    "Synthetic knowledge bodies, not real agent trajectories",
+    "10 tasks — directional not statistically significant",
+    "No wall-clock time measurement without real agent loop",
+    "No real DSH DB touched"
+  ],
+  "mostWorthImproving": "Top-1 accuracy 30-60% vs top-5 90-100%: lexical/FTS matching sometimes ranks a sibling/negative above the exact fix. Agents read top 1-2 — improving top-1 precision (stronger semantic query-to-body matching, evidence-weighted boost) has the biggest practical impact.",
+  "polarityImprovement": {
+    "description": "Record-side polarity checking isolated to title with contrastive tail stripping (polarityTitle)",
+    "top1Before": "30% (3/10)",
+    "top1After": "90% (9/10)",
+    "gainedTasks": [
+      "T2-dedup-promotion",
+      "T4-publish-conflict",
+      "T6-ranking-tie",
+      "T8-staged-delay",
+      "T9-temporal",
+      "T10-context"
+    ],
+    "regressionSuitesPass": "65/65"
+  }
+}

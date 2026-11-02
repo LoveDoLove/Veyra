@@ -5,10 +5,8 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { MemoryStore } from '../src/store.mjs'
 import { unifiedRetrieve, formatUnifiedForPrompt } from '../src/code/retrieval.mjs'
-import { CodeIntelligenceEngine } from '../src/code/engine.mjs'
-import { CodebaseMemoryClient } from '../src/code/client.mjs'
+import { CodeIntelligenceEngine, CodebaseMemoryClient, FRESHNESS_STATUS } from '@lovedolove/dsh-codebase-memory-mcp'
 import { KINDS, STATUSES, AUTHORITIES, VALIDATIONS, CONFIDENCES, SCOPES } from '../src/types.mjs'
-import { FRESHNESS_STATUS } from '../src/code/types.mjs'
 
 function createTestDb(dir) {
   return new MemoryStore(join(dir, 'memory.db'), { scope: SCOPES.PROJECT, projectId: 'test_project' })

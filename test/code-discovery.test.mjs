@@ -12,7 +12,7 @@ import {
   matchesGitignore,
   discoverRepository,
   sanitizeCodeContent,
-} from '../src/code/discovery.mjs'
+} from '@lovedolove/dsh-codebase-memory-mcp'
 
 test('cbmProjectName produces correct slug for POSIX and Windows', () => {
   assert.equal(cbmProjectName('/home/user/project'), 'home-user-project')

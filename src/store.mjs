@@ -38,7 +38,7 @@ import {
 import { contentHash, newRecordId, projectDbPath, reusableDbPath } from './ids.mjs'
 import { scrub } from './redact.mjs'
 import { tokenize } from './text.mjs'
-import { closeAllWatchers } from './code/watcher.mjs'
+import { closeAllWatchers } from '@lovedolove/dsh-codebase-memory-mcp'
 
 /**
  * Merge evidence arrays, deduplicating by the path:note:uri:anchor key.

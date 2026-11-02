@@ -10,7 +10,7 @@ import {
   cbmApply,
   autoStartCodebaseMemory,
   CodebaseMemoryClient,
-} from '../src/code/client.mjs'
+} from '@lovedolove/dsh-codebase-memory-mcp'
 import { apply } from '../src/plugin.mjs'
 import { closeAllStores } from '../src/store.mjs'
 

@@ -16,8 +16,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { sha256Hex } from '../ids.mjs'
-import { FRESHNESS_STATUS } from './types.mjs'
-import { resolveSafeRepoPath } from './discovery.mjs'
+import { FRESHNESS_STATUS, resolveSafeRepoPath } from '@lovedolove/dsh-codebase-memory-mcp'
 import { KINDS, STATUSES, AUTHORITIES, VALIDATIONS, CONFIDENCES, SCOPES } from '../types.mjs'
 import { VALID_STATUSES } from '../types.mjs'
 

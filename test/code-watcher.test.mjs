@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { RepositoryWatcher } from '../src/code/watcher.mjs'
+import { RepositoryWatcher } from '@lovedolove/dsh-codebase-memory-mcp'
 
 test('RepositoryWatcher ignores excluded directories and sensitive files', (t) => {
   const tmp = mkdtempSync(join(tmpdir(), 'veyra-watch-test-'))

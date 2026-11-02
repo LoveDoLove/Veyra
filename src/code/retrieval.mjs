@@ -16,8 +16,7 @@
 
 import { hybridRetrieve } from '../retrieve.mjs'
 import { checkRecordFreshness } from './linking.mjs'
-import { FRESHNESS_STATUS } from './types.mjs'
-import { sanitizeCodeContent } from './discovery.mjs'
+import { FRESHNESS_STATUS, sanitizeCodeContent } from '@lovedolove/dsh-codebase-memory-mcp'
 
 /**
  * Execute a unified search across Code Intelligence and Engineering Memory.

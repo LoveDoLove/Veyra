@@ -23,8 +23,7 @@ import {
   observatoryRelationships,
   observatorySearch,
 } from './observatory.mjs'
-import { CodeIntelligenceEngine } from './code/engine.mjs'
-import { FRESHNESS_STATUS } from './code/types.mjs'
+import { CodeIntelligenceEngine, FRESHNESS_STATUS } from '@lovedolove/dsh-codebase-memory-mcp'
 import { checkRecordFreshness, findAffectedMemories } from './code/linking.mjs'
 
 /** Installed version, read from package.json; 'dev' outside the package. */

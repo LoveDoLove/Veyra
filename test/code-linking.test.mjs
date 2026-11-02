@@ -11,7 +11,7 @@ import {
   findAffectedMemories,
   buildStaleReviewCandidate,
 } from '../src/code/linking.mjs'
-import { FRESHNESS_STATUS } from '../src/code/types.mjs'
+import { FRESHNESS_STATUS } from '@lovedolove/dsh-codebase-memory-mcp'
 import { KINDS, STATUSES, AUTHORITIES, VALIDATIONS } from '../src/types.mjs'
 
 test('createCodeAnchor enforces repo boundary and captures hash', (t) => {

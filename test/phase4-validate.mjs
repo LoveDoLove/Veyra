@@ -36,7 +36,7 @@ import { buildToolDefinitions, createToolHarness } from '../src/tools.mjs'
 import { closeAllStores, openProjectStore } from '../src/store.mjs'
 import { newRecordId, projectIdFor, sha256Hex } from '../src/ids.mjs'
 import { AUTHORITIES, KINDS, STATUSES, VALIDATIONS } from '../src/types.mjs'
-import { getOrCreateCodeClient, resetSharedCodeClient } from '../src/code/client.mjs'
+import { getOrCreateCodeClient, resetSharedCodeClient } from '@lovedolove/dsh-codebase-memory-mcp'
 
 // ─── constants ──────────────────────────────────────────────────────────────
 

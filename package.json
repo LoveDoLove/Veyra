@@ -24,6 +24,12 @@
     "test": "node --test test/*.test.mjs",
     "pack:check": "npm pack --dry-run"
   },
+  "dependencies": {
+    "@lovedolove/dsh-codebase-memory-mcp": "^0.1.5"
+  },
+  "bundledDependencies": [
+    "@lovedolove/dsh-codebase-memory-mcp"
+  ],
   "license": "MIT",
   "keywords": [
     "dsh",

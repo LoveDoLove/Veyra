@@ -16,7 +16,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { tmpdir } from 'node:os'
-import { mkdtempSync, readFileSync, writeFileSync, rmSync, cpSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync, rmSync, cpSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { openEphemeralStore, openProjectStore, closeAllStores } from '../src/store.mjs'
@@ -341,6 +341,7 @@ test('M3: store.mjs repair-refusal throw (mutation via temp tree)', async () => 
 
   try {
     cpSync(srcDir, tempSrc, { recursive: true })
+    symlinkSync(join(process.cwd(), 'node_modules'), join(tempDir, 'node_modules'), 'junction')
 
     const storePath = join(tempSrc, 'store.mjs')
     const original = readFileSync(storePath, 'utf8')
@@ -390,6 +391,7 @@ test('M4: store.mjs tags scrub call (mutation via temp tree)', async () => {
 
   try {
     cpSync(srcDir, tempSrc, { recursive: true })
+    symlinkSync(join(process.cwd(), 'node_modules'), join(tempDir, 'node_modules'), 'junction')
     const storePath = join(tempSrc, 'store.mjs')
     const original = readFileSync(storePath, 'utf8')
     if (!original.includes(ANCHOR)) {
