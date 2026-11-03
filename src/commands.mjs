@@ -14,6 +14,7 @@ import { promote } from './learn.mjs'
 import { forget as lifecycleForget, invalidate, protect, supersede, tombstone, unprotect } from './lifecycle.mjs'
 import { UNLINK_USAGE, formatRelations, unlinkRelation } from './relationships.mjs'
 import { memoryHealth, renderHealth } from './health.mjs'
+import { auditContradictionEdges } from './audit.mjs'
 import {
   observatoryCausality,
   observatoryConsolidation,
@@ -71,6 +72,7 @@ function helpText() {
     '/veyra unprotect <id>                      remove the explicit protection mark',
     '/veyra promote <id> [derived|canonical]    promote standing (canonical requires user explicit)',
     '/veyra health [threshold]                  §21 memory-health findings (read-only)',
+    '/veyra audit contradictions                Issue #3 read-only edge audit (nothing changed)',
     '',
     'Canonical promotion is an explicit user action. Automatic capture',
     'never creates authoritative truth. Memory lives in $DSH_HOME/veyra/.',
@@ -125,6 +127,22 @@ export function handleVeyraCommand(runtime, invocation) {
     for (const record of [...projectRecords, ...reusableRecords]) merged.set(record.id, record)
     const report = memoryHealth([...merged.values()], { workspace: cwd, failureThreshold: threshold })
     return { kind: 'success', text: renderHealth(report) }
+  }
+
+  if (verb === 'audit') {
+    // Issue #3 Phase C — read-only review of existing contradicts edges.
+    // Nothing is unlinked, rewritten, invalidated, or demoted here.
+    if (arg && arg !== 'contradictions' && arg !== 'contradicts') {
+      return {
+        kind: 'error',
+        text: [
+          `Unknown audit subcommand: ${arg}`,
+          'Available: audit contradictions',
+        ].join('\n'),
+      }
+    }
+    const res = auditContradictionEdges({ projectStore, reusableStore })
+    return { kind: 'success', text: res.formatted }
   }
 
   if (verb === 'observatory' || verb === 'obs') {
@@ -440,7 +458,7 @@ export function registerCommand(ctx, runtime, scope) {
   const register = () => ctx.commands.register({
     name: 'veyra',
     description: 'Inspect and administer Veyra engineering memory & observatory',
-    input: { hint: '[status|observatory|recall|recent|inspect|forget|invalidate|supersede|unlink|tombstone|protect|unprotect|promote]', attachments: false },
+    input: { hint: '[status|observatory|audit|recall|recent|inspect|forget|invalidate|supersede|unlink|tombstone|protect|unprotect|promote]', attachments: false },
     handler: (invocation) => handleVeyraCommand(runtime, invocation),
   })
   if (effect) effect(register)

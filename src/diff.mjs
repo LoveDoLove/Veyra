@@ -34,7 +34,7 @@ const TEMPLATE_LINES = /^(Files touched|Tools|Symbols|Verified outcome|Agent)\s*
 /** Titles that only echo a path or a tool call carry no assertion. */
 const TITLE_ECHO = /^(Worked on|Fix: work on|Used veyra_\w+)\b/i
 
-function claimText(record) {
+export function claimText(record) {
   if (typeof record === 'string') return record
   if (!record) return ''
   const kept = []
