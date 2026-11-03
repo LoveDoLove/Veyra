@@ -51,6 +51,11 @@ relevant context via unified Hybrid Search. Treat it as an assistant, not as tru
 | `veyra_inspect` | Read one `vey_…` id with evidence anchors, causal facets, and graph relations. |
 | `veyra_forget` | Soft-forget with an audited `reason`; protected records need `override: true`. Leaves recall, stays inspectable. |
 | `veyra_promote` | Change standing. **canonical requires `explicit: true`**. |
+| `veyra_feedback` | Report the outcome of applying a recalled record: success strengthens it; failure demotes validation/confidence one step. |
+| `veyra_recurrence` | Detect recurring failures with the same root cause / symptom / remedy; optionally gate an auto-candidate. |
+| `veyra_health` | Read-only memory-health report: quality buckets plus maintenance findings (contradictions, staleness, unresolved investigations). |
+| `veyra_code_status` | CBM code-index freshness: index status, current generation, and memories affected by drift. |
+| `veyra_change_impact` | Analyze a code change's impact: affected knowledge, read-time trust classification, optional review candidates. |
 
 The user-facing `/veyra` command covers the same operations, plus the human Knowledge Observatory.
 

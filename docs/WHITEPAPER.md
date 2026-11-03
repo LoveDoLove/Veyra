@@ -9,6 +9,16 @@ and §15. Where a property is designed for but not yet proven in use, it is
 labeled *unproven* in §12 and §13. Nothing in this paper should be read as a
 performance or outcome guarantee beyond the stated evidence.
 
+> **Snapshot note.** This whitepaper is a dated snapshot pinned to v0.1.57
+> (commit 75d74ab). Architecture has since moved on: as of v0.1.65/0.1.66 the
+> Code Intelligence bridge (discovery, client, engine, watcher, `cbm_*` tool
+> definitions) lives in the standalone `@lovedolove/dsh-codebase-memory-mcp`
+> package, which Veyra declares as its sole runtime npm dependency — so §4's
+> "zero runtime dependencies" and "~180 kB packed" statements describe the
+> v0.1.57 revision, not the current one. Read the current README for the
+> present architecture; this paper's revision pin and traceability claims
+> remain scoped to v0.1.57.
+
 **繁體中文 (Traditional Chinese): [docs/WHITEPAPER.zh-TW.md](./WHITEPAPER.zh-TW.md)**
 
 ---

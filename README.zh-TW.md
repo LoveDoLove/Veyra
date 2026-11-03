@@ -34,7 +34,7 @@ Veyra 運作兩層互補的機制，各自回答不同的問題：
 - **變更智能。** 儲存庫變更會自動進入代理上下文——變更摘要置於召回區塊之首，並標註其信任影響——而 `veyra_change_impact` 可針對一組明確的變更檔案做分析：受影響的記憶、受影響的證據錨點、選用覆核候選、與各類別摘要計數。候選絕不會被自動提升為 canonical。
 - **健康與維護。** `veyra_health` 與 `/veyra health` 以唯讀方式回報記憶健康發現；隨附的 `memory-maintenance` 技能僅在明確要求時套用生命週期動作（keep / supersede / invalidate / forget / tombstone / revalidate / defer），並附安全上限與前後對照報告。
 - **人工介面。** `/veyra` 斜線指令、唯讀的知識觀測台（Knowledge Observatory），以及 DSH Web 中 `/veyra` 的可互動網路圖（Network Graph）。
-- **零執行時 npm 相依。** 套件為純 ESM，打包後約 180 kB。
+- **一個執行時 npm 相依。** `@lovedolove/dsh-codebase-memory-mcp`——獨立的 Codebase Memory 橋接套件——驅動外部原生 daemon。其餘全部為純 ESM、無執行時相依；套件約 198 kB（打包後）。
 
 ---
 
@@ -110,7 +110,12 @@ dsh plugin --profile web add @lovedolove/veyra
 
 ## 代碼智慧
 
-代碼智慧是一個**選用**的結構層，由外部的 [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) 原生 daemon 提供。Veyra 不自帶原生二進位。
+代碼智慧是結構層，將 Veyra 連接到外部的
+[codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) 原生 daemon。橋接代碼——倉庫發現、圖譜 client、code-intelligence engine、watcher，以及 `cbm_*` 工具定義——放在獨立的
+[`@lovedolove/dsh-codebase-memory-mcp`](https://www.npmjs.com/package/@lovedolove/dsh-codebase-memory-mcp)
+套件中，這是 Veyra 唯一宣告的執行時相依。Veyra 本身不附原生二進位、也不內含橋接內部：它只重新公開六個 `cbm_*` 工具加上 `veyra_code_status` / `veyra_change_impact`，並在自家樹中僅保留 `src/code/linking.mjs`（證據錨 ↔ 代碼新鮮度）與 `src/code/retrieval.mjs`（統一管線）。橋接、其安裝流程與原生 daemon 的細節，由該套件的 README 說明，本文件不重複。
+
+原生 daemon 為**選用**：沒有它時 Veyra 記憶層完全可用；代碼智慧降級（見下方「二進位不存在時」）。
 
 ### 安裝原生引擎
 
@@ -291,16 +296,18 @@ DSH 設定在專屬的 **Veyra** 區塊下提供 **Recall limit** 與 **Include 
   observatory     src/graph.mjs    (fail-closed)     Observatory / Network Graph
 
   ┌──────────────────────────────────────────────────────────────────────────┐
-  │  Code Intelligence  src/code/  (optional — requires codebase-memory-mcp)│
+  │  Code Intelligence  (native daemon optional — see below)                │
   │                                                                          │
   │  stdio JSON-RPC 2.0 ──► cbm_* tools ──► freshness checks ──► retrieval  │
-  │  client.mjs  engine.mjs  discovery.mjs  linking.mjs  watcher.mjs        │
+  │  bridge: @lovedolove/dsh-codebase-memory-mcp (declared dependency)      │
+  │    client.mjs  engine.mjs  discovery.mjs  watcher.mjs  (in bridge pkg)  │
+  │  Veyra: src/code/linking.mjs  src/code/retrieval.mjs                   │
   │                                                                          │
-  │  Degraded when binary absent: memory layer unaffected                   │
+  │  Degraded when native binary absent: memory layer unaffected            │
   └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-本地圖是**派生投影，而非第二個儲存**。代碼智慧是**選用**層，透過 stdio 與外部原生 daemon 通訊；它從不直接修改 Veyra 記憶。
+本地圖是**派生投影，而非第二個儲存**。代碼智慧的橋接放在獨立的 `@lovedolove/dsh-codebase-memory-mcp` 套件（Veyra 的宣告執行時相依）中，透過 stdio 與外部原生 daemon 通訊；daemon 是唯一選用的部分。任何代碼智慧路徑都不會直接修改 Veyra 記憶。
 
 完整說明：[docs/architecture-graph.md](https://github.com/LoveDoLove/Veyra/blob/main/docs/architecture-graph.md)
 
@@ -333,7 +340,7 @@ DSH 設定在專屬的 **Veyra** 區塊下提供 **Recall limit** 與 **Include 
 ## 開發
 
 ```sh
-npm test               # node --test test/*.test.mjs  (782 tests)
+npm test               # node --test test/*.test.mjs  (806 tests, 800 pass, 6 skipped)
 npm run pack:check     # npm pack --dry-run — 即將發布的內容
 ```
 
@@ -345,13 +352,13 @@ CI 在每次 push 與 pull request 時，對 Node 22 與 24 兩者皆執行。�
 
 | | |
 | --- | --- |
-| 目前版本 | `0.1.58` |
+| 目前版本 | `0.1.66` |
 | Node | `>=22.5.0 <25.0.0` |
 | DSH | `>=0.1.2-rc.1 <0.3.0-0` |
 | 驗證於 | DSH `0.1.7-rc.2`（插件啟動、工具、`/veyra` ＋ `/veyra/graph`）；DSH `0.2.0-rc.1`（真實相容閘＋組合成 host-service 執行期）；DSH `0.2.0-rc.2`（組合成 host-service 執行期＋對照已宣告範圍的真實 `ToolRuntime` 工具輸出驗證）；CI 於 Node 22 與 24 |
 | Profiles | 依 profile 安裝（`web`、`tui`、…）；設定區與網路圖需要 web 表面 |
 | 儲存 | `node:sqlite` ＋ FTS5，每個專案一個 DB，位於 Veyra home 下 |
-| 代碼智慧 | 選用；需要外部的 `codebase-memory-mcp` 二進位（MIT、DeusData） |
+| 代碼智慧 | 橋接以執行時相依 `@lovedolove/dsh-codebase-memory-mcp` 宣告；外部 `codebase-memory-mcp` 原生 daemon 為選用——daemon 缺席時代碼智慧降級，記憶層不受影響（二進位：MIT、DeusData；橋接：MIT、LoveDoLove） |
 | 授權 | MIT |
 
 Veyra 處於 1.0 之前的 `0.1.x` 線——已發布的內容見 [CHANGELOG](https://github.com/LoveDoLove/Veyra/blob/main/CHANGELOG.md)。API 與指令表面仍可能在次版之間變動。

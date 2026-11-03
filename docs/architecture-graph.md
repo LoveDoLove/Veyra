@@ -1,6 +1,7 @@
 # Veyra Engineering Graph — Architecture Checkpoint
 
 Baseline: verified Graph Foundation `@lovedolove/veyra@0.1.12` (`0.1.13` = CI bump).
+> **Snapshot note.** This checkpoint was verified 2026-09-26 against `@lovedolove/veyra@0.1.12`–`0.1.18` (Graph Foundation 0.1.12, WebUI 0.1.14, overview landing 0.1.18). Later releases evolved the agent surface — the §1 "Agent surface" row now lists the current 10 `veyra_*` tools plus 6 `cbm_*` re-exports as of 0.1.66 — and moved the Code Intelligence bridge (discovery, client, engine, watcher, `cbm_*` tool definitions) into the standalone `@lovedolove/dsh-codebase-memory-mcp` package, Veyra's sole declared runtime npm dependency as of 0.1.65/0.1.66. Read the current README for the present architecture; the remaining content of this checkpoint reflects its pinned revisions.
 Network Graph WebUI: `0.1.14`; bounded overview landing view: `0.1.18`.
 Date: 2026-09-26 (last updated).
 Status: graph is a derived projection, not a second store. WebUI is a host-native Observatory surface over that projection.
@@ -24,7 +25,7 @@ Veyra is a DSH Cordis plugin (`src/plugin.mjs`), not a standalone web app.
 | Search | Hybrid FTS5 + Jaccard + intent + relationship *score* |
 | Graph today | Derived Local Graph (`src/graph.mjs`). Recall expands 1-hop eligible neighbors; `contradicts` still has its own extra |
 | Human surface | `/veyra observatory *` read-only text, plus host HTTP Network Graph at `/veyra` |
-| Agent surface | `systemPrompt.section` + `systemPrompt.context`, tools `remember/recall/inspect/forget/promote` |
+| Agent surface | `systemPrompt.section` + `systemPrompt.context`, tools `remember/recall/inspect/forget/promote/feedback/recurrence/health/code_status/change_impact` (plus 6 `cbm_*` re-exports) |
 | Fail-closed | empty string if recall throws; isolation is per-DB |
 
 There is no Veyra web application and no graph table. DSH Web GUI is the host.

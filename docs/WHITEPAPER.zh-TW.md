@@ -9,6 +9,8 @@
 
 **繁體中文（本文）· 英文版：[docs/WHITEPAPER.md](./WHITEPAPER.md)**
 
+> **快照註記。** 本白皮書是 pin 到 v0.1.57 (commit 75d74ab) 的日期快照。架構已隨之更新：從 v0.1.65/0.1.66 起，Code Intelligence 橋接（discovery、client、engine、watcher、`cbm_*` 工具定義）均位於獨立的 `@lovedolove/dsh-codebase-memory-mcp` 套件，Veyra 宣告其為唯一執行時 npm 相依——所以 §4 的「零執行時相依」與「約 180 kB 精簡」陳述描述 v0.1.57 的修訂版，而非目前的版本。請參閱目前的 README 以了解當前架構；本文件的修訂版 pin 與可追溯性陳述仍限於 v0.1.57。
+
 ---
 
 ## 1. 執行摘要

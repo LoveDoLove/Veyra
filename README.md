@@ -34,7 +34,7 @@ Veyra runs two complementary layers that answer different questions:
 - **Change intelligence.** Repository changes reach the agent context automatically — a change summary leads the recall block, with the trust impact of that recall — and `veyra_change_impact` analyzes an explicit set of changed files: affected memories, affected evidence anchors, optional review candidates, per-category summary counts. Candidates are never auto-promoted to canonical.
 - **Health and maintenance.** `veyra_health` and `/veyra health` report memory-health findings read-only; the bundled `memory-maintenance` skill applies lifecycle actions (keep / supersede / invalidate / forget / tombstone / revalidate / defer) only on explicit request, with safety limits and before/after reporting.
 - **Human surfaces.** `/veyra` slash commands, a read-only Knowledge Observatory, and an interactive Network Graph at `/veyra` in DSH Web.
-- **Zero runtime npm dependencies.** The package is pure ESM, ~180 kB packed.
+- **One runtime npm dependency.** `@lovedolove/dsh-codebase-memory-mcp` — the standalone Codebase Memory bridge package — which drives the external native daemon. Everything else is pure ESM with no runtime dependencies; the package is ~198 kB packed.
 
 ---
 
@@ -110,7 +110,21 @@ Restart DSH (or reload the profile) — Veyra activates automatically. No API ke
 
 ## Code Intelligence
 
-Code Intelligence is an **optional** structural layer powered by the external [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) native daemon. Veyra does not bundle a native binary.
+Code Intelligence is a structural layer that connects Veyra to the external
+[codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) native
+daemon. The bridge code — repository discovery, the graph client, the
+code-intelligence engine, the watcher, and the `cbm_*` tool definitions —
+lives in the standalone [`@lovedolove/dsh-codebase-memory-mcp`](https://www.npmjs.com/package/@lovedolove/dsh-codebase-memory-mcp)
+package, which Veyra declares as its one runtime dependency. Veyra itself
+ships no native binary and no bridge internals: it re-exposes the six
+`cbm_*` tools plus `veyra_code_status` / `veyra_change_impact`, and keeps
+only `src/code/linking.mjs` (evidence-anchor ↔ code freshness) and
+`src/code/retrieval.mjs` (the unified pipeline) in its own tree. Details of
+the bridge, its install flow, and the native daemon are documented in that
+package's own README, not duplicated here.
+
+The native daemon is **optional**: Veyra's memory layer is fully functional
+without it; Code Intelligence degrades when the binary is absent (below).
 
 ### Install the native engine
 
@@ -291,16 +305,18 @@ Everything else is configured in the profile `cordis.patch.yml`:
   observatory     src/graph.mjs    (fail-closed)     Observatory / Network Graph
 
   ┌──────────────────────────────────────────────────────────────────────────┐
-  │  Code Intelligence  src/code/  (optional — requires codebase-memory-mcp)│
+  │  Code Intelligence  (native daemon optional — see below)               │
   │                                                                          │
-  │  stdio JSON-RPC 2.0 ──► cbm_* tools ──► freshness checks ──► retrieval  │
-  │  client.mjs  engine.mjs  discovery.mjs  linking.mjs  watcher.mjs        │
+  │  stdio JSON-RPC 2.0 ──► cbm_* tools ──► freshness checks ──► retrieval │
+  │  bridge: @lovedolove/dsh-codebase-memory-mcp (declared dependency)      │
+  │    client.mjs  engine.mjs  discovery.mjs  watcher.mjs  (in bridge pkg)  │
+  │  Veyra: src/code/linking.mjs  src/code/retrieval.mjs                   │
   │                                                                          │
-  │  Degraded when binary absent: memory layer unaffected                   │
+  │  Degraded when native binary absent: memory layer unaffected            │
   └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-The local graph is a **derived projection, not a second store**. Code Intelligence is an **optional layer** communicating with an external native daemon over stdio; it never modifies Veyra Memory directly.
+The local graph is a **derived projection, not a second store**. The Code Intelligence bridge ships in the standalone `@lovedolove/dsh-codebase-memory-mcp` package (a declared runtime dependency of Veyra) and communicates with the external native daemon over stdio; that daemon is the only optional piece. No Code Intelligence path modifies Veyra Memory directly.
 
 Full write-up: [docs/architecture-graph.md](https://github.com/LoveDoLove/Veyra/blob/main/docs/architecture-graph.md)
 
@@ -333,7 +349,7 @@ Design rationale and a guided tour of every mechanism: the [technical whitepaper
 ## Development
 
 ```sh
-npm test               # node --test test/*.test.mjs  (782 tests)
+npm test               # node --test test/*.test.mjs  (806 tests, 800 pass, 6 skipped)
 npm run pack:check     # npm pack --dry-run — what would be published
 ```
 
@@ -346,13 +362,13 @@ Publishing is automatic: every push to `main` publishes to npm (patch-bumped fir
 
 | | |
 | --- | --- |
-| Current release | `0.1.58` |
+| Current release | `0.1.66` |
 | Node | `>=22.5.0 <25.0.0` |
 | DSH | `>=0.1.2-rc.1 <0.3.0-0` |
 | Verified on | DSH `0.1.7-rc.2` (plugin boot, tools, `/veyra` + `/veyra/graph`); DSH `0.2.0-rc.1` (real compatibility gate + composed-host-service runtime); DSH `0.2.0-rc.2` (composed host-service runtime + real `ToolRuntime` tool-output validation against the declared range); CI on Node 22 and 24 |
 | Profiles | Installed per profile (`web`, `tui`, …); Settings section and Network Graph require the web surface |
 | Storage | `node:sqlite` + FTS5, one DB per project under the Veyra home |
-| Code Intelligence | Optional; requires external `codebase-memory-mcp` binary (MIT, DeusData) |
+| Code Intelligence | Bridge declared as runtime dependency `@lovedolove/dsh-codebase-memory-mcp`; the external `codebase-memory-mcp` native daemon is optional — Code Intelligence degrades, memory layer is unaffected (binary: MIT, DeusData; bridge: MIT, LoveDoLove) |
 | License | MIT |
 
 Veyra is on a pre-1.0 `0.1.x` line — see the [CHANGELOG](https://github.com/LoveDoLove/Veyra/blob/main/CHANGELOG.md) for what shipped. APIs and command surface may still change between minor versions.

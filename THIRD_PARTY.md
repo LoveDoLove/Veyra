@@ -76,6 +76,21 @@ SOFTWARE.
 
 ---
 
+## dsh-codebase-memory-mcp (bridge package)
+
+Veyra's Code Intelligence bridge — repository discovery, the stdio client, engine,
+file watcher, and the `cbm_*` tool definitions — ships in the standalone package
+`@lovedolove/dsh-codebase-memory-mcp`, which Veyra declares as its sole runtime
+npm dependency. The external native daemon (`codebase-memory-mcp`) remains an
+optional runtime component; Code Intelligence degrades when it is absent, and
+the Veyra memory layer is unaffected.
+
+- **Project:** [dsh-codebase-memory-mcp](https://github.com/LoveDoLove/dsh-codebase-memory-mcp)
+- **Copyright:** Copyright (c) LoveDoLove
+- **License:** MIT License
+
+---
+
 ## tencentdb-agent-memory
 
 The FTS5 schema v2 pattern (`content_original UNINDEXED` + isolation columns), `buildFtsQuery` with quoted OR-joined phrases, BM25→0-1 calibration via `relevance/(1+relevance)`, `rebuildFtsIndex()`, and Reciprocal Rank Fusion `1/(k+rank+1)` are adapted from `tencentdb-agent-memory`.
