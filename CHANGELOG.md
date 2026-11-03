@@ -1,3 +1,14 @@
+## [0.1.66] - 2026-11-03
+
+### Fixed
+
+- **DSH plugin packaging**: removed `bundledDependencies` and rely on declared registry `dependencies` (`@lovedolove/dsh-codebase-memory-mcp: ^0.1.5`). DSH uses `pnpm` to install profile plugins, which does not materialize `bundledDependencies` for git or remote specifications and causes `ERR_MODULE_NOT_FOUND Cannot find module '@lovedolove/dsh-codebase-memory-mcp'`. Declared registry `dependencies` is the DSH-supported mechanism for bundled components.
+
+### Added
+
+- **Runtime dependency check**: added `scripts/runtime-deps-check.mjs` guardrail to `.github/workflows/ci.yml` and `.github/workflows/publish-npm.yml` to verify that all bare runtime imports across shipped files are declared in `dependencies`.
+- **Packaging regression test**: added `test/runtime-deps-check.test.mjs` verifying comment stripping, string spans, bare specifier extraction, host-provided dependency handling, and asserting that `package.json` contains no `bundledDependencies` and declares `@lovedolove/dsh-codebase-memory-mcp`.
+
 ## [0.1.65] - 2026-11-03
 
 ### Added
