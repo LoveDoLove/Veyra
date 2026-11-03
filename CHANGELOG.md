@@ -1,3 +1,14 @@
+## [0.1.68] - 2026-11-03
+
+### Fixed
+
+- **False contradiction edges (Issue #3)**: replacement-language classification no longer manufactures `contradicts` relations. `classify()` in `src/diff.mjs` previously returned `DIFF.CONFLICT` whenever either claim contained a replacement phrase (`rather than`, `instead of`, `deprecated`, `switched from`, …) with no similarity floor, so one ordinary phrase turned a note into a conflict magnet against peers sharing ~2% of tokens, poisoning both records' trust and surviving `promote` to canonical. The replacement branch now requires a shared-subject anchor (`sharesSubject()` provenance overlap, the same predicate the supersede gate already used) **and** the existing `MIN_CONFLICT_SIM` lexical threshold before it may report a conflict. Same-subject replacements below the floor become `UPDATE`, preserving directional `supersedes` behaviour; zero-overlap matches stay `ADD`. Near-verbatim and polarity branches are unchanged, so genuine conflicts are still detected.
+
+### Added
+
+- **Transactional relation detach**: `/veyra unlink <id> contradicts <targetId> [why]` (`src/relationships.mjs`) removes exactly one `contradicts` edge in both directions inside `BEGIN IMMEDIATE`, using the prior `relations` value as an exact SQL precondition so a concurrent change aborts the whole operation with `nothing was changed`. Only the named edge is removed; every other relation and every field — authority, validation, source, evidence, timestamps — is preserved, and trust reclassifies once the edge is gone. Refuses missing records, cross-store pairs, self-links, absent edges, malformed relations, and any non-`contradicts` type. Previously the only way to detach a false edge was direct SQLite surgery.
+- **Read-only contradiction audit**: `/veyra audit contradictions` (`src/audit.mjs`) reports existing `contradicts` edges carrying the defect's signature — claim similarity below the conflict floor, no shared-subject anchor, replacement wording without a subject, or a dangling target — with both endpoints, edge direction, similarity, subject status, per-edge reasons, and the exact `unlink` command to run. Strictly read-only: nothing is unlinked, rewritten, invalidated, or demoted. Bounded to 200 records per store and 50 rendered findings, and it states the provenance limitation (Veyra records no relation provenance, so a flagged edge may be genuine).
+
 ## [0.1.67] - 2026-11-03
 
 ### Changed
