@@ -12,6 +12,7 @@ import { openProjectStore, openReusableStore } from './store.mjs'
 import { recall } from './retrieve.mjs'
 import { promote } from './learn.mjs'
 import { forget as lifecycleForget, invalidate, protect, supersede, tombstone, unprotect } from './lifecycle.mjs'
+import { UNLINK_USAGE, formatRelations, unlinkRelation } from './relationships.mjs'
 import { memoryHealth, renderHealth } from './health.mjs'
 import {
   observatoryCausality,
@@ -63,6 +64,8 @@ function helpText() {
     '/veyra forget <id> [override] [reason]     soft-forget a record (reason kept in history)',
     '/veyra invalidate <id> [reason]            mark invalid; reason kept in lifecycle history',
     '/veyra supersede <id> <replacementId> [why] retire a record in favour of another',
+    '/veyra unlink <id> contradicts <targetId> [why]',
+    '                                           detach ONE false contradicts edge (both directions)',
     '/veyra tombstone <id> [override] [reason]  retire to historical (reason kept, still inspectable)',
     '/veyra protect <id> [reason]               guard a memory against forgetting (auditable)',
     '/veyra unprotect <id>                      remove the explicit protection mark',
@@ -255,6 +258,47 @@ export function handleVeyraCommand(runtime, invocation) {
     return { kind: 'success', text: `Superseded ${id} by ${replacement}` }
   }
 
+  if (verb === 'unlink') {
+    // Issue #3 Phase B — explicit, user-invoked detach of ONE relationship.
+    // Nothing is inferred: both endpoints and the relation type are named.
+    const [id, relation, targetId, ...whyParts] = arg.split(/\s+/)
+    if (!id || !relation || !targetId) return { kind: 'error', text: `usage: ${UNLINK_USAGE}` }
+    const store = storeForId(id)
+    if (!store) return { kind: 'error', text: `record ${id} not found` }
+    if (!store.get(targetId)) {
+      // Say which store the target lives in instead of silently doing nothing.
+      const other = storeForId(targetId)
+      return {
+        kind: 'error',
+        text: other
+          ? `record ${targetId} is in a different store; unlink requires both records in the same store`
+          : `record ${targetId} not found`,
+      }
+    }
+    const result = unlinkRelation(store, {
+      fromId: id,
+      relation,
+      targetId,
+      why: whyParts.join(' ').trim(),
+    })
+    if (!result.ok) return { kind: 'error', text: result.error }
+    const removed = [
+      result.removed.forward ? `${id} -> ${targetId}` : null,
+      result.removed.reciprocal ? `${targetId} -> ${id}` : null,
+    ].filter(Boolean).join(', ')
+    return {
+      kind: 'success',
+      text: [
+        `Unlinked ${result.relation}: ${id} <-> ${targetId}`,
+        `removed: ${removed}`,
+        `${id} relations: ${formatRelations(result.before.from)} => ${formatRelations(result.after.from)}`,
+        `${targetId} relations: ${formatRelations(result.before.target)} => ${formatRelations(result.after.target)}`,
+        'no other field, timestamp, or relationship was changed',
+        ...(result.why ? [`why: ${result.why}`] : []),
+      ].join('\n'),
+    }
+  }
+
   if (verb === 'tombstone') {
     const [id, flag, ...whyParts] = arg.split(/\s+/)
     const store = storeForId(id)
@@ -396,7 +440,7 @@ export function registerCommand(ctx, runtime, scope) {
   const register = () => ctx.commands.register({
     name: 'veyra',
     description: 'Inspect and administer Veyra engineering memory & observatory',
-    input: { hint: '[status|observatory|recall|recent|inspect|forget|invalidate|supersede|tombstone|protect|unprotect|promote]', attachments: false },
+    input: { hint: '[status|observatory|recall|recent|inspect|forget|invalidate|supersede|unlink|tombstone|protect|unprotect|promote]', attachments: false },
     handler: (invocation) => handleVeyraCommand(runtime, invocation),
   })
   if (effect) effect(register)
