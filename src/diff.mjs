@@ -54,7 +54,7 @@ function recordText(record) {
 
 export const MIN_CONFLICT_SIM = 0.35
 
-function classify(tokenSim, newText, existingText) {
+function classify(tokenSim, newText, existingText, { subjectShared = false } = {}) {
   const isExtension = newText.length > existingText.length + existingText.length / 4
   const polarityMismatch = hasNegation(newText) !== hasNegation(existingText)
   const replacementNew = hasReplacementLanguage(newText)
@@ -69,7 +69,18 @@ function classify(tokenSim, newText, existingText) {
   // topical / lexical overlap. Unrelated records with negation must not be
   // classified as conflicts.
   if (polarityMismatch && tokenSim >= MIN_CONFLICT_SIM) return DIFF.CONFLICT
-  if (replacementNew || replacementExisting) return DIFF.CONFLICT
+
+  // Replacement wording ("instead of", "switched from", "rather than") is
+  // evidence of direction, not proof of a shared subject. It may only produce
+  // a conflict when the claims clear the same lexical floor as polarity
+  // conflicts AND stored provenance anchors both to a shared subject. Below
+  // the floor it can still be a directional update (which may clear the
+  // independent supersede gate), but wording alone must never manufacture a
+  // contradiction (Issue #3). A shared path with no shared claim token is not
+  // a shared subject, so it stays ADD.
+  if ((replacementNew || replacementExisting) && subjectShared && tokenSim > 0) {
+    return tokenSim >= MIN_CONFLICT_SIM ? DIFF.CONFLICT : DIFF.UPDATE
+  }
 
   if (tokenSim < 0.5) return DIFF.ADD
   return DIFF.UPDATE
@@ -95,7 +106,9 @@ export function diffMemory(incoming, records, { limit = 8 } = {}) {
       id: rec.id,
       record: rec,
       similarity,
-      suggestion: classify(similarity, newText, existingText),
+      suggestion: classify(similarity, newText, existingText, {
+        subjectShared: sharesSubject(incoming, rec),
+      }),
     })
   }
   matches.sort((a, b) => b.similarity - a.similarity)
