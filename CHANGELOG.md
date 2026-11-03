@@ -1,3 +1,9 @@
+## [0.1.67] - 2026-11-03
+
+### Changed
+
+- **Codebase Memory bridge**: upgraded `@lovedolove/dsh-codebase-memory-mcp` from `^0.1.5` to `^0.1.6`. The 0.1.6 release refreshes the CBM README, CHANGELOG, and bundled skill to document the lazily started daemon lifecycle; its runtime source and public exports are unchanged, so Veyra's CBM integration needs no code changes.
+
 ## [0.1.66] - 2026-11-03
 
 ### Fixed
