@@ -188,7 +188,7 @@ Neither brain replaces the other.
 | Network Graph | Host-native SVG page at `/veyra` (overview + 1-hop Local Graph), served by the DSH web server; JSON at `/veyra/graph`, `/veyra/record`, `/veyra/search`. |
 | Settings | `Recall limit` and `Include reusable` in the DSH Settings dialog (Veyra section); changes apply from the next turn, no restart. |
 | Project isolation | Memory is keyed by workspace path + git remote. Two unrelated folders never share memory; `scope: 'reusable'` is opt-in. |
-| Secret redaction | Secrets are redacted before anything is stored. A checksum tier also catches payment cards, IBANs and US SSNs that carry no secret-looking shape. |
+| Secret redaction | Secrets are redacted before anything is stored. A validated tier also catches payment cards (Luhn), IBANs (ISO 13616 mod-97) and US SSNs (structural rules) that carry no secret-looking shape. |
 
 ---
 

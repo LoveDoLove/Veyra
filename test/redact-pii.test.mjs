@@ -1,16 +1,17 @@
 /**
- * Integration #4 — checksum-validated PII redaction (redaction depth).
+ * Integration #4 — validated PII redaction (redaction depth).
  *
  * Veyra's redactor catches credentials of known shape (bearer tokens,
  * prefixed API keys, PEM blocks, quoted secret assignments, env assignments)
- * but nothing that is only identifiable by a CHECKSUM. Measured before this
- * change: a Luhn-valid payment card, a valid ISO-13616 IBAN and a
- * structurally valid US SSN all passed `scrub()` unchanged with
+ * but nothing that is only identifiable by a CHECKSUM or a STRUCTURAL RULE.
+ * Measured before this change: a Luhn-valid payment card, a valid ISO-13616
+ * IBAN and a structurally valid US SSN all passed `scrub()` unchanged with
  * `clean: true` — they were persisted verbatim into engineering memory.
  *
  * Reference: mnemon `internal/safety/mask.go` (Apache-2.0) — "patterns,
- * checksums, no model". Adopted: the detection idea and the checksum
- * validators (Luhn, IBAN mod-97, SSN structural rules).
+ * checksums, no model". Adopted: the detection idea and the validators
+ * (Luhn checksum, IBAN ISO-13616 mod-97 checksum, SSN structural rules —
+ * the SSN has no checksum; it is validated by its section rules instead).
  * Rejected from that reference: its "ending in NNNN" replacement style, which
  * echoes real digits into persisted memory. Veyra keeps its fixed
  * `[REDACTED_*]` placeholders and never echoes any part of the value.
@@ -75,6 +76,46 @@ test('a bare card-shaped digit run needs payment context to count', () => {
   const contextual = scrub('charge 1730599999999999999 for the order')
   assert.equal(contextual.clean, false)
   assert.ok(contextual.scrubbed.includes('[REDACTED_CARD]'))
+})
+
+// CARD_CONTEXT must key on whole payment words. Measured before the word
+// boundary fix: every one of these strings redacted its Luhn-valid number
+// because a payment word was a substring of the ordinary word ("card" in
+// "discard", "paid" in "unpaid", "charge" in "discharge", ...).
+test('card context is whole words, not substrings', () => {
+  for (const input of [
+    'discard 4111111111111111 from the fixture list',
+    'unpaid balance 4111111111111111 in the ledger',
+    'cardboard 4111111111111111 on the shelf',
+    'discharge curve 4111111111111111 of the cell',
+    'recharge job 4111111111111111 in the queue',
+    'accredit 4111111111111111 to the account',
+    'wildcard 4111111111111111 in the allowlist',
+    'charging the battery id 4111111111111111',
+    'discover the 4111111111111111 record',
+  ]) {
+    const result = scrub(input)
+    assert.equal(result.redactionsCount, 0, input)
+    assert.equal(result.clean, true, input)
+    assert.equal(result.scrubbed, input, input)
+  }
+})
+
+test('whole payment words still provide card context', () => {
+  for (const input of [
+    'the card 4111111111111111 was declined',
+    'credit card 4111111111111111 on file',
+    'American Express 378282246310005 for the payout',
+    'billing 5555555555554444 was reviewed',
+    'the transactions 4111111111111111 settled',
+    'refunded 4111111111111111 to the buyer',
+    'PAN 4111111111111111 in the report',
+    'cc_num 5555555555554444 in the fixture',
+  ]) {
+    const result = scrub(input)
+    assert.equal(result.clean, false, input)
+    assert.ok(result.scrubbed.includes('[REDACTED_CARD]'), input)
+  }
 })
 
 test('a card-shaped number that fails Luhn is left alone', () => {

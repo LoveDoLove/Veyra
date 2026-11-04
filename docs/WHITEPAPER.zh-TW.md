@@ -482,7 +482,7 @@ dsh-token-saver 的基線在未驗證候選加權狀態下建立。上述驗證*
 `docs/capability-matrix.md` 已按 `GOAL.md` §5 的十六個參考專案、以固定修訂版
 逐一審計，每項能力一列，並附 Adopt/Adapt/Defer/Reject 決策。本次落地的整合：
 記錄區塊召回預算（`src/context.mjs:69`）、寫入閘門裁決台帳
-（`src/learn.mjs:348`/`:498`）、校驗和 PII 遮罩（`src/redact.mjs:112`）；
+（`src/learn.mjs:348`/`:498`）、校驗 PII 遮罩（`src/redact.mjs:122`，校驗和或結構規則）；
 確定性跨通道 RRF（`src/retrieve.mjs:539`）與因果相關性
 （`src/retrieve.mjs:317`）已存在，記為 Adopt。其餘延後缺口：以 embedding
 為基礎的重複/寫入裁量帶、持久化信任驗證狀態、證據充分性提醒迴路、
@@ -550,7 +550,7 @@ GOAL 文件的姿態：**核心技術基盤已基本完成；剩下的方向是�
 | 生命週期動作 | `src/lifecycle.mjs:101–234` |
 | 信任分類 | `src/trust.mjs:34/43/95` |
 | 上下文＋注入警告 | `src/context.mjs:264/313/790` |
-| 洗滌（redaction） | `src/redact.mjs:20`（形狀層）、`:112`（校驗和層）、`:151`（`scrub`） |
+| 洗滌（redaction） | `src/redact.mjs:20`（形狀層）、`:122`（校驗層）、`:161`（`scrub`） |
 | 觀察管線 | `src/observe.mjs:42/82/174` |
 | Limit 處理 | `src/config.mjs:26`、`src/retrieve.mjs:952/1014` |
 | 圖譜投影 | `src/graph.mjs`（`localGraph`、GRAPH_LIMITS） |

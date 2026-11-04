@@ -91,7 +91,7 @@ never log unredacted content.
 
 A second tier catches identifiers that shape alone cannot identify — payment
 cards (Luhn), IBANs (ISO 13616 mod-97), and US SSNs (structural rules). Each
-match is validated individually; a value that fails its checksum is left
+match is validated individually; a value that fails its check is left
 byte-identical. Placeholders are fixed (`[REDACTED_CARD]`, `[REDACTED_IBAN]`,
 `[REDACTED_SSN]`) and never echo any part of the value.
 

@@ -364,7 +364,7 @@ stale). §11.2 is the live example.
 | Property | Mechanism | Guard |
 |---|---|---|
 | Per-project store isolation | one `memory.db` per project id; reusable-scope records shared only behind `includeReusable` (opt-in) | D32: 0 cross-project leaks across 2 queries; test `isolation-security-benchmark` |
-| Secret hygiene | `scrub` / `redact` (`src/redact.mjs`) strip secrets from title, body, tags, evidence, and source columns at write time; a checksum tier additionally catches Luhn-valid cards, ISO-13616 IBANs and structurally valid US SSNs | D26: 0 leaks; D26b: bearer/JWT-style tokens scrubbed; `redact-pii`: 12/12 ordinary engineering strings untouched, 8/8 checksum identifiers caught |
+| Secret hygiene | `scrub` / `redact` (`src/redact.mjs`) strip secrets from title, body, tags, evidence, and source columns at write time; a validated tier additionally catches Luhn-valid cards, ISO-13616 IBANs and structurally valid US SSNs | D26: 0 leaks; D26b: bearer/JWT-style tokens scrubbed; `redact-pii`: 12/12 ordinary engineering strings untouched, 8/8 checksum identifiers caught |
 | Injection resistance | recalled content is rendered *as data*: hostile markers (`ignore_previous`, role-override phrasings) are detected at render and a warning is scrubbed in, never executed | D30 detect, D30b 0 false-positives |
 | Corruption fail-closed | a store that fails integrity checks is refused, not repaired or half-read: the literal error "Veyra refuses to open corrupted store" | D27–D29 (flag, exclude, surface, refuse) |
 | WebUI read-only | the `/veyra` surface accepts no mutations (`src/webui.mjs:189`) | SmartTrip level L9, §11.1 |
@@ -577,7 +577,7 @@ paired tasks (the experiment, §11.3).
 Adopt/Adapt/Defer/Reject decision. Integrations landed in this pass: the
 record-block recall budget (`src/context.mjs:69`), the write-gate verdict
 ledger (`src/learn.mjs:348`/`:498`), and checksum-validated PII redaction
-(`src/redact.mjs:112`); the deterministic cross-channel RRF
+(`src/redact.mjs:122`); the deterministic cross-channel RRF
 (`src/retrieve.mjs:539`) and causal relevance (`src/retrieve.mjs:317`) already
 existed and are recorded as Adopt. Remaining deferred gaps: embedding-based
 duplicate/write-disposition bands, a persisted trust verification state, an
@@ -662,7 +662,7 @@ Specifically, with the architecture's reject/defer list
 | Lifecycle actions | `src/lifecycle.mjs:101–234` |
 | Trust classification | `src/trust.mjs:34/43/95` |
 | Context + injection warning | `src/context.mjs:264/313/790` |
-| Redaction | `src/redact.mjs:20` (shape tier), `:112` (checksum tier), `:151` (`scrub`) |
+| Redaction | `src/redact.mjs:20` (shape tier), `:122` (validated tier), `:161` (`scrub`) |
 | Observe pipeline | `src/observe.mjs:42/82/174` |
 | Limit handling | `src/config.mjs:26`, `src/retrieve.mjs:952/1014` |
 | Graph projection | `src/graph.mjs` (`localGraph`, GRAPH_LIMITS) |

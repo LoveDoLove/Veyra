@@ -6,12 +6,12 @@
  * Every write path runs through this before persistence. Untrusted
  * remembered content is never stored as a raw secret.
  *
- * The checksum tier (`VALIDATED_PATTERNS`) is adapted from mnemon
+ * The validated tier (`VALIDATED_PATTERNS`) is adapted from mnemon
  * `internal/safety/mask.go` (Apache-2.0) — "patterns, checksums, no model".
  * Two parts of that reference are deliberately NOT adopted: its
  * "ending in NNNN" replacement style, which would echo real digits into
  * persisted memory, and its email/phone/account/passport/license kinds,
- * which cannot be validated by checksum and which — measured against this
+ * which carry no checksum or reliable structural rule, and which — measured against this
  * repository — would rewrite ordinary engineering text such as
  * `git@github.com`. Precision is part of the contract here: redaction that
  * mangles ordinary text destroys the memory it is meant to protect.
@@ -45,12 +45,15 @@ const PATTERNS = [
   },
 ]
 
-// --- checksum-validated identifiers ---------------------------------------
+// --- validated identifiers (checksum, or structural rules) ---------------
 // Shape alone cannot identify these: a Luhn-valid run of digits, an ISO-13616
 // IBAN and a structurally valid US SSN are all indistinguishable from ordinary
-// identifiers until the checksum is evaluated. Each pattern therefore carries a
-// validator that runs per match, and a value that fails its checksum is left
-// byte-identical. Placeholders never echo any part of the value.
+// identifiers until they are checked. Cards and IBANs are checked by real
+// checksums (Luhn mod-10, ISO-13616 mod-97); the US SSN has no checksum, so
+// its validator applies the structural rules instead (`ssnValid`). Each
+// pattern therefore carries a validator that runs per match, and a value
+// that fails its check is left byte-identical. Placeholders never echo any
+// part of the value.
 
 /** Luhn mod-10 check over a digits-only string. */
 function luhnValid(digits) {
@@ -84,8 +87,15 @@ function hasCardGrouping(value) {
 // A bare (ungrouped) digit run is only a card when the surrounding text says
 // so. Without this, a 19-digit snowflake id that happens to pass Luhn would be
 // destroyed on write.
+//
+// Every context term is word-bounded so that ordinary English containing one
+// as a substring ("discard", "unpaid", "cardboard", "discharge", "accredit",
+// "wildcard") does not count as payment context. Bare "discover" is the one
+// word deliberately left out: it is a common engineering verb ("discover the
+// bug"), and a Discover card is still caught through "card" / "credit" or
+// through the grouping / IIN rule below.
 const CARD_CONTEXT =
-  /(?:card|credit|debit|charge|charged|visa|mastercard|maestro|amex|american express|discover|jcb|unionpay|diners|payment|paid|refund|billing|invoice|transaction|\bpan\b|cc[-_ ]?(?:num|number)|cvv)/i
+  /(?:\b(?:card|cards|credit|credits|debit|charge|charged|visa|mastercard|maestro|amex|jcb|unionpay|diners|payment|payments|paid|refund|refunds|refunded|billing|invoice|invoices|transaction|transactions|cvv)\b|\bamerican\s+express\b|\bpan\b|\bcc[-_ ]?(?:num|number)\b)/i
 
 /** ISO 13616 IBAN check: move the first four characters to the end, map
  * letters to 10-35, and require a streaming mod-97 of 1. */

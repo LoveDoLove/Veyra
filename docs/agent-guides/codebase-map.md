@@ -46,7 +46,7 @@ the module you are about to change.
 | `src/diff.mjs` | Classifies a new claim against a neighbour: add / update / conflict, with the lexical floor and shared-subject anchor that prevent false contradictions |
 | `src/evidence.mjs` | Evidence relations and test outcomes; `subjectsCompatible`, `classifyEvidenceRelation` |
 | `src/negative.mjs` | Writers for `negative` (known failed approach) and `unresolved` (known open investigation) records |
-| `src/redact.mjs` | Secret scrubbing applied on every write path; `scrub` runs a shape tier (`PATTERNS`) then a checksum tier (`VALIDATED_PATTERNS`: Luhn cards, ISO-13616 IBANs, structural SSNs) |
+| `src/redact.mjs` | Secret scrubbing applied on every write path; `scrub` runs a shape tier (`PATTERNS`) then a validated tier (`VALIDATED_PATTERNS`: Luhn cards, ISO-13616 IBANs, SSNs by structural rule) |
 
 ## Persistence and lifecycle
 
