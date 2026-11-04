@@ -46,20 +46,76 @@ export function normalizeRecallChars(value) {
 }
 
 /**
- * Join rendered lines under a total character budget. The heading and the
- * trust framing always survive; usable content is cut between lines, so a
- * line in progress is dropped whole (never a half line) and the cut is
- * stated explicitly. Lines already above the ceiling are still joined —
- * the budget is enforced on the FINAL string, truncating the tail.
+ * Render the framing plus record blocks under a total character budget.
+ *
+ * The budget bounds the SIZE of the injected block (banners, trust lines,
+ * evidence and the notice included), because `recallLimit` bounds the record
+ * COUNT only. The unit of allocation is the RECORD BLOCK, never a line or a
+ * character range. Truncating the already-joined text instead cut THROUGH a
+ * record: a header survived while its trust line and evidence fell past the
+ * cut, leaving an unattributed claim in the prompt.
+ *
+ * A block has two tiers. Attribution — header, trust line, evidence — is what
+ * makes a record usable and is never dropped. Detail — the body line and the
+ * causal facets — is expendable: it is recoverable through veyra_recall and
+ * worth less than a peer keeping its place. So when the full block does not
+ * fit, every record is retried without its detail lines, and the trimmed pass
+ * is used only when it keeps MORE records than the full pass. A record whose
+ * attribution alone exceeds the budget is still dropped whole (never half a
+ * block). The framing leads the block and is kept while it fits; below that,
+ * framing lines are dropped from the tail whole (never a partial line), the
+ * heading is always kept, and the cut is stated explicitly.
  */
-function joinWithBudget(lines, budget) {
-  const text = lines.join('\n')
-  if (text.length <= budget) return text
+function joinWithBudget(framing, blocks, budget) {
   const notice = '  …recalled context truncated at the character budget. Use veyra_recall for details.'
-  let out = text.slice(0, Math.max(budget - notice.length - 1, 0))
-  const lastBreak = out.lastIndexOf('\n')
-  if (lastBreak > 0) out = out.slice(0, lastBreak) // drop the partial line whole
-  return out + '\n' + notice
+  const full = [...framing, ...blocks.flatMap((b) => b.lines)].join('\n')
+  if (full.length <= budget) return full
+  // Room the notice itself needs: it is always the last line of a cut block.
+  const fits = (lines) => lines.join('\n').length + 1 + notice.length <= budget
+  const out = framing.slice()
+  while (out.length > 1 && !fits(out)) out.pop()
+  // Greedy in rank order, but a block that does not fit is SKIPPED rather than
+  // ending the scan. Stopping at the first miss let one oversized record at the
+  // head of the ranking empty recall completely: rank 1 spent the whole budget
+  // and every smaller record behind it was lost, so a verbose hit looked
+  // identical to no hit at all. Skipping keeps the ranked prefix preference
+  // (a skipped block never displaces a higher-ranked kept one) while letting
+  // shorter records fill the remaining room.
+  const fill = (tier) => {
+    const kept = []
+    for (let index = 0; index < tier.length; index += 1) {
+      const block = tier[index]
+      if (!fits([...out, ...kept.flatMap((b) => b.lines), ...block])) continue
+      kept.push({ index, lines: block })
+    }
+    return { kept, count: kept.length }
+  }
+  // Detail lines are the expendable tier: drop them before dropping a record.
+  const trimmed = blocks.map((b) => (b.expendable.length === 0
+    ? b.lines
+    : b.lines.filter((_, i) => !b.expendable.includes(i))))
+  const fullTier = blocks.map((b) => b.lines)
+  const withDetail = fill(fullTier)
+  const withoutDetail = fill(trimmed)
+  // On a tie the trimmed pass wins: which records the agent SEES outranks how
+  // much detail each one shows, because detail is recoverable through
+  // veyra_recall while a dropped record is invisible.
+  const trimmedWins = withoutDetail.count >= withDetail.count
+  const kept = trimmedWins ? withoutDetail.kept : withDetail.kept
+  // The trimmed pass decides WHICH records survive. Once that is settled,
+  // leftover room must not be wasted: detail is restored in rank order while
+  // it still fits, so a recall that fits comfortably shows full records
+  // instead of attribution-only stubs. Restoration never evicts a record —
+  // it only replaces one already-kept block with its own fuller version.
+  if (trimmedWins) {
+    for (const item of kept) {
+      const fullLines = fullTier[item.index]
+      if (fullLines.length === item.lines.length) continue
+      const candidate = kept.flatMap((b) => (b === item ? fullLines : b.lines))
+      if (fits([...out, ...candidate])) item.lines = fullLines
+    }
+  }
+  return [...out, ...kept.flatMap((b) => b.lines), notice].join('\n')
 }
 
 /**
@@ -218,7 +274,15 @@ export function renderAgentContext(composed, { heading = 'Veyra recalled enginee
   // Phase 3 — automatic change-aware context: the current change signal (if
   // any) leads the block, with the trust impact of THIS recall.
   lines.push(...changeSummaryLines(changes, composed))
+  // Framing and the change summary lead the block; every record is one
+  // block, so the budget drops a record whole instead of cutting through it.
+  const framing = lines.slice()
+  const blocks = []
   for (const entry of composed) {
+    const blockStart = lines.length
+    // Offsets of this block's detail lines. Detail is the expendable tier:
+    // a record may be emitted without it, but never without its attribution.
+    const expendable = []
     const rec = entry.record
     const statusTag = entry.status && entry.status !== 'current' ? `/${entry.status}` : ''
     const auth = rec.authority === 'canonical' ? 'canonical' : rec.authority
@@ -287,20 +351,31 @@ export function renderAgentContext(composed, { heading = 'Veyra recalled enginee
 
     const causal = rec.source?.causal
     if (causal && (causal.symptom || causal.rootCause || causal.remedy || causal.verifiedOutcome)) {
-      if (causal.symptom) lines.push(`  • Symptom: ${causal.symptom}`)
-      if (causal.rootCause) lines.push(`  • Root cause: ${causal.rootCause}`)
-      if (causal.remedy) lines.push(`  • Remedy: ${causal.remedy}`)
-      if (causal.verifiedOutcome) lines.push(`  • Outcome: ${causal.verifiedOutcome}`)
+      const facets = [
+        causal.symptom && `  • Symptom: ${causal.symptom}`,
+        causal.rootCause && `  • Root cause: ${causal.rootCause}`,
+        causal.remedy && `  • Remedy: ${causal.remedy}`,
+        causal.verifiedOutcome && `  • Outcome: ${causal.verifiedOutcome}`,
+      ]
+      for (const facet of facets) {
+        if (!facet) continue
+        expendable.push(lines.length - blockStart)
+        lines.push(facet)
+      }
     } else {
       const docPath = rec.source?.docPath || rec.source?.uri || rec.evidence?.[0]?.path
       if (rec.kind === 'knowledge' && docPath) {
         lines.push(`  • Source: ${docPath}`)
       }
       const body = String(rec.body || '').replace(/\s+/g, ' ').trim()
-      if (body) lines.push(`  ${body.slice(0, 360)}`)
+      if (body) {
+        expendable.push(lines.length - blockStart)
+        lines.push(`  ${body.slice(0, 360)}`)
+      }
     }
+    blocks.push({ lines: lines.slice(blockStart), expendable })
   }
-  return joinWithBudget(lines, budget)
+  return joinWithBudget(framing, blocks, budget)
 }
 
 export const GUIDANCE_TEXT = [

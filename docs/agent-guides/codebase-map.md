@@ -42,17 +42,17 @@ the module you are about to change.
 | --- | --- |
 | `src/observe.mjs` | Turns session events into a per-session activity buffer; noise filtering; `candidateFromBuffer` |
 | `src/understand.mjs` | Distills a buffer into a structured engineering claim: causal facets, symbols, paths, titles; returns `null` for noise |
-| `src/learn.mjs` | The write gate: `WRITE_GATES` (ACCEPT / MERGE / DROP / DEFER), `hasGrounding`, `provenanceAllowsLearning`, `writeGate`, `maybeLearn`, `remember`, `reviewCandidate`, `promote`, `strengthenMemory` |
+| `src/learn.mjs` | The write gate: `WRITE_GATES` (ACCEPT / MERGE / DROP / DEFER), `hasGrounding`, `provenanceAllowsLearning`, `gateOnce` (decision + write) wrapped by `writeGate` (decision + verdict accounting), `maybeLearn`, `remember`, `reviewCandidate`, `promote`, `strengthenMemory`; `recordWriteGateVerdict` / `readWriteGateLedger` keep the bounded decision+reason tally in the store's `meta` table |
 | `src/diff.mjs` | Classifies a new claim against a neighbour: add / update / conflict, with the lexical floor and shared-subject anchor that prevent false contradictions |
 | `src/evidence.mjs` | Evidence relations and test outcomes; `subjectsCompatible`, `classifyEvidenceRelation` |
 | `src/negative.mjs` | Writers for `negative` (known failed approach) and `unresolved` (known open investigation) records |
-| `src/redact.mjs` | Secret scrubbing applied on every write path |
+| `src/redact.mjs` | Secret scrubbing applied on every write path; `scrub` runs a shape tier (`PATTERNS`) then a checksum tier (`VALIDATED_PATTERNS`: Luhn cards, ISO-13616 IBANs, structural SSNs) |
 
 ## Persistence and lifecycle
 
 | File | Responsibility |
 | --- | --- |
-| `src/store.mjs` | `node:sqlite` + FTS5 storage: schema, `MemoryStore`, `put`/`get`/`list`/`search`/`forget`, dedupe, corrupt-row refusal, `openProjectStore`, `openReusableStore`, `openEphemeralStore` |
+| `src/store.mjs` | `node:sqlite` + FTS5 storage: schema, `MemoryStore`, `put`/`get`/`list`/`search`/`forget`, `getMeta`/`setMeta` (the existing `meta` key/value table, used for schema version and small bookkeeping that is not a memory row), dedupe, corrupt-row refusal, `openProjectStore`, `openReusableStore`, `openEphemeralStore` |
 | `src/lifecycle.mjs` | Lifecycle transitions: forget, invalidate, supersede, tombstone, protect/unprotect |
 | `src/evolve.mjs` | Staleness: `markStale`, `sweepStale` |
 | `src/consolidate.mjs` | Read-only detection of consolidation candidates — never mutates |
@@ -60,7 +60,7 @@ the module you are about to change.
 | `src/audit.mjs` | Read-only audit of suspicious `contradicts` edges |
 | `src/feedback.mjs` | Application-outcome feedback and recurrence detection |
 | `src/migrate.mjs` | Store migration utilities |
-| `src/health.mjs` | `memoryHealth` categories and `renderHealth` text |
+| `src/health.mjs` | `memoryHealth` categories and `renderHealth` text; also renders the optional write-gate ledger (`writeGate` accounting) without counting it as a finding |
 | `src/trust.mjs` | Read-time trust classification against current repository state |
 
 ## Retrieval and context
@@ -70,7 +70,7 @@ the module you are about to change.
 | `src/retrieve.mjs` | Hybrid search and ranking: eligibility gate, FTS5 BM25, identifier and evidence signals, intent reweighting, transparent score breakdown |
 | `src/intent.mjs` | Query intent detection (WHY / WHEN / HOW / ENTITY / GENERAL); reweights only, never grants authority |
 | `src/text.mjs` | Tokenization, Jaccard/overlap, negation and replacement-language detection |
-| `src/context.mjs` | Per-turn automatic recall: query derivation, `composeAgentContext`, `renderAgentContext` with budget, `GUIDANCE_TEXT` (`not repository truth`), compaction checkpoints, claimed-prompt memory |
+| `src/context.mjs` | Per-turn automatic recall: query derivation, `composeAgentContext`, `renderAgentContext` with a record-block character budget (`joinWithBudget` drops a record whole, never through it; attribution is never trimmed, detail — body and causal facets — is expendable and restored when room is left), `GUIDANCE_TEXT` (`not repository truth`), compaction checkpoints, claimed-prompt memory |
 | `src/graph.mjs` | Bounded 1-hop local graph projection over stored relations |
 
 ## Code Intelligence (Veyra-owned glue only)

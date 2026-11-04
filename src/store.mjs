@@ -528,6 +528,25 @@ export class MemoryStore {
     return Number(this._count.get()?.n ?? 0)
   }
 
+  /**
+   * Read a value from the store's key/value `meta` table.
+   *
+   * `meta` already exists in the schema (it holds `schema_version`), so this
+   * is a schema-free slot for small bookkeeping values that must survive a
+   * restart without becoming memory rows. Anything stored here is invisible to
+   * list()/search() by construction — it can never masquerade as knowledge.
+   */
+  getMeta(key) {
+    const row = this.db.prepare('SELECT value FROM meta WHERE key = ?').get(String(key))
+    return row ? String(row.value) : null
+  }
+
+  /** Upsert a bookkeeping value into the store's `meta` table (schema-free). */
+  setMeta(key, value) {
+    this.db.prepare('INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+      .run(String(key), String(value))
+  }
+
   put(input, { explicitCanonical = false, repair = false } = {}) {
     const existing = input.id ? this.get(input.id) : null
     // §25 fail-closed (dsh-memory n198_corrupt_failclosed): a read-modify-

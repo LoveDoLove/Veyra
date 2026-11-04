@@ -477,12 +477,19 @@ dsh-token-saver 的基線在未驗證候選加權狀態下建立。上述驗證*
 6. **超出詞彙＋RRF 的語意召回** — 依 M11 設計不做 embeddings；
   詞彙＋重疊在大型儲存庫上的上限未量測。
 
-### 12.5 相對於 dsh-memory 參考引擎的缺口
+### 12.5 相對於先行技術的缺口
 
-（`../refs/dsh-memory`，姊妹本機 checkout；Python `md_cg` 血脈；
-`docs/capability-matrix.md` Phase 0）：確定性跨通道 RRF 評審、
-獨立的適用性條件判斷、衰減時間性 v2、因果鏈走訪與解釋、
-僅追加溯源台帳、准入式自主權讀取——差距列表，非承諾。
+`docs/capability-matrix.md` 已按 `GOAL.md` §5 的十六個參考專案、以固定修訂版
+逐一審計，每項能力一列，並附 Adopt/Adapt/Defer/Reject 決策。本次落地的整合：
+記錄區塊召回預算（`src/context.mjs:69`）、寫入閘門裁決台帳
+（`src/learn.mjs:348`/`:498`）、校驗和 PII 遮罩（`src/redact.mjs:112`）；
+確定性跨通道 RRF（`src/retrieve.mjs:539`）與因果相關性
+（`src/retrieve.mjs:317`）已存在，記為 Adopt。其餘延後缺口：以 embedding
+為基礎的重複/寫入裁量帶、持久化信任驗證狀態、證據充分性提醒迴路、
+BM25/向量索引、匯入/匯出/備份/還原、准入式自主權讀取、更完整的適用性條件
+判斷（目前 `src/retrieve.mjs:483` 只比較雙方都表態的鍵，且 fail-open）、
+僅追加溯源台帳，以及時間性評分仍為分級而非指數衰減
+（`src/retrieve.mjs:103`）。差距列表，非承諾。
 
 ---
 
@@ -536,14 +543,14 @@ GOAL 文件的姿態：**核心技術基盤已基本完成；剩下的方向是�
 | 45 維度基準表＋架構政策 | `docs/BENCHMARK.md`、`test/m15-benchmark.test.mjs` |
 | 召回智慧里程碑、非目標、探測 p1–p15 | `docs/m11-recall-intelligence.md`（2026-09-28 於 0.1.32 驗證） |
 | 凍結的影響實驗協議及其受阻狀態 | `docs/experiment-impact.md`（v0.1.14 / 1c17f70 的 5 任務凍結） |
-| 相對於先行技術的能力缺口 | `docs/capability-matrix.md`（Phase 0 對 `../refs/dsh-memory`，姊妹本機 checkout） |
+| 相對於先行技術的能力缺口 | `docs/capability-matrix.md`（2026-11-04 對 `GOAL.md` §5 全部 16 個參考專案之源碼驗證） |
 | 檢索管線 | `src/retrieve.mjs`（§4/§7 所引行號） |
-| 寫入閘門、溯源 defer | `src/learn.mjs:186/218/221/224` |
+| 寫入閘門、溯源 defer、裁決台帳 | `src/learn.mjs:203/239/242/256/348/498` |
 | 召回閘門、記錄類型、預設 limit | `src/types.mjs`（`isRecallEligible`、:82） |
 | 生命週期動作 | `src/lifecycle.mjs:101–234` |
 | 信任分類 | `src/trust.mjs:34/43/95` |
-| 上下文＋注入警告 | `src/context.mjs:249/521` |
-| 洗滌（redaction） | `src/redact.mjs:45/74` |
+| 上下文＋注入警告 | `src/context.mjs:264/313/790` |
+| 洗滌（redaction） | `src/redact.mjs:20`（形狀層）、`:112`（校驗和層）、`:151`（`scrub`） |
 | 觀察管線 | `src/observe.mjs:42/82/174` |
 | Limit 處理 | `src/config.mjs:26`、`src/retrieve.mjs:952/1014` |
 | 圖譜投影 | `src/graph.mjs`（`localGraph`、GRAPH_LIMITS） |

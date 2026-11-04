@@ -8,6 +8,11 @@
  * the rendered recall block is capped to a fixed character budget, including
  * memories, evidence, banners, trust lines and the truncation notice.
  *
+ * The unit of allocation is the record block: a record is emitted with its
+ * header, trust line and evidence, or dropped whole. Bodies are the only
+ * expendable part of a block, so they go before records do. See
+ * recall-budget-integrity.test.mjs for the cross-budget sweep.
+ *
  * Every test uses a temporary store. No live database is touched.
  */
 
@@ -112,7 +117,7 @@ test('budget never drops the trust framing', () => {
   s.close()
 })
 
-test('budget cut drops partial lines whole', () => {
+test('budget cut drops partial lines and partial records whole', () => {
   const s = mk()
   const longBody = 'x'.repeat(5000)
   for (let i = 0; i < 50; i++) {
@@ -122,13 +127,15 @@ test('budget cut drops partial lines whole', () => {
   const lines = out.split('\n')
   const noticeIdx = lines.findIndex((l) => l.includes('recalled context truncated'))
   assert.ok(noticeIdx > 0)
-  // The line immediately before the notice is a complete record header —
-  // never a half-rendered body line. Empty separator lines are legitimate.
-  const prev = lines[noticeIdx - 1]
-  assert.ok(prev.startsWith('- [E'), `expected a record header before the notice, got: ${JSON.stringify(prev)}`)
-  // No body line (the "  xxxx" indented body) survives the cut.
+  // No line in progress survives the cut: every emitted line is complete.
   for (let i = 0; i < noticeIdx; i++) {
     assert.ok(!lines[i].match(/^  x{100,}$/), `partial body line survived: ${lines[i].slice(0, 40)}…`)
   }
+  // And no RECORD in progress survives either: a header is only emitted with
+  // its trust line, so the line before the notice is never a bare header.
+  // (This file used to assert the opposite — that an orphaned header sat
+  // before the notice — which was the defect, not the contract.)
+  const prev = lines[noticeIdx - 1]
+  assert.ok(!prev.startsWith('- [E'), `an orphaned record header survived the cut: ${JSON.stringify(prev)}`)
   s.close()
 })

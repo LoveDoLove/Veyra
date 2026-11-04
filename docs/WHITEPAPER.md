@@ -105,10 +105,10 @@ mechanism, and each is protected by a test dimension (column D of §12.3).
 | # | Invariant | Statement | Mechanism | Guard |
 |---|-----------|-----------|-----------|-------|
 | P1 | **Observe ≠ Store** | Seeing something happen is not the same as it being true. The observe pipeline records *candidates only*; the noise filter drops non-technical text; the capture gate keeps only technical facets. | `src/observe.mjs:42` `isNoiseText`, `src/observe.mjs:174` `candidateFromBuffer` | D2 (0 false memories from 4 noise probes), D3 |
-| P2 | **Candidate ≠ Truth** | Low-authority records are never auto-recalled and never promoted automatically. The write gate defers automatic learning behind provenance; canonical authority is reachable only through an explicit, human-issued `veyra_promote`. | `src/learn.mjs:218` `learningGuards` (DEFER `provenance-gated` at :221, `canonical-requires-explicit-promotion` at :224); recall gate `isRecallEligible` in `src/types.mjs` (excludes candidate and observation kinds; requires authority derived or canonical) | D31 (0 automatic→canonical attempts), D31b (1 explicit promotion), D4/D5 |
+| P2 | **Candidate ≠ Truth** | Low-authority records are never auto-recalled and never promoted automatically. The write gate defers automatic learning behind provenance; canonical authority is reachable only through an explicit, human-issued `veyra_promote`. | `src/learn.mjs:239` `learningGuards` (DEFER `provenance-gated` at :242, `canonical-requires-explicit-promotion` at :256); every verdict is then tallied by `writeGate` :498 via `recordWriteGateVerdict` :348; recall gate `isRecallEligible` in `src/types.mjs` (excludes candidate and observation kinds; requires authority derived or canonical) | D31 (0 automatic→canonical attempts), D31b (1 explicit promotion), D4/D5 |
 | P3 | **Similarity ≠ Authority** | A record that textually matches the query well still carries whatever authority it actually has. Authority, validation, confidence, and evidence strength score *independently* of lexical or semantic similarity; similarity contributes to ranking only, and low-similarity is a floor, never a veto — high-similarity likewise never promotes. | Scoring functions in `src/retrieve.mjs`: `evidenceStrength` :25, `validationTier` :60, `authorityTier` :78, `confidenceScore` :93, `lexicalScore` :146, `semanticSimilarity` :210; records with <4 shared tokens are never suppressed on that basis (:794) | D12/D13 (causal verified outranks suspected 0.567; no causal false signal), D14–D15b |
 | P4 | **Similarity ≠ Applicability** | A record can be textually near-relevant yet inapplicable to the current toolchain, task, or time window. Applicability is judged from structured context keys and temporal bounds, not from the query match; the default scope term measures scope proximity, not applicability. | `src/retrieve.mjs`: `scopeProximity` :87, `contextCompatibility` :476, `temporalBounds` :414, `temporalState` :434; `src/retrieve.mjs:512` RRF fusion (K=60, weight 0.06) | D10 (6/6), D11 (4/4) |
-| P5 | **Memory ≠ Executable Instruction** | Recalled memory enters the agent's context annotated as remembered experience: "not repository truth; verify against the codebase; similarity is not authority." It can be ignored at cost to the agent's task quality; it is never a command. The plugin itself performs no writes to the user's repository. | Context builder `src/context.mjs:521` `buildRecallContext` (empty string only when zero records; fail-closed on recall errors), injection warning at render (`src/context.mjs:249`, scrubbed via `src/redact.mjs`); hostile injection signals (`ignore_previous`, role overrides) are *detected and flagged*, not obeyed (D30/D30b) | D30, D30b |
+| P5 | **Memory ≠ Executable Instruction** | Recalled memory enters the agent's context annotated as remembered experience: "not repository truth; verify against the codebase; similarity is not authority." It can be ignored at cost to the agent's task quality; it is never a command. The plugin itself performs no writes to the user's repository. | Context builder `src/context.mjs:790` `buildRecallContext` (empty string only when zero records; fail-closed on recall errors), injection warning at render (`src/context.mjs:313`, scrubbed via `src/redact.mjs`); hostile injection signals (`ignore_previous`, role overrides) are *detected and flagged*, not obeyed (D30/D30b) | D30, D30b |
 
 A sixth principle, **Repository Truth**, underlies all five: no stored
 record outranks the repository, trust is re-derived at every read (§6), and
@@ -247,6 +247,11 @@ categories (verified / reviewed / unverified / stale / invalid / contradicted
 (new contradictions, stale knowledge, unresolved investigations, repeated
 failures, unverified high-value candidates, records needing revalidation) —
 findings are *evidence for explicit review*, never automatic edits.
+The report also carries the write-gate ledger: counts of ACCEPT / MERGE / DROP
+/ DEFER learning decisions and their reasons, recorded by `writeGate` in the
+store's `meta` table. It is accounting, not a finding — a deferred candidate is
+not a memory-quality problem — so it is reported beside `findings` rather than
+counted into them, and it stores no record content.
 
 ---
 
@@ -304,7 +309,7 @@ decisions (`docs/architecture-graph.md` §3) — resolving it is a human act
         GATE["recall gate isRecallEligible (src/types.mjs; applied :970, :1029)<br/>not forgotten · status current · not invalid/stale<br/>NOT candidate · NOT observation<br/>authority ∈ {derived, canonical}"]
         TAIL["negative/unresolved coverage tail<br/>NEG_COVERAGE_MAX (def :856, value 3)<br/>known-failed approaches surface even when low-ranked"]
         LIM["limit handling: limit === 0 → [] (:952)<br/>slice at Math.max(0, limit − negTail) (:1014)"]
-        CTX["buildRecallContext :521 → agent context<br/>disclaimer + injection warning scrubbed (src/redact.mjs)<br/>empty string only when zero records; fail-closed on recall errors"]
+        CTX["buildRecallContext :790 → agent context<br/>disclaimer + injection warning scrubbed (src/redact.mjs)<br/>empty string only when zero records; fail-closed on recall errors"]
         Q --> LEX
         Q --> SEM
         LEX --> FUSE
@@ -359,7 +364,7 @@ stale). §11.2 is the live example.
 | Property | Mechanism | Guard |
 |---|---|---|
 | Per-project store isolation | one `memory.db` per project id; reusable-scope records shared only behind `includeReusable` (opt-in) | D32: 0 cross-project leaks across 2 queries; test `isolation-security-benchmark` |
-| Secret hygiene | `scrub` / `redact` (`src/redact.mjs:45` / :74) strip secrets from title, body, tags, evidence, and source columns at write time | D26: 0 leaks; D26b: bearer/JWT-style tokens scrubbed |
+| Secret hygiene | `scrub` / `redact` (`src/redact.mjs`) strip secrets from title, body, tags, evidence, and source columns at write time; a checksum tier additionally catches Luhn-valid cards, ISO-13616 IBANs and structurally valid US SSNs | D26: 0 leaks; D26b: bearer/JWT-style tokens scrubbed; `redact-pii`: 12/12 ordinary engineering strings untouched, 8/8 checksum identifiers caught |
 | Injection resistance | recalled content is rendered *as data*: hostile markers (`ignore_previous`, role-override phrasings) are detected at render and a warning is scrubbed in, never executed | D30 detect, D30b 0 false-positives |
 | Corruption fail-closed | a store that fails integrity checks is refused, not repaired or half-read: the literal error "Veyra refuses to open corrupted store" | D27–D29 (flag, exclude, surface, refuse) |
 | WebUI read-only | the `/veyra` surface accepts no mutations (`src/webui.mjs:189`) | SmartTrip level L9, §11.1 |
@@ -567,13 +572,21 @@ paired tasks (the experiment, §11.3).
 
 ### 12.5 Capability gaps versus the prior art
 
-Against the `dsh-memory` reference engine (the sibling local checkout
-`../refs/dsh-memory`, the Python `md_cg` lineage; source-level matrix in
-`docs/capability-matrix.md`, Phase 0),
-remaining named gaps: a deterministic cross-channel RRF *judge*, independent
-applicability-condition judging, decayed-temporal v2, causal-chain walk and
-explain, an append-only provenance ledger, and admission-style autonomy
-readings. These are *gap listings*, not promises.
+`docs/capability-matrix.md` audits all sixteen reference projects in `GOAL.md`
+§5 at their pinned revisions, one row per capability, each with an
+Adopt/Adapt/Defer/Reject decision. Integrations landed in this pass: the
+record-block recall budget (`src/context.mjs:69`), the write-gate verdict
+ledger (`src/learn.mjs:348`/`:498`), and checksum-validated PII redaction
+(`src/redact.mjs:112`); the deterministic cross-channel RRF
+(`src/retrieve.mjs:539`) and causal relevance (`src/retrieve.mjs:317`) already
+existed and are recorded as Adopt. Remaining deferred gaps: embedding-based
+duplicate/write-disposition bands, a persisted trust verification state, an
+evidence-sufficiency reminder loop, a BM25/vector index, import/export/
+backup/restore, admission-style autonomy readings, richer applicability-
+condition judging (today `src/retrieve.mjs:483` compares only keys both sides
+state and fails open), an append-only provenance ledger, and decayed-temporal
+scoring (still tiered at `src/retrieve.mjs:103`, not exponential). These are
+gap listings, not promises.
 
 ---
 
@@ -642,14 +655,14 @@ Specifically, with the architecture's reject/defer list
 | 45-dimension benchmark table + harness policy | `docs/BENCHMARK.md`, `test/m15-benchmark.test.mjs` |
 | Recall-intelligence milestone, non-goals, probes p1–p15 | `docs/m11-recall-intelligence.md` (verified 2026-09-28 @ 0.1.32) |
 | Frozen impact-experiment protocol and its blockage | `docs/experiment-impact.md` (5-task freeze at v0.1.14 / 1c17f70) |
-| Capability gaps vs prior art | `docs/capability-matrix.md` (Phase 0 vs `../refs/dsh-memory`, the sibling local checkout) |
+| Capability gaps vs prior art | `docs/capability-matrix.md` (source-verified 2026-11-04 against all 16 reference projects in `GOAL.md` §5) |
 | Retrieval pipeline | `src/retrieve.mjs` (lines cited in §4/§7) |
-| Write gate, provenance defers | `src/learn.mjs:186/218/221/224` |
+| Write gate, provenance defers, verdict ledger | `src/learn.mjs:203/239/242/256/348/498` |
 | Recall gate, record kinds, default limit | `src/types.mjs` (`isRecallEligible`, :82) |
 | Lifecycle actions | `src/lifecycle.mjs:101–234` |
 | Trust classification | `src/trust.mjs:34/43/95` |
-| Context + injection warning | `src/context.mjs:249/521` |
-| Redaction | `src/redact.mjs:45/74` |
+| Context + injection warning | `src/context.mjs:264/313/790` |
+| Redaction | `src/redact.mjs:20` (shape tier), `:112` (checksum tier), `:151` (`scrub`) |
 | Observe pipeline | `src/observe.mjs:42/82/174` |
 | Limit handling | `src/config.mjs:26`, `src/retrieve.mjs:952/1014` |
 | Graph projection | `src/graph.mjs` (`localGraph`, GRAPH_LIMITS) |

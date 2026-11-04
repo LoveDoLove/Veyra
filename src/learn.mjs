@@ -276,9 +276,122 @@ function learningGuards(store, candidate) {
 }
 
 /**
- * The write gate (GOAL.md Phase 1). Runs the full guard chain and the
- * evolution decision, performs the write, and returns the verdict with a
- * human-readable reason so Veyra can explain every learning decision:
+ * Write-gate accounting.
+ *
+ * Every learning decision already carries a four-state verdict and a reason,
+ * and `writeGate` promises to "explain every learning decision" — but the
+ * automatic path (`maybeLearn`) returns `record ?? null`, so only ACCEPT left
+ * a trace (on the record's own `source.writeGate`). DROP, DEFER and MERGE were
+ * silent, leaving "why was this turn not learned?" unanswerable.
+ *
+ * The tally rides the store's existing `meta` key/value table: no schema
+ * change, no migration, and no new table that could be mistaken for memory.
+ * It records decision counts and reasons ONLY — never titles, bodies, paths or
+ * any other record content — so it opens no new unredacted persistence path.
+ *
+ * Reference: dsh-engram `src/write-disposition.ts` treats every disposition as
+ * an observable event (MIT); tencentdb-agent-memory
+ * `MemoryCore/src/core/hooks/auto-recall.ts:908-911` logs exact
+ * truncated/dropped accounting. Veyra adopts the accounting idea only.
+ *
+ * Accounting is best-effort by design: a ledger write must never break
+ * learning, so every failure degrades to "no ledger" rather than throwing.
+ */
+export const WRITE_GATE_LEDGER_KEY = 'write_gate_ledger'
+
+/** Distinct reasons kept per store; overflow collapses into `other`. */
+const LEDGER_REASON_LIMIT = 24
+/** Recent verdicts kept as a ring, newest last. */
+const LEDGER_RECENT_LIMIT = 8
+
+function emptyLedger() {
+  return {
+    total: 0,
+    decisions: { accept: 0, merge: 0, drop: 0, defer: 0 },
+    reasons: {},
+    recent: [],
+  }
+}
+
+/** Coerce whatever is on disk into a well-formed ledger (fail closed). */
+function normalizeLedger(value) {
+  const ledger = emptyLedger()
+  if (!value || typeof value !== 'object') return ledger
+  ledger.total = Number.isFinite(value.total) && value.total > 0 ? Math.trunc(value.total) : 0
+  for (const decision of Object.keys(ledger.decisions)) {
+    const n = value.decisions?.[decision]
+    ledger.decisions[decision] = Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0
+  }
+  if (value.reasons && typeof value.reasons === 'object') {
+    for (const [key, n] of Object.entries(value.reasons)) {
+      if (typeof key !== 'string' || !Number.isFinite(n) || n <= 0) continue
+      ledger.reasons[key] = Math.trunc(n)
+    }
+  }
+  if (Array.isArray(value.recent)) {
+    for (const entry of value.recent.slice(-LEDGER_RECENT_LIMIT)) {
+      if (!entry || typeof entry !== 'object' || typeof entry.decision !== 'string') continue
+      ledger.recent.push({
+        decision: entry.decision,
+        reason: typeof entry.reason === 'string' ? entry.reason : 'unknown',
+        at: typeof entry.at === 'string' ? entry.at : null,
+      })
+    }
+  }
+  return ledger
+}
+
+/**
+ * Record one write-gate verdict against the store's ledger.
+ * Returns the updated ledger, or null when accounting is unavailable.
+ */
+export function recordWriteGateVerdict(store, verdict) {
+  if (!store || typeof store.getMeta !== 'function' || typeof store.setMeta !== 'function') return null
+  if (!verdict || typeof verdict.decision !== 'string') return null
+  try {
+    let ledger
+    try {
+      const raw = store.getMeta(WRITE_GATE_LEDGER_KEY)
+      ledger = raw ? normalizeLedger(JSON.parse(raw)) : emptyLedger()
+    } catch {
+      // A corrupt ledger must not disable accounting forever: start a fresh one.
+      ledger = emptyLedger()
+    }
+    const decision = verdict.decision.toLowerCase()
+    const reason = String(verdict.reason ?? 'unknown').slice(0, 120)
+    ledger.total += 1
+    if (decision in ledger.decisions) ledger.decisions[decision] += 1
+    const key = `${decision}/${reason}`
+    if (key in ledger.reasons) ledger.reasons[key] += 1
+    else if (Object.keys(ledger.reasons).length < LEDGER_REASON_LIMIT) ledger.reasons[key] = 1
+    else ledger.reasons.other = (ledger.reasons.other || 0) + 1
+    ledger.recent.push({ decision, reason, at: new Date().toISOString() })
+    while (ledger.recent.length > LEDGER_RECENT_LIMIT) ledger.recent.shift()
+    store.setMeta(WRITE_GATE_LEDGER_KEY, JSON.stringify(ledger))
+    return ledger
+  } catch {
+    // Accounting is observability, never a learning dependency.
+    return null
+  }
+}
+
+/** Read the store's write-gate ledger, or null when nothing was recorded. */
+export function readWriteGateLedger(store) {
+  if (!store || typeof store.getMeta !== 'function') return null
+  try {
+    const raw = store.getMeta(WRITE_GATE_LEDGER_KEY)
+    if (!raw) return null
+    const ledger = normalizeLedger(JSON.parse(raw))
+    return ledger.total > 0 ? ledger : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The write gate decision itself (GOAL.md Phase 1). Runs the full guard chain
+ * and the evolution decision, performs the write, and returns the verdict with
+ * a human-readable reason so Veyra can explain every learning decision:
  *
  *   ACCEPT — new derived knowledge was written (`record`).
  *   MERGE  — near-duplicate; the existing derived neighbor was strengthened
@@ -287,10 +400,12 @@ function learningGuards(store, candidate) {
  *   DEFER  — not rejected, not accepted now: the record stays exactly as
  *            captured and may become learnable later.
  *
- * `maybeLearn` is the compatibility wrapper: it returns the written record or
- * null, exactly as before.
+ * Pure decision + write: it does not record the verdict. The exported
+ * `writeGate` wraps this so that every caller is accounted for exactly once,
+ * and `maybeLearn` stays the compatibility wrapper returning the written
+ * record or null, exactly as before.
  */
-export function writeGate(store, candidate, { related = [], workspace = null } = {}) {
+function gateOnce(store, candidate, { related = [], workspace = null } = {}) {
   const guards = learningGuards(store, candidate)
   if (guards.blocked) {
     return { decision: guards.blocked.decision, reason: guards.blocked.reason, record: null, neighbor: null, evolveAction: null }
@@ -371,6 +486,19 @@ export function writeGate(store, candidate, { related = [], workspace = null } =
     neighbor: null,
     evolveAction: evolved.action,
   }
+}
+
+/**
+ * Public write gate: run the decision, then record its verdict.
+ *
+ * Recording happens here rather than in each caller so that EVERY path that
+ * asks the gate — the automatic per-turn learner, feedback-driven learning,
+ * and explicit candidate review — is accounted for exactly once.
+ */
+export function writeGate(store, candidate, options = {}) {
+  const verdict = gateOnce(store, candidate, options)
+  recordWriteGateVerdict(store, verdict)
+  return verdict
 }
 
 /**

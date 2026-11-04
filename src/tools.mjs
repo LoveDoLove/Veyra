@@ -34,7 +34,7 @@ import { projectIdFor, provenanceDimensions, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
 import { inspect, recall, summarizeForPrompt, temporalState } from './retrieve.mjs'
 import { provenanceChain } from './context.mjs'
-import { promote, remember } from './learn.mjs'
+import { promote, readWriteGateLedger, remember } from './learn.mjs'
 import { forget as lifecycleForget } from './lifecycle.mjs'
 import { detectRecurrence, eligibleForCandidate, recordFeedback, recurrenceCandidate } from './feedback.mjs'
 import { memoryHealth, renderHealth } from './health.mjs'
@@ -642,6 +642,13 @@ export function buildToolDefinitions(runtime) {
             categories: { type: 'object', additionalProperties: true },
             counts: { type: 'object', additionalProperties: true },
             findings: { type: 'object', additionalProperties: true },
+            writeGate: {
+              description: 'Write-gate accounting: counts of ACCEPT/MERGE/DROP/DEFER learning decisions and their reasons. Null when no learning decision was recorded.',
+              oneOf: [
+                { type: 'object', additionalProperties: true },
+                { type: 'null' },
+              ],
+            },
           },
         },
         render: (_args, value) => textBlocks(renderHealth(value)),
@@ -653,7 +660,10 @@ export function buildToolDefinitions(runtime) {
         for (const r of [...projectStore.list({ limit: 1000 }), ...reusableStore.list({ limit: 1000 })]) {
           if (r?.id && !byId.has(r.id)) byId.set(r.id, r)
         }
-        const report = memoryHealth([...byId.values()], { workspace: cwd, failureThreshold })
+        // Write-gate accounting rides the same read-only report: it explains
+        // learning decisions that produced no record (DROP / DEFER / MERGE).
+        const writeGate = readWriteGateLedger(projectStore)
+        const report = memoryHealth([...byId.values()], { workspace: cwd, failureThreshold, writeGate })
         return { ok: true, ...report }
       },
       presentCall: (args) => ({ card: 'generic', title: 'Memory health', kind: 'other', rawInput: `failure threshold ${args.failureThreshold ?? 2}` }),

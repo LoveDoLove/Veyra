@@ -32,7 +32,7 @@ Veyra runs two complementary layers that answer different questions:
 - **Code Intelligence.** When `codebase-memory-mcp` is installed, seven agent tools give structural call-graph tracing, AST-level symbol search, file/component architecture summaries, and code-grounded search. When it is not installed, Veyra Memory runs normally without interruption.
 - **Memory freshness and trust.** Code Intelligence watches changed files, flags memories whose evidence anchors point to modified or deleted code, and applies retrieval penalties to stale records. At read time every recalled record is classified `trusted / review_required / stale / contradicted / insufficient_evidence` with reasons and an action — a projection only; it never writes, and never changes a record's authority or validation.
 - **Change intelligence.** Repository changes reach the agent context automatically — a change summary leads the recall block, with the trust impact of that recall — and `veyra_change_impact` analyzes an explicit set of changed files: affected memories, affected evidence anchors, optional review candidates, per-category summary counts. Candidates are never auto-promoted to canonical.
-- **Health and maintenance.** `veyra_health` and `/veyra health` report memory-health findings read-only; the bundled `memory-maintenance` skill applies lifecycle actions (keep / supersede / invalidate / forget / tombstone / revalidate / defer) only on explicit request, with safety limits and before/after reporting.
+- **Health and maintenance.** `veyra_health` and `/veyra health` report memory-health findings read-only, plus write-gate accounting — how many learning decisions were accepted, merged, dropped or deferred, and why; the bundled `memory-maintenance` skill applies lifecycle actions (keep / supersede / invalidate / forget / tombstone / revalidate / defer) only on explicit request, with safety limits and before/after reporting.
 - **Human surfaces.** `/veyra` slash commands, a read-only Knowledge Observatory, and an interactive Network Graph at `/veyra` in DSH Web.
 - **One runtime npm dependency.** `@lovedolove/dsh-codebase-memory-mcp` — the standalone Codebase Memory bridge package — which drives the external native daemon. Everything else is pure ESM with no runtime dependencies; the package is ~198 kB packed.
 
@@ -183,12 +183,12 @@ Neither brain replaces the other.
 | Code freshness | Evidence anchors track files and symbols; changed or deleted files mark memory `POTENTIALLY_STALE` or `INVALID` and apply retrieval penalties. |
 | Change intelligence | Repository watcher changes reach ambient context automatically (change summary + trust impact); `veyra_change_impact` maps changed files to affected memories, affected anchors, and optional review candidates. |
 | Trusted context | Every recalled record is classified `trusted / review_required / stale / contradicted / insufficient_evidence` with reasons and an action — a read-time projection that never writes or changes authority/validation. |
-| Memory health | `veyra_health` / `/veyra health` findings (read-only), plus the `memory-maintenance` skill that applies lifecycle actions on explicit request only. |
+| Memory health | `veyra_health` / `/veyra health` findings plus write-gate accounting (decisions and reasons, read-only), plus the `memory-maintenance` skill that applies lifecycle actions on explicit request only. |
 | Knowledge Observatory | Read-only text dashboard: overview, search signals, record inspection, causality, relationships, contradictions, and consolidation proposals. |
 | Network Graph | Host-native SVG page at `/veyra` (overview + 1-hop Local Graph), served by the DSH web server; JSON at `/veyra/graph`, `/veyra/record`, `/veyra/search`. |
 | Settings | `Recall limit` and `Include reusable` in the DSH Settings dialog (Veyra section); changes apply from the next turn, no restart. |
 | Project isolation | Memory is keyed by workspace path + git remote. Two unrelated folders never share memory; `scope: 'reusable'` is opt-in. |
-| Secret redaction | Secrets are redacted before anything is stored. |
+| Secret redaction | Secrets are redacted before anything is stored. A checksum tier also catches payment cards, IBANs and US SSNs that carry no secret-looking shape. |
 
 ---
 

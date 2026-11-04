@@ -42,9 +42,14 @@ function finding(record, extra = {}) {
  * @param {string|null} opts.workspace       cwd used to resolve evidence paths
  * @param {number} opts.failureThreshold     failures required for a repeated-
  *                                           failure finding (clamped 2–50)
+ * @param {object|null} opts.writeGate       optional write-gate ledger (see
+ *                                           `readWriteGateLedger`). Accounting
+ *                                           for learning decisions that did NOT
+ *                                           become records — reported, never
+ *                                           counted as a memory-quality finding.
  * @returns report — see return literal. Pure: no I/O, no mutation.
  */
-export function memoryHealth(records, { workspace = null, failureThreshold = 2 } = {}) {
+export function memoryHealth(records, { workspace = null, failureThreshold = 2, writeGate = null } = {}) {
   const rawList = Array.isArray(records)
     ? records
     : (typeof records?.list === 'function' ? records.list() : [])
@@ -166,7 +171,14 @@ export function memoryHealth(records, { workspace = null, failureThreshold = 2 }
   )
   const totalFindings = Object.values(counts).reduce((sum, n) => sum + n, 0)
 
-  return { scanned: list.length, threshold, categories, findings, counts, totalFindings }
+  // The write-gate ledger is accounting, not a finding: it describes decisions
+  // that produced no record, so folding it into `totalFindings` would claim a
+  // memory-quality problem where there is none. It is surfaced separately.
+  const gate = writeGate && typeof writeGate === 'object' && Number(writeGate.total) > 0
+    ? writeGate
+    : null
+
+  return { scanned: list.length, threshold, categories, findings, counts, totalFindings, writeGate: gate }
 }
 
 /**
@@ -214,6 +226,25 @@ export function renderHealth(report) {
     (f) => `${f.id} ${f.title} — evidence ${f.evidenceStatus} (${f.missingPaths.length} missing)`)
   section('Corrupted records', report.findings.corruptedRecords ?? [],
     (f) => `${f.id} ${f.title} — invalid: ${f.fields.join(', ')} (repair via veyra_remember repair: true)`)
+
+  if (report.writeGate) {
+    const gate = report.writeGate
+    const decisions = gate.decisions || {}
+    lines.push('', `Write gate: ${gate.total} learning decision(s) recorded.`)
+    lines.push(
+      '  decisions: '
+      + `accept ${decisions.accept ?? 0}, merge ${decisions.merge ?? 0}, `
+      + `drop ${decisions.drop ?? 0}, defer ${decisions.defer ?? 0}`,
+    )
+    const reasons = Object.entries(gate.reasons || {})
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 8)
+    for (const [reason, n] of reasons) lines.push(`  ${reason} × ${n}`)
+    lines.push(
+      '  Accounting only: DROP and DEFER decisions leave no record by design '
+      + '(candidates are not truth; nothing is promoted implicitly).',
+    )
+  }
 
   if (report.totalFindings === 0) {
     lines.push('', 'No memory-quality problems found in the scanned window.')

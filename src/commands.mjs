@@ -10,7 +10,7 @@ import { AUTHORITIES, KINDS, VALIDATIONS } from './types.mjs'
 import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
 import { recall } from './retrieve.mjs'
-import { promote } from './learn.mjs'
+import { promote, readWriteGateLedger } from './learn.mjs'
 import { forget as lifecycleForget, invalidate, protect, supersede, tombstone, unprotect } from './lifecycle.mjs'
 import { UNLINK_USAGE, formatRelations, unlinkRelation } from './relationships.mjs'
 import { memoryHealth, renderHealth } from './health.mjs'
@@ -125,7 +125,10 @@ export function handleVeyraCommand(runtime, invocation) {
     const reusableRecords = reusableStore.list({ limit: 1000 })
     const merged = new Map()
     for (const record of [...projectRecords, ...reusableRecords]) merged.set(record.id, record)
-    const report = memoryHealth([...merged.values()], { workspace: cwd, failureThreshold: threshold })
+    // Write-gate accounting rides the same read-only report: it explains
+    // learning decisions that produced no record (DROP / DEFER / MERGE).
+    const writeGate = readWriteGateLedger(projectStore)
+    const report = memoryHealth([...merged.values()], { workspace: cwd, failureThreshold: threshold, writeGate })
     return { kind: 'success', text: renderHealth(report) }
   }
 
