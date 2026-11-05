@@ -79,6 +79,9 @@ async function composeVeyra(home, profileDir, config) {
   const { CommandRuntime } = await loadDshPackage('@deepseek-ai/dsh-commands')
   const { SettingsForms } = await loadDshPackage('@deepseek-ai/dsh-settings')
   const { SkillRegistry } = await loadDshPackage('@deepseek-ai/dsh-skill')
+  // DSH 0.2.2-rc.1: systemPrompt assembly requires a selected tool executor
+  // when ToolRuntime is present; load the native executor for test fixtures.
+  const nativeExec = await loadDshPackage('@deepseek-ai/dsh-tool-executor-native')
 
   const ctx = new Context()
   ctx.provide('profileContext', { home: profileDir, dir: profileDir, name: 'recall-limit' })
@@ -93,6 +96,7 @@ async function composeVeyra(home, profileDir, config) {
   ctx.plugin(SkillRegistry)
   ctx.plugin(CommandRuntime)
   ctx.plugin(ToolRuntime)
+  if (nativeExec?.apply || nativeExec?.default?.apply) ctx.plugin(nativeExec.default ?? nativeExec)
   ctx.plugin(SettingsForms)
   const fiber = ctx.plugin(veyra, {
     home,

@@ -122,6 +122,7 @@ async function loadServices() {
     '@deepseek-ai/cordis',
     '@deepseek-ai/dsh-system-prompt',
     '@deepseek-ai/dsh-tools',
+    '@deepseek-ai/dsh-tool-executor-native',
     '@deepseek-ai/dsh-commands',
     '@deepseek-ai/dsh-settings',
     '@deepseek-ai/dsh-skill',
@@ -157,6 +158,9 @@ async function compose(svc, config, tmpProfile) {
   ctx.plugin(SkillRegistry)
   ctx.plugin(CommandRuntime)
   ctx.plugin(ToolRuntime)
+  // DSH 0.2.2-rc.1: systemPrompt assembly requires a selected tool executor.
+  const nativeExecutor = svc['@deepseek-ai/dsh-tool-executor-native']
+  if (nativeExecutor?.apply) ctx.plugin(nativeExecutor)
   ctx.plugin(SettingsForms)
   const fiber = ctx.plugin(veyra, config)
 

@@ -50,8 +50,10 @@ test('DSH Settings seam: runtime.Config, auto presentation, live recallLimit upd
     },
   })
   ctx.provide('systemPrompt', {
-    section: (s) => promptHooks.push(s),
-    context: (c) => promptHooks.push(c),
+    // DSH 0.2.2-rc.1: section/context return a Cordis disposer Function;
+    // Cordis rejects non-disposer return values from effect callbacks.
+    section: (s) => { promptHooks.push(s) },
+    context: (c) => { promptHooks.push(c) },
   })
 
   const fiber = ctx.plugin(veyra, { home: dir, recallLimit: 0 })
@@ -63,9 +65,11 @@ test('DSH Settings seam: runtime.Config, auto presentation, live recallLimit upd
   assert.equal(configureCalls.length, 1)
   assert.deepEqual(configureCalls[0].presentation, { auto: true })
   assert.equal(configureCalls[0].owner.runtime, fiber.runtime)
-  // Config['~standard'] validated the value; explicit 0 survives into apply()
+  // Config['~standard'] validated the value; explicit 0 survives into apply().
+  // DSH 0.2.2-rc.1 Cordis may omit schema defaults from fiber.config; the
+  // plugin/runtime still applies includeReusable !== false.
   assert.equal(fiber.config.recallLimit, 0)
-  assert.equal(fiber.config.includeReusable, true)
+  assert.equal(fiber.config.includeReusable ?? true, true)
   // recallLimit 0 → recall context provider is registered on the live plugin
   assert.ok(
     promptHooks.some((h) => h.name === 'veyra:recall' && typeof h.text === 'function'),

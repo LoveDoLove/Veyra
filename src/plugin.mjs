@@ -241,25 +241,31 @@ export function apply(ctx, config = {}) {
   const registerPrompt = (scope) => {
     if (!scope?.systemPrompt) return
     const effect = typeof scope.effect === 'function' ? scope.effect.bind(scope) : null
+    const runPromptEffect = (register) => {
+      if (!effect) { register(); return }
+      // DSH 0.2.2-rc.1: systemPrompt.section/context may return a Cordis
+      // disposer/effect Function. Normalize so Cordis never sees a
+      // non-disposer value from test doubles/mocks.
+      effect(() => {
+        const disposer = register()
+        return typeof disposer === 'function' ? disposer : undefined
+      })
+    }
     try {
-      const register = () => scope.systemPrompt.section({
+      runPromptEffect(() => scope.systemPrompt.section({
         name: 'veyra:guidance',
         order: 3050,
         text: GUIDANCE_TEXT,
-      })
-      if (effect) effect(register)
-      else register()
+      }))
     } catch (err) {
       runtime.log.warn(`[veyra] section register failed: ${err instanceof Error ? err.message : String(err)}`)
     }
     try {
-      const register = () => scope.systemPrompt.context({
+      runPromptEffect(() => scope.systemPrompt.context({
         name: 'veyra:recall',
         order: 200,
         text: createContextProvider(runtime),
-      })
-      if (effect) effect(register)
-      else register()
+      }))
     } catch (err) {
       runtime.log.warn(`[veyra] context register failed: ${err instanceof Error ? err.message : String(err)}`)
     }
