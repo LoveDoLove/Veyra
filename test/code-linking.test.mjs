@@ -10,6 +10,8 @@ import {
   checkRecordFreshness,
   findAffectedMemories,
   buildStaleReviewCandidate,
+  normalizeRenameEvidence,
+  renameTargetsForAnchor,
 } from '../src/code/linking.mjs'
 import { FRESHNESS_STATUS } from '@lovedolove/dsh-codebase-memory-mcp'
 import { KINDS, STATUSES, AUTHORITIES, VALIDATIONS } from '../src/types.mjs'
@@ -114,4 +116,28 @@ test('findAffectedMemories identifies memories referencing changed files', (t) =
   assert.equal(candidate.status, STATUSES.CURRENT) // CANDIDATE not in VALID_STATUSES
   // Memory itself remains untouched!
   assert.equal(memories[0].authority, AUTHORITIES.CANONICAL)
+})
+
+
+test('normalizeRenameEvidence fails closed on conflicts/out-of-repo and normalizes unambiguous mappings', (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'veyra-rename-norm-'))
+  t.after(() => rmSync(tmp, { recursive: true, force: true }))
+  mkdirSync(join(tmp, 'src/stock'), { recursive: true })
+  writeFileSync(join(tmp, 'src/stock/warehouse.mjs'), 'x')
+
+  const ok = normalizeRenameEvidence(tmp, [{ from: 'src/warehouse.mjs', to: 'src/stock/warehouse.mjs' }])
+  assert.equal(ok.ok, true)
+  assert.deepEqual(ok.map.get('src/stock/warehouse.mjs'), ['src/warehouse.mjs'])
+
+  const conflict = normalizeRenameEvidence(tmp, [
+    { from: 'src/a.mjs', to: 'src/stock/warehouse.mjs' },
+    { from: 'src/b.mjs', to: 'src/stock/warehouse.mjs' },
+  ])
+  assert.equal(conflict.ok, false)
+
+  const traversal = normalizeRenameEvidence(tmp, [{ from: '../x.mjs', to: 'src/stock/warehouse.mjs' }])
+  assert.equal(traversal.ok, false)
+
+  const rev = renameTargetsForAnchor(new Set(['src/stock/warehouse.mjs']), ok.map)
+  assert.deepEqual([...rev.get('src/warehouse.mjs')], ['src/stock/warehouse.mjs'])
 })

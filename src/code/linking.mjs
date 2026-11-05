@@ -189,12 +189,97 @@ export function checkRecordFreshness(record, repoRoot) {
 /**
  * Find memory records affected by a set of changed file paths.
  */
-export function findAffectedMemories(repoRoot, changedFiles = [], memories = []) {
-  const normalizedChanged = new Set(
-    changedFiles.map((f) => resolveSafeRepoPath(repoRoot, f)).filter(Boolean)
-  )
+/**
+ * Normalize explicit rename evidence for Phase 1 change-impact matching.
+ *
+ * Phase 1 only: callers supply unambiguous renames; we never infer identity
+ * from git, content hashes, or similar paths. Invalid, out-of-repo,
+ * duplicate, or conflicting mappings fail closed (the whole rename set is
+ * rejected) so ambiguous rename candidates never establish applicability.
+ *
+ * @param {string} repoRoot
+ * @param {Array<{from?: string, to?: string}> | null | undefined} renames
+ * @returns {{ ok: true, map: Map<string, string[]> } | { ok: false, error: string }}
+ *   map: normalized target path -> normalized source anchor paths that were
+ *   explicitly renamed to that target.
+ */
+export function normalizeRenameEvidence(repoRoot, renames) {
+  const map = new Map()
+  if (renames == null) return { ok: true, map }
+  if (!Array.isArray(renames)) return { ok: false, error: 'renames must be an array of { from, to } objects' }
+  for (const entry of renames) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      return { ok: false, error: 'each rename entry must be an object with string from/to paths' }
+    }
+    const { from, to } = entry
+    if (typeof from !== 'string' || !from.trim() || typeof to !== 'string' || !to.trim()) {
+      return { ok: false, error: 'each rename entry requires non-empty string from and to paths' }
+    }
+    let safeFrom, safeTo
+    try { safeFrom = resolveSafeRepoPath(repoRoot, from) } catch {
+      safeFrom = null
+    }
+    if (typeof safeFrom !== 'string' || !safeFrom) {
+      return { ok: false, error: `rename from path is outside the repository or invalid: ${from}` }
+    }
+    try { safeTo = resolveSafeRepoPath(repoRoot, to) } catch {
+      safeTo = null
+    }
+    if (typeof safeTo !== 'string' || !safeTo) {
+      return { ok: false, error: `rename to path is outside the repository or invalid: ${to}` }
+    }
+    if (safeFrom === safeTo) continue // no-op mapping; never creates applicability
+    const existing = map.get(safeTo)
+    if (existing) {
+      if (existing.includes(safeFrom)) continue // exact duplicate mapping is harmless
+      return { ok: false, error: `conflicting rename mappings for target ${safeTo}` }
+    }
+    map.set(safeTo, [safeFrom])
+  }
+  return { ok: true, map }
+}
 
+/**
+ * Build reverse lookup: original anchor path -> set of changed target paths
+ * that explicitly rename that anchor (and are present in the changed set).
+ * Only unambiguous normalized mappings are represented.
+ */
+export function renameTargetsForAnchor(changedSet, renameMap) {
+  const byAnchor = new Map()
+  if (!(changedSet instanceof Set) || !(renameMap instanceof Map) || renameMap.size === 0) return byAnchor
+  for (const changed of changedSet) {
+    const sources = renameMap.get(changed)
+    if (!Array.isArray(sources)) continue
+    for (const from of sources) {
+      if (typeof from !== 'string' || !from) continue
+      let targets = byAnchor.get(from)
+      if (!targets) { targets = new Set(); byAnchor.set(from, targets) }
+      targets.add(changed)
+    }
+  }
+  return byAnchor
+}
+
+export function findAffectedMemories(repoRoot, changedFiles = [], memories = [], options = {}) {
+  // Normalize changed file paths via shared path normalization (preserve
+  // existing skip-on-invalid behavior; do not throw for bad changed paths).
+  const normalizedChanged = new Set()
+  for (const f of Array.isArray(changedFiles) ? changedFiles : []) {
+    try { normalizedChanged.add(resolveSafeRepoPath(repoRoot, f)) } catch { /* skip paths outside repo */ }
+  }
   if (normalizedChanged.size === 0) return []
+
+  // Phase 1 explicit rename evidence: optional, unambiguous, never inferred.
+  // Accept a pre-normalized Map (target -> [sources]) or raw renames array.
+  let renameMap = new Map()
+  if (options?.renameMap instanceof Map) {
+    renameMap = options.renameMap
+  } else if (Array.isArray(options?.renames) && options.renames.length > 0) {
+    const norm = normalizeRenameEvidence(repoRoot, options.renames)
+    if (norm.ok) renameMap = norm.map
+    // Invalid evidence fails closed: no rename applicability is established.
+  }
+  const renamedAnchorTargets = renameTargetsForAnchor(normalizedChanged, renameMap)
 
   const affected = []
 
@@ -204,8 +289,16 @@ export function findAffectedMemories(repoRoot, changedFiles = [], memories = [])
 
     for (const anc of anchors) {
       if (!anc.path) continue
-      const safeRel = resolveSafeRepoPath(repoRoot, anc.path)
+      let safeRel
+      try { safeRel = resolveSafeRepoPath(repoRoot, anc.path) } catch { continue }
       if (safeRel && normalizedChanged.has(safeRel)) {
+        matchingAnchors.push(anc)
+        continue
+      }
+      // Explicit unambiguous rename: changed target maps to this original anchor.
+      // Preserve the original anchor object; never rewrite stored evidence.
+      const targets = renamedAnchorTargets.get(safeRel)
+      if (targets instanceof Set && targets.size > 0) {
         matchingAnchors.push(anc)
       }
     }

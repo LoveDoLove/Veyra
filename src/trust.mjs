@@ -26,7 +26,7 @@
 
 import { AUTHORITIES, STATUSES, VALIDATIONS } from './types.mjs'
 import { FRESHNESS_STATUS, resolveSafeRepoPath } from '@lovedolove/dsh-codebase-memory-mcp'
-import { extractAnchorsFromRecord, checkRecordFreshness } from './code/linking.mjs'
+import { extractAnchorsFromRecord, checkRecordFreshness, normalizeRenameEvidence, renameTargetsForAnchor } from './code/linking.mjs'
 import { temporalState, contextCompatibility } from './retrieve.mjs'
 
 /** The five Phase 2 trust categories (lowercase enum values, like all Veyra enums). */
@@ -199,22 +199,43 @@ export function classifyRecordTrust(record, options = {}) {
   }
 
   // ── Change impact (Phase 1 signal feeding Phase 2 trust) ─────────────────
-  const changedSet = workspace && changedFiles && changedFiles.length > 0
-    ? new Set(changedFiles.map((f) => resolveSafeRepoPath(workspace, f)).filter(Boolean))
+  // Phase 1 explicit rename evidence is accepted only as unambiguous mappings
+  // (never inferred). Invalid/conflicting/out-of-repo evidence fails closed.
+  const changedSet = workspace && Array.isArray(changedFiles) && changedFiles.length > 0
+    ? new Set(changedFiles.map((f) => { try { return resolveSafeRepoPath(workspace, f) } catch { return null } }).filter(Boolean))
     : null
+  let renameMap = new Map()
+  if (options?.renameMap instanceof Map) {
+    renameMap = options.renameMap
+  } else if (workspace && Array.isArray(options?.renames) && options.renames.length > 0) {
+    const norm = normalizeRenameEvidence(workspace, options.renames)
+    if (norm.ok) renameMap = norm.map
+    // invalid/conflicting/out-of-repo evidence: fail closed (no applicability)
+  }
+  const renamedAnchorTargets = changedSet ? renameTargetsForAnchor(changedSet, renameMap) : new Map()
   let changedMatches = []
-  if (changedFiles && changedFiles.length > 0) {
+  if (Array.isArray(changedFiles) && changedFiles.length > 0) {
     if (!workspace) {
       signals.push({
         category: TRUST_CATEGORIES.REVIEW_REQUIRED,
         reason: 'changed files were provided but no workspace is available to evaluate anchors',
       })
-    } else {
-      changedMatches = [...new Set(
-        anchors
-          .map((a) => (a.path ? resolveSafeRepoPath(workspace, a.path) : null))
-          .filter((p) => p && changedSet.has(p)),
-      )]
+    } else if (changedSet && changedSet.size > 0) {
+      const seen = new Set()
+      for (const a of anchors) {
+        if (!a?.path) continue
+        let rel
+        try { rel = resolveSafeRepoPath(workspace, a.path) } catch { continue }
+        if (changedSet.has(rel)) {
+          if (!seen.has(rel)) { seen.add(rel); changedMatches.push(rel) }
+          continue
+        }
+        const targets = renamedAnchorTargets.get(rel)
+        if (targets instanceof Set && targets.size > 0) {
+          const label = `${rel} -> ${Array.from(targets).join(', ')}`
+          if (!seen.has(label)) { seen.add(label); changedMatches.push(label) }
+        }
+      }
       if (changedMatches.length > 0) {
         signals.push({
           category: TRUST_CATEGORIES.REVIEW_REQUIRED,

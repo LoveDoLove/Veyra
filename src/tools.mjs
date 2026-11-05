@@ -760,6 +760,17 @@ export function buildToolDefinitions(runtime) {
           type: 'string',
           description: 'Optional retrieval query. When changedFiles are given, retrieval-relevant knowledge is added to the trusted-context classification so unaffected fresh knowledge can be reported as trusted alongside change-affected knowledge.',
         },
+        renames: {
+          type: 'array',
+          description: 'Optional Phase 1 explicit rename evidence: unambiguous mappings [{from,to}] (repo-relative). When changedFiles contains a rename target, an original anchored path may match through the mapping. Invalid/conflicting/out-of-repo mappings fail closed; never inferred.',
+          items: {
+            type: 'object',
+            additionalProperties: true, properties: {
+              from: { type: 'string', description: 'Original anchored path (repo-relative).' },
+              to: { type: 'string', description: 'Changed target path present in changedFiles (repo-relative).' },
+            },
+            },
+        },
       },
       output: {
         schema: {
@@ -904,8 +915,9 @@ export function buildToolDefinitions(runtime) {
             }
           }
         } else {
-          // Use existing findAffectedMemories to match changed files against memory anchors
-          const affected = findAffectedMemories(targetRepo, changedFiles, memories)
+          // Use existing findAffectedMemories to match changed files against memory anchors.
+          // Phase 1 explicit rename evidence is optional and fail-closed; absent => existing behavior.
+          const affected = findAffectedMemories(targetRepo, changedFiles, memories, { renames: args.renames })
           for (const item of affected) {
             // item has memoryId, title, authority, validation, status, freshness, affectedAnchors, details
             affectedMemories.push({
@@ -985,6 +997,7 @@ export function buildToolDefinitions(runtime) {
             workspace: targetRepo,
             changedFiles: changedFiles || null,
             degraded,
+            renames: args.renames,
           })
           context.push({
             memoryId: rec.id,
@@ -1013,6 +1026,7 @@ export function buildToolDefinitions(runtime) {
           ok: true,
           repo: targetRepo,
           changedFiles: changedFiles || [],
+          renames: Array.isArray(args.renames) ? args.renames : [],
           degraded,
           degradedReason,
           affectedMemories,

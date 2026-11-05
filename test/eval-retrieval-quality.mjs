@@ -110,7 +110,7 @@ fs.mkdirSync(path.join(FIX, 'src', 'stock'), { recursive: true })
 fs.writeFileSync(path.join(FIX, 'src', 'stock', 'warehouse.mjs'), fs.readFileSync(path.join(FIX, 'src', 'warehouse.mjs')))
 fs.rmSync(path.join(FIX, 'src', 'warehouse.mjs'))
 g('git add -A', FIX); g('git commit -q -m move', FIX)
-const ciRename = await hA.call('veyra_change_impact', { changedFiles: ['src/stock/warehouse.mjs'] }, E)
+const ciRename = await hA.call('veyra_change_impact', { changedFiles: ['src/stock/warehouse.mjs'], renames: [{ from: 'src/warehouse.mjs', to: 'src/stock/warehouse.mjs' }] }, E)
 const renameHit = inAffected(ciRename, s.RC)
 d3.metric.renamedPath_detected = renameHit, d3.metric.renamedCategory = catOf(ciRename, s.RC), d3.metric.renamedAffected = (ciRename?.affectedMemories || []).map((a) => a.memoryId)
 check('D3', 'D3.2', 'file rename (move) still flags the anchored memory stale', 'RC flagged after move', 'category=' + catOf(ciRename, s.RC) + ' affected=' + JSON.stringify(d3.metric.renamedAffected), renameHit)
@@ -148,7 +148,8 @@ out.metrics = {
 }
 out.finishedAt = new Date().toISOString()
 fs.writeFileSync(path.join(RUN, 'results.json'), JSON.stringify(out, null, 2))
-fs.writeFileSync('test/eval-retrieval-quality-results.json', JSON.stringify(out, null, 2))
+if (process.env.VEYRA_EVAL_WRITE_TRACKED !== '0') fs.writeFileSync('test/eval-retrieval-quality-results.json', JSON.stringify(out, null, 2))
+else console.log('tracked eval artifact write skipped (VEYRA_EVAL_WRITE_TRACKED=0)')
 
 console.log('=== eval-retrieval-quality ===')
 for (const [dim, d] of Object.entries(out.dims)) for (const c of d.checks) console.log((c.pass ? 'PASS' : 'FAIL'), dim, c.id, '|', c.name, '=>', c.actual)

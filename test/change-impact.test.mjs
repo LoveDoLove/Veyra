@@ -478,3 +478,231 @@ test('checkRecordFreshness reports fresh when no anchors exist', (t) => {
   const result = checkRecordFreshness(record, repo)
   assert.equal(result.status, FRESHNESS_STATUS.FRESH)
 })
+
+
+// ── D3.2 Phase 1: explicit rename evidence (unambiguous, fail-closed) ───────
+
+test('D3.2 Phase 1: explicit unambiguous rename makes original anchored memory affected', async (t) => {
+  const repo = makeRepo(t, {
+    'src/stock/warehouse.mjs': 'export const deduct = () => 1\n',
+  })
+  const record = {
+    id: 'rc-rename',
+    title: 'warehouse root cause',
+    kind: KINDS.MEMORY,
+    status: STATUSES.CURRENT,
+    authority: AUTHORITIES.DERIVED,
+    validation: VALIDATIONS.REVIEWED,
+    confidence: CONFIDENCES.HIGH,
+    scope: SCOPES.PROJECT,
+    evidence: [{ path: 'src/warehouse.mjs', note: 'deduct() had no seen-set guard' }],
+    tags: ['warehouse'],
+  }
+
+  const affected = findAffectedMemories(repo, ['src/stock/warehouse.mjs'], [record], {
+    renames: [{ from: 'src/warehouse.mjs', to: 'src/stock/warehouse.mjs' }],
+  })
+  assert.equal(affected.length, 1)
+  assert.equal(affected[0].memoryId, 'rc-rename')
+  // Preserve original affectedAnchors; never rewrite stored evidence.
+  assert.equal(affected[0].affectedAnchors[0].path, 'src/warehouse.mjs')
+});
+
+test('D3.2 Phase 1: no rename evidence means no inferred rename', async (t) => {
+  const repo = makeRepo(t, {
+    'src/stock/warehouse.mjs': 'export const deduct = () => 1\n',
+  })
+  const record = {
+    id: 'rc-no-rename',
+    title: 'warehouse root cause',
+    kind: KINDS.MEMORY,
+    status: STATUSES.CURRENT,
+    authority: AUTHORITIES.DERIVED,
+    validation: VALIDATIONS.REVIEWED,
+    evidence: [{ path: 'src/warehouse.mjs' }],
+  }
+  const affected = findAffectedMemories(repo, ['src/stock/warehouse.mjs'], [record])
+  assert.equal(affected.length, 0)
+});
+
+test('D3.2 Phase 1: conflicting mappings to same target fail closed', async (t) => {
+  const repo = makeRepo(t, {
+    'src/stock/warehouse.mjs': 'export const deduct = () => 1\n',
+  })
+  const record = {
+    id: 'rc-conflict',
+    title: 'warehouse root cause',
+    kind: KINDS.MEMORY,
+    status: STATUSES.CURRENT,
+    authority: AUTHORITIES.DERIVED,
+    validation: VALIDATIONS.REVIEWED,
+    evidence: [{ path: 'src/warehouse.mjs' }],
+  }
+  const affected = findAffectedMemories(repo, ['src/stock/warehouse.mjs'], [record], {
+    renames: [
+      { from: 'src/warehouse.mjs', to: 'src/stock/warehouse.mjs' },
+      { from: 'src/other.mjs', to: 'src/stock/warehouse.mjs' },
+    ],
+  })
+  assert.equal(affected.length, 0)
+});
+
+test('D3.2 Phase 1: similar but unrelated paths produce no false positive', async (t) => {
+  const repo = makeRepo(t, {
+    'src/stock/warehouse.mjs': 'export const deduct = () => 1\n',
+    'src/stock/warehouse2.mjs': 'export const deduct = () => 2\n',
+  })
+  const record = {
+    id: 'rc-similar',
+    title: 'warehouse root cause',
+    kind: KINDS.MEMORY,
+    status: STATUSES.CURRENT,
+    authority: AUTHORITIES.DERIVED,
+    validation: VALIDATIONS.REVIEWED,
+    evidence: [{ path: 'src/warehouse.mjs' }],
+  }
+  const affected = findAffectedMemories(repo, ['src/stock/warehouse2.mjs'], [record], {
+    renames: [{ from: 'src/warehouse.mjs', to: 'src/stock/warehouse.mjs' }],
+  })
+  assert.equal(affected.length, 0)
+});
+
+test('D3.2 Phase 1: delete+add without rename evidence does not infer identity', async (t) => {
+  const repo = makeRepo(t, {
+    'src/stock/warehouse.mjs': 'export const deduct = () => 1\n',
+  })
+  const record = {
+    id: 'rc-delete-add',
+    title: 'warehouse root cause',
+    kind: KINDS.MEMORY,
+    status: STATUSES.CURRENT,
+    authority: AUTHORITIES.DERIVED,
+    validation: VALIDATIONS.REVIEWED,
+    evidence: [{ path: 'src/warehouse.mjs' }],
+  }
+  // Changed file is only the added path; no rename evidence supplied.
+  const affected = findAffectedMemories(repo, ['src/stock/warehouse.mjs'], [record], { renames: [] })
+  assert.equal(affected.length, 0)
+});
+
+test('D3.2 Phase 1: copy where old path still exists does not fabricate a move', async (t) => {
+  const repo = makeRepo(t, {
+    'src/warehouse.mjs': 'export const deduct = () => 1\n',
+    'src/stock/warehouse.mjs': 'export const deduct = () => 1\n',
+  })
+  const record = {
+    id: 'rc-copy',
+    title: 'warehouse root cause',
+    kind: KINDS.MEMORY,
+    status: STATUSES.CURRENT,
+    authority: AUTHORITIES.DERIVED,
+    validation: VALIDATIONS.REVIEWED,
+    evidence: [{ path: 'src/warehouse.mjs' }],
+  }
+  // Explicit rename mapping is rejected/fails closed for "move" semantics? The API accepts it;
+  // but the instruction says "Copy where old path still exists → no fabricated move" as a case
+  // to cover: without rename evidence, target change must not affect old anchor.
+  const affected = findAffectedMemories(repo, ['src/stock/warehouse.mjs'], [record])
+  assert.equal(affected.length, 0)
+  // Also ensure in-place D3.1 still works when old path is changed directly.
+  const direct = findAffectedMemories(repo, ['src/warehouse.mjs'], [record])
+  assert.equal(direct.length, 1)
+});
+
+test('D3.2 Phase 1: traversal/out-of-repository rename paths are safely rejected (fail closed)', async (t) => {
+  const repo = makeRepo(t, {
+    'src/stock/warehouse.mjs': 'export const deduct = () => 1\n',
+  })
+  const record = {
+    id: 'rc-traversal',
+    title: 'warehouse root cause',
+    kind: KINDS.MEMORY,
+    status: STATUSES.CURRENT,
+    authority: AUTHORITIES.DERIVED,
+    validation: VALIDATIONS.REVIEWED,
+    evidence: [{ path: 'src/warehouse.mjs' }],
+  }
+  const affected = findAffectedMemories(repo, ['src/stock/warehouse.mjs'], [record], {
+    renames: [{ from: '../outside.mjs', to: 'src/stock/warehouse.mjs' }],
+  })
+  assert.equal(affected.length, 0)
+  const affectedTo = findAffectedMemories(repo, ['src/stock/warehouse.mjs'], [record], {
+    renames: [{ from: 'src/warehouse.mjs', to: '../escape.mjs' }],
+  })
+  assert.equal(affectedTo.length, 0)
+});
+
+test('D3.2 Phase 1: veyra_change_impact accepts explicit renames and preserves stored evidence/authority/validation', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'veyra-d32-home-'))
+  t.after(() => rmSync(home, { recursive: true, force: true }))
+  const repo = makeRepo(t, {
+    'src/stock/warehouse.mjs': 'export const deduct = () => 1\n',
+  })
+  const projectId = projectIdFor(repo)
+  const store = openProjectStore(home, projectId)
+  const id = newRecordId()
+  store.put({
+    id,
+    kind: KINDS.MEMORY,
+    status: STATUSES.CURRENT,
+    authority: AUTHORITIES.DERIVED,
+    validation: VALIDATIONS.REVIEWED,
+    confidence: CONFIDENCES.HIGH,
+    scope: SCOPES.PROJECT,
+    title: 'warehouse root cause',
+    body: 'deduct() had no seen-set guard',
+    evidence: [{ path: 'src/warehouse.mjs', note: 'deduct() had no seen-set guard' }],
+    tags: ['warehouse'],
+  })
+  const before = structuredClone(store.get(id))
+  const h = createToolHarness(testRuntime(home, repo))
+  const E = { agent: { session: { header: { cwd: repo } } } }
+
+  const res = await h.call('veyra_change_impact', {
+    changedFiles: ['src/stock/warehouse.mjs'],
+    renames: [{ from: 'src/warehouse.mjs', to: 'src/stock/warehouse.mjs' }],
+  }, E)
+  assert.equal(res.ok, true)
+  assert.ok(res.affectedMemories.some((a) => a.memoryId === id))
+  const am = res.affectedMemories.find((a) => a.memoryId === id)
+  assert.deepEqual(am.affectedAnchors, ['src/warehouse.mjs'])
+  assert.equal(am.authority, AUTHORITIES.DERIVED)
+  assert.equal(am.validation, VALIDATIONS.REVIEWED)
+
+  // No rename evidence => no inferred rename (same repo/file state).
+  const noRename = await h.call('veyra_change_impact', { changedFiles: ['src/stock/warehouse.mjs'] }, E)
+  assert.ok(!noRename.affectedMemories.some((a) => a.memoryId === id))
+
+  // Stored memory unchanged.
+  const after = store.get(id)
+  assert.deepEqual(after.evidence, before.evidence)
+  assert.equal(after.authority, before.authority)
+  assert.equal(after.validation, before.validation)
+  assert.equal(after.body, before.body)
+});
+
+test('D3.2 Phase 1: in-place changes preserve D3.1 behavior via veyra_change_impact', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'veyra-d31-home-'))
+  t.after(() => rmSync(home, { recursive: true, force: true }))
+  const repo = makeRepo(t, {
+    'src/warehouse.mjs': 'export const deduct = () => 1\n',
+  })
+  const projectId = projectIdFor(repo)
+  const store = openProjectStore(home, projectId)
+  store.put({
+    id: 'd31',
+    kind: KINDS.MEMORY,
+    status: STATUSES.CURRENT,
+    authority: AUTHORITIES.DERIVED,
+    validation: VALIDATIONS.REVIEWED,
+    confidence: CONFIDENCES.HIGH,
+    scope: SCOPES.PROJECT,
+    title: 'warehouse root cause',
+    body: 'b',
+    evidence: [{ path: 'src/warehouse.mjs' }],
+  })
+  const h = createToolHarness(testRuntime(home, repo))
+  const E = { agent: { session: { header: { cwd: repo } } } }
+  const res = await h.call('veyra_change_impact', { changedFiles: ['src/warehouse.mjs'] }, E)
+  assert.ok(res.affectedMemories.some((a) => a.memoryId === 'd31'))
+});

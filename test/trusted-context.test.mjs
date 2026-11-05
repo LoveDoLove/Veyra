@@ -514,3 +514,62 @@ test('ambient recall context carries trust lines end-to-end', async (t) => {
   assert.ok(text.length > 0)
   assert.match(text, /trust: (TRUSTED|⚠️ trust:)/)
 })
+
+
+test('classifyRecordTrust: explicit rename evidence maps changed target to original anchor (unambiguous, fail closed)', (t) => {
+  const repo = makeRepo(t, {
+    'src/stock/warehouse.mjs': 'export const deduct = () => 1\n',
+  })
+  const rec = {
+    id: 'r-rename',
+    kind: 'memory',
+    status: 'current',
+    authority: 'derived',
+    validation: 'reviewed',
+    confidence: 'high',
+    scope: 'project',
+    title: 'warehouse',
+    body: 'b',
+    evidence: [{ path: 'src/warehouse.mjs' }],
+  }
+  const out = classifyRecordTrust(rec, {
+    workspace: repo,
+    changedFiles: ['src/stock/warehouse.mjs'],
+    renames: [{ from: 'src/warehouse.mjs', to: 'src/stock/warehouse.mjs' }],
+  })
+  // Original file is missing => freshness may be stale/invalid (conservative).
+  // Explicit rename establishes affected membership/change evidence, but must not
+  // fabricate a valid current path or rewrite stored anchors.
+  assert.ok([TRUST_CATEGORIES.REVIEW_REQUIRED, TRUST_CATEGORIES.STALE].includes(out.category), out.category)
+  assert.ok(out.reasons.some((r) => r.includes('src/warehouse.mjs -> src/stock/warehouse.mjs')), out.reasons.join('|'))
+
+  const conflict = classifyRecordTrust(rec, {
+    workspace: repo,
+    changedFiles: ['src/stock/warehouse.mjs'],
+    renames: [
+      { from: 'src/warehouse.mjs', to: 'src/stock/warehouse.mjs' },
+      { from: 'src/other.mjs', to: 'src/stock/warehouse.mjs' },
+    ],
+  })
+  assert.ok(!conflict.reasons.some((r) => r.includes('src/warehouse.mjs -> src/stock/warehouse.mjs')), conflict.reasons.join('|'))
+})
+
+test('classifyRecordTrust: no rename evidence does not infer rename', (t) => {
+  const repo = makeRepo(t, {
+    'src/stock/warehouse.mjs': 'export const deduct = () => 1\n',
+  })
+  const rec = {
+    id: 'r-norename',
+    kind: 'memory',
+    status: 'current',
+    authority: 'derived',
+    validation: 'reviewed',
+    confidence: 'high',
+    scope: 'project',
+    title: 'warehouse',
+    body: 'b',
+    evidence: [{ path: 'src/warehouse.mjs' }],
+  }
+  const out = classifyRecordTrust(rec, { workspace: repo, changedFiles: ['src/stock/warehouse.mjs'] })
+  assert.ok(!out.reasons.some((r) => r.includes('related repository file changed') && r.includes('src/stock/warehouse.mjs')), out.reasons.join('|'))
+})
