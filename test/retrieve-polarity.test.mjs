@@ -432,3 +432,104 @@ test('contrastive comma tails in title do not trigger false polarity mismatch on
   assert.equal(hit2.scores.polarity_mismatch, undefined, 'contrastive tail must not cause mismatch')
   assert.equal(hit2.scores.polarity_compatible, true, 'must be compatible')
 })
+
+// ---------------------------------------------------------------------------
+// Trailing "without ..." is a scope modifier, not a polarity claim (D1.1/D2.1)
+//
+// "Root cause: bus event redelivery without idempotency" is a positive
+// diagnostic statement with an absence clause. Only a comma used to trigger the
+// strip, so the bare trailing clause made the whole record read as negated and
+// the polarity tier buried it below zero-evidence distractors.
+// ---------------------------------------------------------------------------
+
+const RC_TITLE = 'Root cause: bus event redelivery without idempotency'
+const RC_BODY = 'Warehouse stock drifted low after each restart. Root cause: the event bus '
+  + 'redelivers in-flight events after a process restart, and Warehouse.deduct() had no '
+  + 'idempotency guard, so the same eventId deducted twice. Remedy: guard deduct() with a '
+  + 'seen-set keyed on eventId, not a mutex.'
+
+function rcRecord(extra = {}) {
+  return rec('RC', RC_TITLE, {
+    confidence: 'high',
+    tags: ['warehouse', 'idempotency', 'stock'],
+    evidence: [
+      { path: 'src/warehouse.mjs', note: 'deduct() had no seen-set guard' },
+      { note: 'check/idempotency.mjs FAIL expected 9 got 8 before fix' },
+    ],
+    body: RC_BODY,
+    ...extra,
+  })
+}
+
+test('D1.1: an evidenced root cause whose title ends in "without ..." is not buried by polarity', () => {
+  const store = tempStore()
+  try {
+    store.put(rcRecord())
+    store.put(rec('SCHEMA', 'stockctl v0.2.0 event schema: sku+qty+eventId+ts', {
+      kind: 'knowledge', confidence: 'medium', tags: ['warehouse', 'schema'],
+      evidence: [{ path: 'src/warehouse.mjs', note: 'deduct signature' }],
+      body: 'Event shape { sku, qty, eventId, ts }; deduct(sku, qty, eventId). Verified against src/warehouse.mjs.',
+    }))
+    store.put(rec('DISTR', 'CI caches node_modules under .cache/stockctl', {
+      tags: ['ci'], body: 'CI caches node_modules under .cache/stockctl.',
+    }))
+
+    const items = recall({ projectStore: store, query: 'warehouse stock drift after restart root cause', limit: 5 })
+    const rank = (id) => items.findIndex((r) => r.id === id) + 1
+    const rc = items.find((r) => r.id === 'RC')
+    assert.equal(rc.scores.polarity_compatible, true, 'trailing without must not negate a positive statement')
+    assert.equal(rc.scores.polarity_mismatch, undefined, 'must not be capped as a polarity mismatch')
+    assert.equal(rank('RC'), 1, 'the evidenced root cause must be top-1 for its own query')
+    assert.ok(rank('RC') < rank('DISTR'), 'must outrank the zero-evidence distractor')
+  } finally {
+    store.close?.()
+  }
+})
+
+test('D2.1: an evidenced root cause outranks a no-evidence same-topic record', () => {
+  const store = tempStore()
+  try {
+    store.put(rcRecord())
+    store.put(rec('NOEV', 'Stock drift likely caused by a flaky timer', {
+      body: 'Stock drift likely caused by a flaky timer.',
+    }))
+
+    const items = recall({ projectStore: store, query: 'why does warehouse stock drift low', limit: 5 })
+    const rank = (id) => items.findIndex((r) => r.id === id) + 1
+    assert.ok(rank('RC') > 0 && rank('NOEV') > 0, 'both records must be recalled')
+    assert.ok(rank('RC') < rank('NOEV'), 'evidence must outrank a no-evidence guess on the same topic')
+  } finally {
+    store.close?.()
+  }
+})
+
+test('a bare trailing "without ..." clause keeps a positive title polarity-compatible', () => {
+  const rc = rcRecord()
+  const plain = rec('PLAIN', 'warehouse stock drift after restart', { body: 'Warehouse stock drift after restart.' })
+
+  const ranked = rankRecords([rc, plain], { query: 'warehouse stock drift after restart root cause' })
+  const hit = ranked.find((x) => x.id === 'RC')
+  assert.equal(hit.scores.polarity_compatible, true, 'trailing without must not negate a positive statement')
+  assert.equal(hit.scores.polarity_mismatch, undefined, 'must not be capped as a mismatch')
+})
+
+test('a leading "without ..." title is still negated', () => {
+  const leading = rec('LEADING', 'without serialize writes')
+  const affirm = rec('AFFIRM_2', 'serialize writes')
+
+  const ranked = rankRecords([leading, affirm], { query: 'serialize writes' })
+  const hit = ranked.find((x) => x.id === 'LEADING')
+  assert.equal(hit.scores.polarity_compatible, false, 'leading without must stay a negation')
+  assert.equal(hit.scores.polarity_mismatch, true)
+  assert.equal(ranked[0].id, 'AFFIRM_2')
+})
+
+test('comma-tail stripping still wins over the bare-without rule', () => {
+  const r = rec('COMMA_WITHOUT', 'Use idempotency keys, without a mutex')
+  const control = rec('CONTROL_2', 'Use idempotency keys')
+
+  const ranked = rankRecords([r, control], { query: 'idempotency keys' })
+  const hit = ranked.find((x) => x.id === 'COMMA_WITHOUT')
+  assert.equal(hit.scores.polarity_mismatch, undefined, 'comma tail must keep existing behaviour')
+  assert.equal(hit.scores.polarity_compatible, true)
+})

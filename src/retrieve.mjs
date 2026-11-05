@@ -408,9 +408,15 @@ function claimText(record) {
  * record outrank a plain affirmative.
  */
 function polarityTitle(record) {
-  return String(record?.title || '')
+  const stripped = String(record?.title || '')
     .replace(/,\s*(?:it\s+)?(?:does\s+not|do\s+not|is\s+not|are\s+not|not|never|no|without|none)\b.*$/i, '')
     .trim()
+  // A bare trailing "without X" is a scope/absence modifier on a positive
+  // statement ("redelivery without idempotency"), not a polarity claim about
+  // the topic. The comma rule above already treats the same clause as a
+  // modifier when it is comma-separated; this covers the unpunctuated form.
+  // A leading "without ..." keeps its negation meaning.
+  return stripped.replace(/^(?=\S)\s*\S.*?\s+without\b.*$/i, (m) => m.replace(/\s+without\b.*$/i, ''))
 }
 
 function polarityCompatible(query, record) {
