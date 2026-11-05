@@ -1,0 +1,295 @@
+{
+  "harness": "eval-retrieval-quality",
+  "startedAt": "2026-11-05T05:20:26.627Z",
+  "runDir": "/tmp/veyra-eval-rq-92UrAI",
+  "dims": {
+    "D1": {
+      "checks": [
+        {
+          "id": "D1.1",
+          "name": "true root cause is top-1 for its own query",
+          "expected": "RC rank 1",
+          "actual": "RC rank 3",
+          "pass": false
+        },
+        {
+          "id": "D1.2",
+          "name": "zero-overlap query returns no records (irrelevance floor)",
+          "expected": "0 records",
+          "actual": "5 records",
+          "pass": false
+        }
+      ],
+      "metric": {
+        "relOrder": [
+          "vey_1a1aa26b80b_5c8e1dc36a4a",
+          "vey_1a1aa26b80d_f74ef77522d8",
+          "vey_1a1aa26b808_9e9334904746",
+          "vey_1a1aa26b80f_d923f52670ab",
+          "rej_062e55ebd9"
+        ],
+        "RCrank": 3,
+        "DISTRrank": 2,
+        "precisionAt1": 1,
+        "precisionAt3": 0.667,
+        "precisionAt5": 0.6,
+        "unrelated": {
+          "order": [
+            "vey_1a1aa26b808_9e9334904746",
+            "vey_1a1aa26b80b_5c8e1dc36a4a",
+            "vey_1a1aa26b80f_d923f52670ab",
+            "vey_1a1aa26b810_d6c1f4d7d92d",
+            "vey_1a1aa26b80d_f74ef77522d8"
+          ],
+          "returned": 5
+        }
+      }
+    },
+    "D2": {
+      "checks": [
+        {
+          "id": "D2.1",
+          "name": "evidenced record ranks above unsupported no-evidence same-topic record",
+          "expected": "RC rank < noEv rank",
+          "actual": "RC=4 noEv=1",
+          "pass": false
+        }
+      ],
+      "metric": {
+        "order": [
+          "vey_1a1aa26b81b_82ca8d9c4953",
+          "vey_1a1aa26b80b_5c8e1dc36a4a",
+          "vey_1a1aa26b80d_f74ef77522d8",
+          "vey_1a1aa26b808_9e9334904746",
+          "rej_062e55ebd9"
+        ],
+        "RC_evidenced_rank": 4,
+        "noEvidence_rank": 1,
+        "evCount_RC": 2,
+        "evCount_noEv": 0
+      }
+    },
+    "D3": {
+      "checks": [
+        {
+          "id": "D3.1",
+          "name": "in-place anchored-file change flags the memory as affected",
+          "expected": "RC in affectedMemories",
+          "actual": "category=review_required",
+          "pass": true
+        },
+        {
+          "id": "D3.2",
+          "name": "file rename (move) still flags the anchored memory stale",
+          "expected": "RC flagged after move",
+          "actual": "category=null affected=[]",
+          "pass": false
+        }
+      ],
+      "metric": {
+        "originalPath_flagsRC": true,
+        "originalCategory": "review_required",
+        "originalSummary": {
+          "trusted": 0,
+          "reviewRequired": 2,
+          "stale": 0,
+          "contradicted": 0,
+          "insufficientEvidence": 0
+        },
+        "renamedPath_detected": false,
+        "renamedCategory": null,
+        "renamedAffected": []
+      }
+    },
+    "D4": {
+      "checks": [
+        {
+          "id": "D4.1",
+          "name": "context render is non-empty and includes the relevant record",
+          "expected": "headers>0",
+          "actual": "headers=4",
+          "pass": true
+        }
+      ],
+      "metric": {
+        "ctxChars": 3630,
+        "headers": 4
+      }
+    },
+    "D5": {
+      "checks": [
+        {
+          "id": "D5.1",
+          "name": "two conflicting root causes both visible without silent merge",
+          "expected": "count>=2 and both ids",
+          "actual": "5",
+          "pass": true
+        },
+        {
+          "id": "D5.2",
+          "name": "Veyra proactively links the two contradicting root-cause claims",
+          "expected": "contradiction link/banner",
+          "actual": "linked=true",
+          "pass": true
+        }
+      ],
+      "metric": {
+        "bothVisible": true,
+        "linked": true,
+        "count": 5,
+        "rcAndR5": [
+          "vey_1a1aa26b808_9e9334904746",
+          "vey_1a1aa26b82a_4dea7ef6c90d"
+        ]
+      }
+    },
+    "D6": {
+      "checks": [
+        {
+          "id": "D6.1",
+          "name": "arm A (with Veyra) surfaces the relevant root cause",
+          "expected": "root cause in arm A context",
+          "actual": "hit=true chars=2333",
+          "pass": true
+        },
+        {
+          "id": "D6.2",
+          "name": "arm B (without) returns empty store and distinguishes absence",
+          "expected": "0 records + marker",
+          "actual": "count=0 marker=true",
+          "pass": true
+        }
+      ],
+      "metric": {
+        "armA": {
+          "ctxChars": 2333,
+          "relevantSurfaced": true
+        },
+        "armB": {
+          "ctxChars": 176,
+          "recallCount": 0,
+          "distinguishesAbsence": true
+        }
+      }
+    }
+  },
+  "metrics": {
+    "precisionAt": {
+      "relOrder": [
+        "vey_1a1aa26b80b_5c8e1dc36a4a",
+        "vey_1a1aa26b80d_f74ef77522d8",
+        "vey_1a1aa26b808_9e9334904746",
+        "vey_1a1aa26b80f_d923f52670ab",
+        "rej_062e55ebd9"
+      ],
+      "RCrank": 3,
+      "DISTRrank": 2,
+      "precisionAt1": 1,
+      "precisionAt3": 0.667,
+      "precisionAt5": 0.6,
+      "unrelated": {
+        "order": [
+          "vey_1a1aa26b808_9e9334904746",
+          "vey_1a1aa26b80b_5c8e1dc36a4a",
+          "vey_1a1aa26b80f_d923f52670ab",
+          "vey_1a1aa26b810_d6c1f4d7d92d",
+          "vey_1a1aa26b80d_f74ef77522d8"
+        ],
+        "returned": 5
+      }
+    },
+    "fpOnUnrelated": {
+      "order": [
+        "vey_1a1aa26b808_9e9334904746",
+        "vey_1a1aa26b80b_5c8e1dc36a4a",
+        "vey_1a1aa26b80f_d923f52670ab",
+        "vey_1a1aa26b810_d6c1f4d7d92d",
+        "vey_1a1aa26b80d_f74ef77522d8"
+      ],
+      "returned": 5
+    },
+    "evidenceRanking": {
+      "order": [
+        "vey_1a1aa26b81b_82ca8d9c4953",
+        "vey_1a1aa26b80b_5c8e1dc36a4a",
+        "vey_1a1aa26b80d_f74ef77522d8",
+        "vey_1a1aa26b808_9e9334904746",
+        "rej_062e55ebd9"
+      ],
+      "RC_evidenced_rank": 4,
+      "noEvidence_rank": 1,
+      "evCount_RC": 2,
+      "evCount_noEv": 0
+    },
+    "applicability": {
+      "originalPath_flagsRC": true,
+      "originalCategory": "review_required",
+      "originalSummary": {
+        "trusted": 0,
+        "reviewRequired": 2,
+        "stale": 0,
+        "contradicted": 0,
+        "insufficientEvidence": 0
+      },
+      "renamedPath_detected": false,
+      "renamedCategory": null,
+      "renamedAffected": []
+    },
+    "staleRendering": {
+      "ctxChars": 3630,
+      "headers": 4
+    },
+    "contradiction": {
+      "bothVisible": true,
+      "linked": true,
+      "count": 5,
+      "rcAndR5": [
+        "vey_1a1aa26b808_9e9334904746",
+        "vey_1a1aa26b82a_4dea7ef6c90d"
+      ]
+    },
+    "baseline": {
+      "armA": {
+        "ctxChars": 2333,
+        "relevantSurfaced": true
+      },
+      "armB": {
+        "ctxChars": 176,
+        "recallCount": 0,
+        "distinguishesAbsence": true
+      }
+    },
+    "tokenCostApprox": {
+      "armA_recallContext": 583,
+      "armB_recallContext": 44
+    }
+  },
+  "failures": [
+    {
+      "dim": "D1",
+      "id": "D1.1",
+      "expected": "RC rank 1",
+      "actual": "RC rank 3"
+    },
+    {
+      "dim": "D1",
+      "id": "D1.2",
+      "expected": "0 records",
+      "actual": "5 records"
+    },
+    {
+      "dim": "D2",
+      "id": "D2.1",
+      "expected": "RC rank < noEv rank",
+      "actual": "RC=4 noEv=1"
+    },
+    {
+      "dim": "D3",
+      "id": "D3.2",
+      "expected": "RC flagged after move",
+      "actual": "category=null affected=[]"
+    }
+  ],
+  "nextSlice": null,
+  "finishedAt": "2026-11-05T05:20:26.676Z"
+}

@@ -58,6 +58,133 @@ export function evidenceStrength(evidence) {
   return 0.4
 }
 
+// ---------------------------------------------------------------------------
+// Retrieval-integrity sort tiers (focused, sort-only).
+//
+// Two conservative additions to the ranking cascade, both of which preserve
+// every score field verbatim and only change the ORDER of records that are
+// otherwise effectively tied:
+//
+//  * FUSION_TIE_EPS - the near-tie band. Two records whose fused scores
+//    differ by at most this are treated as "the same record for ranking
+//    purposes" and fall through to the evidence-support / authority /
+//    composite cascade instead of the hair above deciding. Without it a
+//    verified, file-evidenced record loses to a no-evidence low-confidence
+//    one purely on a ~0.001 fused-score rounding artifact.
+//
+//  * RELEVANCE_SEM_FLOOR - the conservative relevance floor, applied SORT-ONLY.
+//    A NON-empty query demotes a candidate to the zero-signal (recency) tier
+//    when it has neither lexical relevance nor a conservative semantic match
+//    (relevance 0 AND semantic below the floor); the candidate is still
+//    returned, it just sinks to the tail of the ordering. This keeps both
+//    sides of any contradiction and the recency pool present (PMA / m11
+//    "nothing is removed"), while stopping unrelated recent records from
+//    occupying the top slots. A partial match (any relevance, or semantic
+//    >= the floor) stays in the signal tier. An empty query is untouched
+//    (recency browse).
+export const FUSION_TIE_EPS = 0.01
+export const RELEVANCE_SEM_FLOOR = 0.1
+
+// Evidence-support grade (0..3): a coarse, deterministic "how backed is this
+// record?" label derived from the evidence + confidence we already computed,
+// used ONLY to break fused-score near-ties. Higher = more trustworthy:
+//   3  file-or-file+test evidence AND high confidence   (verified-ish)
+//   2  file-or-file+test evidence                        (documented)
+//   1  weak / uri-only evidence                          (partial)
+//   0  no meaningful evidence                            (unsupported)
+export function evidenceSupportGrade(record, scores) {
+  const ev = scores?.evidence_strength ?? evidenceStrength(record?.evidence)
+  if (ev >= 0.7) return record?.confidence === 'high' ? 3 : 2
+  if (ev >= 0.4) return 1
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+// Deterministic same-topic contradiction digest (text-signal supplement).
+//
+// detectContradictions (evolve.mjs) only fires on an EXPLICIT 'contradicts'
+// relation between two records. Two records that independently state
+// conflicting accounts of the same topic have no such relation, so the
+// relation-based pass leaves them unlinked and the caller never sees that the
+// returned context contains a contradiction. This detector supplements (never
+// replaces) that pass among the RETURNED candidates: it flags a pair when the
+// two titles share a clear topic (>=2 distinctive shared tokens, or both are
+// causal-claim titles sharing >=1) AND make a conflicting claim (opposing
+// negation, or two causal claims naming mostly-disjoint causes). Both
+// records always stay in the result set; a banner is attached to each.
+//
+// Pure, deterministic, no LLM. It only ever APPENDS to
+// contradictionBanners / contradictions; it never resolves, drops, or merges
+// either record.
+const CAUSAL_MARKERS = new Set([
+  'cause', 'causes', 'caused', 'causing', 'because', 'root', 'bug',
+  'fix', 'problem', 'issue', 'reason', 'why',
+])
+const TOPIC_STOP = new Set([
+  'the', 'a', 'an', 'and', 'or', 'of', 'to', 'in', 'on', 'for', 'is', 'are',
+  'was', 'be', 'by', 'with', 'that', 'it', 'its', 'do', 'does', 'not', 'no',
+])
+
+function distinctiveTokens(text) {
+  const out = new Set()
+  for (const raw of String(text || '').toLowerCase().match(/[a-z0-9_]+/g) || []) {
+    if (raw.length < 4) continue
+    if (TOPIC_STOP.has(raw)) continue
+    out.add(raw)
+  }
+  return out
+}
+
+function hasCausalMarker(text) {
+  return (String(text || '').toLowerCase().match(/[a-z]+/g) || []).some((t) => CAUSAL_MARKERS.has(t))
+}
+
+export function annotateTopicContradictions(records) {
+  if (!Array.isArray(records) || records.length < 2) return records
+  const out = records.map((r) => ({ ...r }))
+  for (let i = 0; i < out.length; i += 1) {
+    for (let j = i + 1; j < out.length; j += 1) {
+      const a = out[i]
+      const b = out[j]
+      // Pairs already linked by an explicit relation were handled by
+      // detectContradictions; do not double-banner them.
+      const linked = new Set([...(a.contradictions || []), ...(b.contradictions || [])])
+      if (linked.has(a.id) || linked.has(b.id)) continue
+      const ta = distinctiveTokens(a.title)
+      const tb = distinctiveTokens(b.title)
+      const shared = [...ta].filter((x) => tb.has(x)).length
+      const topicMatch =
+        shared >= 2 || (hasCausalMarker(a.title) && hasCausalMarker(b.title) && shared >= 1)
+      if (!topicMatch) continue
+      const negDiff =
+        hasNegation(a.title + ' ' + (a.body || '')) !==
+        hasNegation(b.title + ' ' + (b.body || ''))
+      let conflict = negDiff
+      if (!conflict && hasCausalMarker(a.title) && hasCausalMarker(b.title)) {
+        const union = new Set([...distinctiveTokens(a.title), ...distinctiveTokens(b.title)])
+        const jacc = union.size ? shared / union.size : 0
+        if (jacc < 0.25) conflict = true
+      }
+      if (!conflict) continue
+      // Name the two parties by id, not by title: each banner is attached to
+      // BOTH records and is rendered above every recalled record, so quoting
+      // the opposing title makes a banner line carry the other record's title
+      // text. Title-based render heuristics (e.g. the [EXPIRED] / [OK] marker
+      // checks that locate a record by its own title line) would then match the
+      // banner instead of the record. The cross-link already carries both ids
+      // (contradictions[]) and each record's own line shows its title, so ids
+      // are sufficient and unambiguous.
+      const banner = '[TOPIC-CONTRADICTION: ' + (a.id || a.title) + ' and ' +
+        (b.id || b.title) + ' give conflicting accounts of the same topic - verify against the repository]'
+      a.contradictionBanners = [...(a.contradictionBanners || []), banner]
+      b.contradictionBanners = [...(b.contradictionBanners || []), banner]
+      a.contradictions = [...(a.contradictions || []), b.id]
+      b.contradictions = [...(b.contradictions || []), a.id]
+    }
+  }
+  return out
+}
+
 export function validationTier(validation) {
   switch (validation) {
     case VALIDATIONS.VERIFIED: return 1.0
@@ -565,7 +692,7 @@ export function reciprocalRankFusion(scored) {
  * Rank records with a full dimensional breakdown.
  * Never returns a single opaque score.
  */
-export function rankRecords(records, { weights = {}, preferProject = true, intent = null, query = '', goal = null, changedFiles = null } = {}) {
+export function rankRecords(records, { weights = {}, preferProject = true, intent = null, query = '', goal = null, changedFiles = null, tieEps = FUSION_TIE_EPS, relevanceFloor = RELEVANCE_SEM_FLOOR } = {}) {
   if (!Array.isArray(records) || records.length === 0) return []
   const w = { ...DEFAULT_WEIGHTS, ...intentWeights(intent), ...weights }
   const hasQuery = Boolean(String(query ?? '').trim())
@@ -744,7 +871,7 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
   // deliberate design: when NOTHING matches, all records share tier 0 and
   // the composite order — recency — is untouched). Empty query: no query
   // to have signal against, so the tier is inactive by construction.
-  const signalTier = (r) => ((r.scores.relevance > 0 || r.scores.semantic > 0) ? 1 : 0)
+  const signalTier = (r) => ((r.scores.relevance > 0 || r.scores.semantic >= relevanceFloor) ? 1 : 0)
 
   // Authority tier: graded sort key placed BELOW fusion (which includes
   // polarity_compatible from RRF), ABOVE composite. Does not touch composite.
@@ -766,9 +893,51 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
       const tier = signalTier(b) - signalTier(a)
       if (tier !== 0) return tier
     }
-    // Fusion (includes polarity via RRF) comes before authority
+    // Polarity-compatibility hard tier (sort-only, below the signal tier,
+    // above the fused near-tie / evidence cascade): a polarity-mismatched
+    // record must never outrank a compatible one, even when their fused
+    // scores fall inside the near-tie band. The polarity cap above pushes
+    // mismatched candidates just below the compatible set, but that 0.0001
+    // gap sits well inside FUSION_TIE_EPS, so without this tier the
+    // evidence-support cascade would resurrect a mismatch that strong
+    // metadata must keep below. Guarded by hasQuery: with no query every
+    // record is compatible for recency browse and the tier is a no-op.
+    // No score is mutated.
+    if (hasQuery) {
+      const polT = Number(b.scores.polarity_compatible) - Number(a.scores.polarity_compatible)
+      if (polT !== 0) return polT
+    }
+    // Applicability / temporal eligibility hard tier (Phase 4 §12/§13,
+    // sort-only): a rank_limited record (context-incompatible or
+    // time-expired, held below the ceiling by the cap above) must never
+    // outrank a fully eligible one, even when its capped fused score falls
+    // inside the near-tie band and the evidence / composite cascade below
+    // would otherwise re-promote it on stronger evidence or fresher recency.
+    // This encodes "Similarity != Applicability, historical != current
+    // truth". Guarded by hasQuery - the ceiling only exists with a query, so
+    // this is a no-op on empty-query browse. Inverted (a - b): a rank_limited
+    // record is flagged (truthy) and an eligible one is not, so the eligible
+    // row returns negative and stays first. The flag is coerced through a
+    // boolean - "rank_limited" is ABSENT (undefined) on eligible rows, and a
+    // bare Number(undefined) would be NaN, and NaN !== 0 is true, which
+    // would hand the sort a NaN and corrupt the whole order. No score field
+    // is mutated.
+    if (hasQuery) {
+      const limT = (a.scores.rank_limited ? 1 : 0) - (b.scores.rank_limited ? 1 : 0)
+      if (limT !== 0) return limT
+    }
+    // Fusion (includes polarity via RRF) comes before authority.
+    //
+    // Fused-score near-tie band (FUSION_TIE_EPS / tieEps): a hair of fused
+    // difference (<= the band) is treated as a tie and falls through to the
+    // evidence-support / authority / composite cascade below, so a verified,
+    // file-evidenced record is not outranked by an unsupported low-confidence
+    // one on a rounding artifact. Records whose fused scores differ by MORE
+    // than the band keep the fusion order exactly as before - the band only
+    // tightens what "a tie" means; it never reorders genuinely distinct
+    // fused scores. No score field is mutated.
     const fusionT = (b.scores.fusion - a.scores.fusion)
-    if (fusionT !== 0) return fusionT
+    if (Math.abs(fusionT) > tieEps) return fusionT
     // Actionability tiebreaker (sort-only, below fusion): narrative-only records
     // (Agent: prefix without root cause/remedy/decision) rank below actionable
     // ones at equal fusion. Does not touch composite or any score field.
@@ -782,6 +951,28 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
     if (hasQuery) {
       const authT = authorityKey(b) - authorityKey(a)
       if (authT !== 0) return authT
+    }
+    // Evidence-support tier: within a fused-score near-tie (and equal
+    // authority), the better-backed record ranks first. This is what makes a
+    // file-evidenced record win over a no-evidence low-confidence one when
+    // they carry essentially the same query signal. Placed below authority on
+    // purpose - the authority order is never disturbed; this only breaks
+    // authority-equal fused ties. No score field is mutated.
+    const evT = evidenceSupportGrade(b, b.scores) - evidenceSupportGrade(a, a.scores)
+    if (evT !== 0) return evT
+    // Causal-provenance tier (Phase 3 §14, sort-only, within a fused near-tie):
+    // a record carrying a non-zero causal channel (verified root-cause chain)
+    // outranks a bare observation when their fused scores are within the
+    // near-tie band and the evidence tier is tied. The causal RRF delta alone
+    // (often ~0.001) sits below FUSION_TIE_EPS and would otherwise fall to
+    // recency, so a verified chain must flip a relevance-tied pool on its own
+    // merit. Placed below the evidence-support tier on purpose - repository
+    // evidence is the stronger signal; causal only breaks evidence-equal tied
+    // pools. Guarded by hasQuery (causal relevance is query-specific). No
+    // score field is mutated.
+    if (hasQuery) {
+      const causalT = Number(b.scores.causal || 0) - Number(a.scores.causal || 0)
+      if (causalT !== 0) return causalT
     }
     return (b.scores.composite - a.scores.composite) || (sortKey(b) - sortKey(a))
   })
@@ -959,6 +1150,8 @@ export function hybridRetrieve({
   kind = null,
   goal = null,
   changedFiles = null,
+  tieEps = FUSION_TIE_EPS,
+  relevanceFloor = RELEVANCE_SEM_FLOOR,
 } = {}) {
   const detectedIntent = intent || detectIntent(query)
   // Phase 10 — an explicit goal is caller-supplied routing context, not a
@@ -1015,7 +1208,23 @@ export function hybridRetrieve({
   }
 
   const merged = Array.from(candidateMap.values())
-  const ranked = annotateContradictions(rankRecords(merged, { query, intent: detectedIntent, preferProject: true, goal: activeGoal, changedFiles }))
+  const rankedAll = annotateContradictions(rankRecords(merged, { query, intent: detectedIntent, preferProject: true, goal: activeGoal, changedFiles, tieEps, relevanceFloor }))
+  // Conservative relevance floor: a non-empty query that shares NO textual
+  // signal with a candidate (relevance 0 AND semantic below the floor) does
+  // not surface that candidate. The negative-coverage tail is already gated
+  // by its own token-overlap check (negativeCoverageTail), so only the
+  // primary ranked pool needs this filter. Without it, an unrelated query
+  // falls through to the recency pool and recent-but-unrelated records are
+  // returned as if they were answers; an empty query is untouched (recency
+  // browse).
+  // SORT-ONLY floor (no removal): zero-signal records for a real query are
+  // demoted to the bottom by the signal tier in rankRecords, never dropped.
+  // This preserves the m11 / PMA contract that a recall returns every
+  // candidate so both sides of a contradiction and the recency pool stay
+  // present. RELEVANCE_SEM_FLOOR acts as that demotion threshold, not a
+  // hard filter — so a zero-signal query returns the full set, ordered so
+  // the weak candidates sit at the tail.
+  const ranked = rankedAll
   // Deduplicate before the top-K cut so freed slots go to the next distinct
   // record; contradiction extras and graph expansion below still see only
   // what survived, and both sides of a contradiction are relation-connected
@@ -1029,9 +1238,15 @@ export function hybridRetrieve({
     : negativeCoverageTail({ projectStore, reusableStore, includeReusable, projectId, query, limit })
   const limited = selected.slice(0, Math.max(0, limit - negTail.length))
   const withCoverage = (base) => {
-    if (negTail.length === 0) return base
-    const baseIds = new Set(base.map((r) => r.id))
-    return [...base, ...negTail.filter((r) => !baseIds.has(r.id))]
+    const finalSet = negTail.length === 0
+      ? base
+      : [...base, ...negTail.filter((r) => !base.map((x) => x.id).includes(r.id))]
+    // Deterministic same-topic contradiction digest over the RETURNED set:
+    // supplements the relation-based pass so two records that independently
+    // give conflicting accounts of the same topic are surfaced together
+    // (both sides stay visible; a banner is attached to each). Never
+    // resolves, drops, or merges either record.
+    return annotateTopicContradictions(finalSet)
   }
 
   // PMA invariant: never hide one side of a contradiction.

@@ -17,7 +17,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { relevanceFromRank, lexicalScore, recall } from '../src/retrieve.mjs'
+import { relevanceFromRank, lexicalScore, recall, RELEVANCE_SEM_FLOOR } from '../src/retrieve.mjs'
 import { MemoryStore } from '../src/store.mjs'
 
 const BASE = {
@@ -111,15 +111,29 @@ test('recency-fallback rows receive no FTS position and score 0 under a query', 
   store.close()
 })
 
-test('a recency-only record is not given a position in a real recall', () => {
+test('a recency-only record is demoted, not removed, in a real recall', () => {
   const store = tempStore()
   store.put({ ...BASE, id: 'HIT', title: 'sqlite writer race', body: 'a' })
   store.put({ ...BASE, id: 'NEAR', title: 'deploy timings', body: 'unrelated prose' })
   const ranked = recall({ projectStore: store, query: 'sqlite writer race', limit: 10 })
+  const hit = ranked.find((r) => r.id === 'HIT')
+  assert.ok(hit, 'the matching record is still recalled')
+  // Sort-only relevance floor: an unrelated recency-only record shares no
+  // textual signal with the query (relevance 0 AND semantic < floor), so it is
+  // demoted to the recency tier and sinks to the tail — but it is still
+  // returned (PMA / m11 "nothing is removed"), and the matching record ranks
+  // above it. Before this contract it contaminated the top with relevance 0;
+  // the floor now pins it to the tail instead.
   const near = ranked.find((r) => r.id === 'NEAR')
-  assert.ok(near, 'near record is still recallable')
-  assert.equal(near.ftsPosition, undefined)
-  assert.equal(near.scores.relevance, 0, 'no artificial relevance for a non-FTS candidate')
+  assert.ok(near, 'unrelated recency-only record is demoted, not removed')
+  assert.ok(
+    ranked.findIndex((r) => r.id === 'HIT') < ranked.findIndex((r) => r.id === 'NEAR'),
+    'the matching record ranks above the demoted recency-only one',
+  )
+  // The floor predicate governs the tier: the matching record sits in the
+  // signal tier, the demoted one fails it.
+  assert.ok(hit.scores.relevance > 0 || hit.scores.semantic >= RELEVANCE_SEM_FLOOR, 'the matching record sits in the signal tier')
+  assert.ok(!(near.scores.relevance > 0 || near.scores.semantic >= RELEVANCE_SEM_FLOOR), 'the demoted record fails the floor, so it is tiered low')
   store.close()
 })
 
@@ -162,24 +176,43 @@ function f4Fixture(weakOverrides) {
 }
 
 test('F4-E: an all-strong weak record no longer outranks the genuine match', () => {
+  // First line of defence is the relevance floor, applied SORT-ONLY: WEAK
+  // shares no textual signal with the query (relevance 0, semantic 0), so it is
+  // demoted to the recency tier and sinks to the tail, but it is still returned
+  // (PMA / m11 "nothing is removed") — the genuine match leads.
   const store = f4Fixture({
     validation: 'verified', confidence: 'high',
     evidence: [{ path: 'test/deploy.test.mjs', note: 'test-passed' }],
     updatedAt: new Date().toISOString(),
   })
   const r = recall({ projectStore: store, query: 'sqlite writer race', limit: 5 })
-  const rel = r.find((x) => x.id === 'REL')
-  const weak = r.find((x) => x.id === 'WEAK')
+  assert.equal(r[0].id, 'REL', 'the genuine match leads even with a fully-armed weak record demoted behind it')
+  assert.ok(r.map((x) => x.id).includes('WEAK'), 'the weak record is demoted, not removed (PMA / m11)')
+  // The floor governs the tier: REL sits in the signal tier, WEAK fails it and
+  // is therefore demoted to the tail.
+  const relDef = r.find((x) => x.id === 'REL')
+  const weakDef = r.find((x) => x.id === 'WEAK')
+  assert.ok(relDef.scores.relevance > 0 || relDef.scores.semantic >= RELEVANCE_SEM_FLOOR, 'REL sits in the signal tier')
+  assert.ok(!(weakDef.scores.relevance > 0 || weakDef.scores.semantic >= RELEVANCE_SEM_FLOOR), 'WEAK fails the floor, so it is demoted')
+
+  // Ordering is the invariant that matters, and it survives with the floor
+  // switched off — nothing is dropped from ranking, it is only filtered out of
+  // the answer. REL's absolute composite moves with the fixture's freshness
+  // (the experiment harness gave both records the same 400-day age, which is
+  // why it read 0.815 rather than 0.767), so the test pins the winner and the
+  // margin rather than a magic number.
+  const unfiltered = recall({
+    projectStore: store, query: 'sqlite writer race', limit: 5, relevanceFloor: 0,
+  })
+  const rel = unfiltered.find((x) => x.id === 'REL')
+  const weak = unfiltered.find((x) => x.id === 'WEAK')
+  assert.ok(weak, 'with the floor off the weak record is still ranked')
 
   // WEAK reproduces the audited value exactly: its score is entirely metadata,
   // and calibration must not change any metadata component.
   assert.ok(Math.abs(weak.scores.composite - 0.684) < 0.005, `WEAK ~0.684, got ${weak.scores.composite}`)
 
-  // The ordering is the invariant that matters. REL's absolute composite moves
-  // with the fixture's freshness (the experiment harness gave both records the
-  // same 400-day age, which is why it read 0.815 rather than 0.767), so the
-  // test pins the winner and the margin rather than a magic number.
-  assert.equal(r[0].id, 'REL', 'the genuinely relevant record must rank first')
+  assert.equal(unfiltered[0].id, 'REL', 'the genuinely relevant record must rank first')
   assert.ok(rel.scores.composite > weak.scores.composite)
   assert.ok(
     weak.scores.composite - rel.scores.composite < 0,
@@ -193,9 +226,21 @@ test('F4-E: an all-strong weak record no longer outranks the genuine match', () 
 
 test('F4-B: high validation alone no longer inverts the order', () => {
   const store = f4Fixture({ validation: 'verified' })
+  // Default recall: the no-signal record is demoted to the tail, never
+  // removed — the genuine textual match leads.
   const r = recall({ projectStore: store, query: 'sqlite writer race', limit: 5 })
-  assert.equal(r[0].id, 'REL')
-  assert.ok(r.find((x) => x.id === 'REL').scores.composite > r.find((x) => x.id === 'WEAK').scores.composite)
+  assert.equal(r[0].id, 'REL', 'the genuine match leads; the no-signal record is demoted behind it')
+  assert.ok(r.map((x) => x.id).includes('WEAK'), 'the no-signal record is demoted, not removed (PMA / m11)')
+  // With the floor off it is ranked, and validation alone still cannot invert
+  // the order: the genuine textual match keeps the top position.
+  const unfiltered = recall({
+    projectStore: store, query: 'sqlite writer race', limit: 5, relevanceFloor: 0,
+  })
+  assert.equal(unfiltered[0].id, 'REL')
+  assert.ok(
+    unfiltered.find((x) => x.id === 'REL').scores.composite
+      > unfiltered.find((x) => x.id === 'WEAK').scores.composite,
+  )
   store.close()
 })
 
