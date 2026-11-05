@@ -362,7 +362,7 @@ Publishing is automatic: every push to `main` publishes to npm (patch-bumped fir
 
 | | |
 | --- | --- |
-| Current release | `0.1.66` |
+| Current release | `0.1.70` |
 | Node | `>=22.5.0 <25.0.0` |
 | DSH | `>=0.1.2-rc.1 <0.3.0-0` |
 | Verified on | DSH `0.1.7-rc.2` (plugin boot, tools, `/veyra` + `/veyra/graph`); DSH `0.2.0-rc.1` (real compatibility gate + composed-host-service runtime); DSH `0.2.0-rc.2` (composed host-service runtime + real `ToolRuntime` tool-output validation against the declared range); CI on Node 22 and 24 |
