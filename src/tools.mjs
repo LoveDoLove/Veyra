@@ -32,7 +32,8 @@
 import { AUTHORITIES, CONFIDENCES, KINDS, SCOPES, VALIDATIONS, VALID_AUTHORITIES, VALID_CONFIDENCES, VALID_KINDS, VALID_SCOPES } from './types.mjs'
 import { projectIdFor, provenanceDimensions, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
-import { inspect, recall, summarizeForPrompt, temporalState } from './retrieve.mjs'
+import { RELEVANCE_SEM_FLOOR, inspect, recall, summarizeForPrompt, temporalState } from './retrieve.mjs'
+import { tokenOverlap } from './text.mjs'
 import { provenanceChain } from './context.mjs'
 import { promote, readWriteGateLedger, remember } from './learn.mjs'
 import { forget as lifecycleForget } from './lifecycle.mjs'
@@ -350,11 +351,21 @@ export function buildToolDefinitions(runtime) {
           includeReusable,
           kind: args.kind || null,
         })
-        projectStore.touch(items.filter((r) => r.scope !== SCOPES.REUSABLE).map((r) => r.id))
+        // The library keeps zero-signal candidates recallable (recency pool).
+        // At the tool surface that reads as an answer to a question it did not
+        // answer, so a non-empty query with no genuine signal returns nothing.
+        // FTS rank is not a signal test here: toFtsQuery OR-joins stopwords
+        // ("and"), which match almost every body and yield relevance 1.
+        const queryText = String(args.query ?? '').trim()
+        const hasSignal = items.some((r) => r.negativeCoverage === true
+          || tokenOverlap(queryText, [r.title || '', r.body || '', ...(r.tags || [])].join(' ')).hits > 0
+          || Number(r.scores?.semantic) >= RELEVANCE_SEM_FLOOR)
+        const visible = queryText && !hasSignal ? [] : items
+        projectStore.touch(visible.filter((r) => r.scope !== SCOPES.REUSABLE).map((r) => r.id))
         return {
           ok: true,
-          count: items.length,
-          items: items.map(recordView),
+          count: visible.length,
+          items: visible.map(recordView),
           disclaimer: 'Recalled memory is not repository truth. Verify before acting.',
         }
       },

@@ -76,6 +76,22 @@ measurable surface.
 | `D33b` | reusable identity leakage | **0** *(inverse)* | no reusable row is relabelled as the querying project |
 | `D33c` | `includeReusable=false` | **1** | 1 row with reusable excluded |
 
+### D9/D9b are library-level measurements
+
+`D9` and `D9b` measure the retrieval **library**:
+`test/m15-benchmark.test.mjs` calls `hybridRetrieve` directly and asserts
+that an off-topic query returns candidates carrying no query signal. The
+library deliberately keeps those candidates recallable and orders them at the
+tail (see `docs/m11-recall-intelligence.md` §10), so `D9b` stays `0`.
+
+The `veyra_recall` **tool** applies an additional relevance floor for
+non-empty queries: when no candidate carries genuine signal (token overlap
+after stopword stripping, a negative-coverage marker, or semantic score at or
+above `RELEVANCE_SEM_FLOOR`), it returns zero rows. That tool-level
+suppression is covered by
+`test/tool-recall-relevance-floor.test.mjs` and is not part of the D9b
+measurement above.
+
 ## Phase-11 axis coverage
 
 Every one of the 15 dimensions GOAL.md requires has at least one measured

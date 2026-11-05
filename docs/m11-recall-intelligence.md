@@ -123,6 +123,35 @@ write-without-rank-effect, intent classification, stable tie-breaking,
 `limit: 0`, contradiction extras past the limit. Full suite **354/354, twice**;
 benchmark **baseline vs candidate, deterministic in all 7 scenarios × 5 runs**.
 
+## 9b. Tool-level relevance floor (`veyra_recall`)
+
+The library keeps zero-signal candidates recallable on purpose (§10). At the
+**tool** surface that fallback reads as an answer to a question it did not
+answer, so `veyra_recall` adds a floor that applies only to non-empty
+queries:
+
+- A candidate carries signal when it has `negativeCoverage === true`, real
+  token overlap with the query (title + body + tags, stopwords stripped), or
+  `scores.semantic >= RELEVANCE_SEM_FLOOR` (`0.1`).
+- If **no** candidate carries signal, the tool returns zero rows. When **any**
+  candidate carries signal, every candidate stays visible — the rule is
+  all-or-nothing, so contradiction pairs, negative-coverage tails and partial
+  matches are never split apart.
+- Only visible, non-reusable records are touched (`lastRecalledAt`).
+- Empty queries keep the recency pool unchanged.
+
+FTS `relevance` is deliberately not the signal test: `toFtsQuery` OR-joins
+raw tokens without stopword filtering, so a stopword such as `and` matches
+almost every body and reports relevance `1`. Consequences to know:
+
+- A stopword-only query (`the and of`) now returns zero rows through the
+  tool instead of the recency pool. This is intentional.
+- A stem-only match (query `routing`, record `route`) does not count as
+  signal when nothing else overlaps. This narrows a false-negative class.
+
+Library behavior, `recall()`, `toFtsQuery` and the FTS schema are unchanged;
+see `test/tool-recall-relevance-floor.test.mjs`.
+
 ## 10. Explicitly identified but deferred
 
 | Finding | Evidence | Why deferred |
