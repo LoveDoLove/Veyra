@@ -14,6 +14,11 @@
 - D3.2 Phase 1 is explicit rename evidence only: no automatic git rename detection, no dependency/schema migrations, and no retrieval ranking changes. Rename mappings must be unambiguous.
 
 
+## [0.1.71] - 2026-11-05
+
+### Added
+- Added `veyra_stale_ledger`, a read-only runtime diagnostic tool for enumerating stale Veyra memory records (`validation=stale`). It uses the same project/reusable store resolution and merge semantics as `veyra_health` (project-first, first-seen deduplication), supports bounded pagination (`offset`, `limit`) with total/returned/completion indicators, returns complete record fields for auditing, and includes evidence-anchor/freshness/path-resolution diagnostics where available. Diagnostic fields that cannot be resolved are reported explicitly as unavailable/unresolved (no inferred states). The tool is strictly read-only and does not perform lifecycle, maintenance, promotion, revalidation, cleanup, or persistence writes.
+
 ## [0.1.69] - 2026-11-04
 
 ### Fixed

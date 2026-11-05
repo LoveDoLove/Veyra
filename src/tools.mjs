@@ -40,7 +40,8 @@ import { forget as lifecycleForget } from './lifecycle.mjs'
 import { detectRecurrence, eligibleForCandidate, recordFeedback, recurrenceCandidate } from './feedback.mjs'
 import { memoryHealth, renderHealth } from './health.mjs'
 import { CodeIntelligenceEngine, FRESHNESS_STATUS, createCbmToolDefinitions } from '@lovedolove/dsh-codebase-memory-mcp'
-import { checkRecordFreshness, findAffectedMemories, buildStaleReviewCandidate } from './code/linking.mjs'
+import { checkRecordFreshness, checkAnchorFreshness, extractAnchorsFromRecord, findAffectedMemories, buildStaleReviewCandidate } from './code/linking.mjs'
+import { resolveSafeRepoPath } from '@lovedolove/dsh-codebase-memory-mcp/discovery'
 import { classifyRecordTrust, TRUST_CATEGORIES } from './trust.mjs'
 import { annotateContradictions } from './evolve.mjs'
 
@@ -1037,6 +1038,136 @@ export function buildToolDefinitions(runtime) {
         }
       },
       presentCall: (args) => ({ card: 'generic', title: 'Change Impact', kind: 'read', rawInput: args.changedFiles?.join(', ') || '(full evaluation)' }),
+    },
+    {
+      name: 'veyra_stale_ledger',
+      description:
+        'Read-only diagnostic: enumerate every memory record with validation=stale from the same project+reusable stores as veyra_health. '
+        + 'Supports bounded pagination (offset, limit) and returns complete record fields plus evidence/freshness/path-resolution diagnostics. '
+        + 'Never modifies memory, lifecycle, trust, authority, or triggers maintenance.',
+      parameters: {
+        scope: {
+          type: 'string',
+          enum: [...VALID_SCOPES],
+          description: 'project (default) to use the same stores as veyra_health, or reusable.',
+        },
+        offset: { type: 'number', description: 'Zero-based offset into the stable stale-record list (default 0).' },
+        limit: { type: 'number', description: 'Maximum stale records to return in this page (default 50, max 200).' },
+        includeDiagnostics: {
+          type: 'boolean',
+          description: 'Include evidence anchors and freshness/path-resolution diagnostics when available (default true).',
+        },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            ok: { type: 'boolean' },
+            totalStale: { type: 'number' },
+            returned: { type: 'number' },
+            offset: { type: 'number' },
+            limit: { type: 'number' },
+            nextOffset: { type: 'number', description: 'Next offset when more records remain; omitted when complete.' },
+            complete: { type: 'boolean' },
+            scope: { type: 'string' },
+            workspace: { type: 'string' },
+            items: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: true,
+                properties: {
+                  record: RECORD_SCHEMA,
+                  diagnostics: { type: 'object', additionalProperties: true },
+                },
+              },
+            },
+          },
+        },
+        render: (_args, value) => {
+          if (!value?.ok) return textBlocks(`Stale ledger failed: ${value?.error || 'unknown'}`)
+          const head = `Stale ledger: ${value.totalStale} stale record(s), returned ${value.returned} at offset ${value.offset} (scope=${value.scope}, complete=${value.complete}).`
+          if (!value.items?.length) return textBlocks(head)
+          const lines = value.items.map((it) => `  ${it.record?.id}  ${it.record?.title || '(untitled)'}  [${it.record?.authority}/${it.record?.validation}]`)
+          return textBlocks([head, ...lines].join('\n'))
+        },
+      },
+      execute: async (args = {}, exec) => {
+        // Strictly read-only. Uses the same store resolution as veyra_health.
+        const { projectStore, reusableStore, cwd } = storesFor(runtime, exec, args.scope || SCOPES.PROJECT)
+        const all = args.scope === SCOPES.REUSABLE
+          ? reusableStore.list({ limit: 1000 })
+          : [...projectStore.list({ limit: 1000 }), ...reusableStore.list({ limit: 1000 })]
+        const byId = new Map()
+        for (const r of all) if (!byId.has(r.id)) byId.set(r.id, r)
+        const stale = [...byId.values()].filter((r) => r && r.validation === VALIDATIONS.STALE)
+
+        const rawOffset = Number(args.offset)
+        const rawLimit = Number(args.limit)
+        const offset = Number.isFinite(rawOffset) ? Math.max(0, Math.floor(rawOffset)) : 0
+        const limit = Number.isFinite(rawLimit) ? Math.min(200, Math.max(1, Math.floor(rawLimit))) : 50
+        const page = stale.slice(offset, offset + limit)
+        const nextOffset = offset + page.length < stale.length ? offset + page.length : null
+        const includeDiagnostics = args.includeDiagnostics !== false
+
+        const items = page.map((record) => {
+          let diagnostics = null
+          if (includeDiagnostics) {
+            try {
+              const anchors = extractAnchorsFromRecord(record)
+              const freshness = checkRecordFreshness(record, cwd)
+              const pathResolution = anchors.map((anc) => {
+                if (!anc || !anc.path) {
+                  return { anchor: anc, resolvedPath: null, status: 'unavailable', reason: 'No file path specified' }
+                }
+                let safeRel = null
+                let resolveError = null
+                try { safeRel = resolveSafeRepoPath(cwd, anc.path) } catch (e) { resolveError = e instanceof Error ? e.message : String(e) }
+                const base = { anchor: anc, resolvedPath: safeRel }
+                if (resolveError) return { ...base, status: 'unresolved', reason: `Path resolution unavailable: ${resolveError}` }
+                if (!safeRel) return { ...base, status: 'outside_or_invalid', reason: 'Path outside repository or invalid' }
+                try {
+                  const af = checkAnchorFreshness(anc, cwd)
+                  return { ...base, status: af.status || 'unknown', reason: af.reason || 'unresolved' }
+                } catch (e) {
+                  return { ...base, status: 'unresolved', reason: `Anchor freshness unavailable: ${e instanceof Error ? e.message : String(e)}` }
+                }
+              })
+              diagnostics = {
+                available: true,
+                workspace: cwd,
+                evidenceAnchors: anchors,
+                recordFreshness: freshness,
+                pathResolution,
+              }
+            } catch (e) {
+              diagnostics = {
+                available: false,
+                workspace: cwd,
+                error: e instanceof Error ? e.message : String(e),
+                note: 'Diagnostics unavailable; record fields are still complete and read-only.',
+              }
+            }
+          }
+          return { record: recordView(record), diagnostics }
+        })
+
+        return {
+          ok: true,
+          totalStale: stale.length,
+          returned: items.length,
+          offset,
+          limit,
+          ...(nextOffset != null ? { nextOffset } : {}),
+          complete: nextOffset == null,
+          scope: args.scope || SCOPES.PROJECT,
+          workspace: cwd,
+          items,
+        }
+      },
+      presentCall: (args) => ({ card: 'generic', title: 'Stale Ledger', kind: 'read', rawInput: args.scope || 'project' }),
+
     },
   ]
 }
