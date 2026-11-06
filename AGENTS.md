@@ -13,6 +13,7 @@ This file holds only **rules** and **routing**. Details live in
 
 | If the task is about… | Read |
 | --- | --- |
+| Product direction, evolution priorities, and version decisions | [Product Evolution Blueprint](docs/PRODUCT-EVOLUTION-BLUEPRINT.md) |
 | What Veyra is, its scope, layers, data flow, boundaries | [architecture](docs/agent-guides/architecture.md) |
 | Finding the file that owns a behavior | [codebase map](docs/agent-guides/codebase-map.md) |
 | Design decisions, boundaries, when to add a module/dependency/field | [engineering principles](docs/agent-guides/engineering-principles.md) |
@@ -22,6 +23,10 @@ This file holds only **rules** and **routing**. Details live in
 | Cordis/DSH lifecycle, tools, commands, settings, WebUI seams | [DSH integration](docs/agent-guides/dsh-integration.md) |
 | `cbm_*` tools, Code Intelligence, the bridge package | [CBM integration](docs/agent-guides/cbm-integration.md) |
 | `package.json`, CI, npm publishing, releases | [release and packaging](docs/agent-guides/release-and-packaging.md) |
+
+**Before planning or proposing a version change, read the Product Evolution
+Blueprint.** It defines product direction and decision criteria; it does not
+override the guardrails in this file or authorize implementation by itself.
 
 When a task spans several areas, read the guides in that order; architecture and
 safety come before implementation detail.
