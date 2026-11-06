@@ -1,5 +1,7 @@
 // Veyra v0.1.69 real-world A/B evaluation harness - reproducible.
-// Usage: node test/eval-v0169-ab.mjs
+// Usage: node test/eval-v0169-ab.mjs [--output /tmp/eval-v0169.json]
+// Write safety: VEYRA_EVAL_WRITE_TRACKED=0 skips tracked test/eval-v0169-results.json;
+// existing tracked artifacts are not overwritten unless VEYRA_EVAL_WRITE_TRACKED=1.
 //
 // Builds a deterministic fixture git repo (a small "stockctl" service with a
 // planted stock-drift bug), seeds engineering memory across two simulated
@@ -15,6 +17,7 @@ import { openProjectStore, closeAllStores } from '../src/store.mjs'
 import { projectIdFor } from '../src/ids.mjs'
 import { recall as retrieveRecall } from '../src/retrieve.mjs'
 import { buildRecallContext } from '../src/context.mjs'
+import { publishEvalResult } from './helpers/eval-output.mjs'
 
 const RUN = fs.mkdtempSync(path.join(os.tmpdir(), 'veyra-eval-v0169-'))
 const results = {
@@ -401,18 +404,24 @@ async function main() {
   results.finishedAt = new Date().toISOString()
   const summary = results.tasks.map((t) => ({ id: t.id, pass: t.pass, expected: t.expected, actual: String(t.actual).slice(0, 300), evidence: t.evidence }))
   const out = { ...results, tasks: summary, failures: results.failures }
-  fs.writeFileSync(path.join(RUN, 'eval-v0169-results.json'), JSON.stringify(out, null, 2))
-  const repoResults = path.resolve('test/eval-v0169-results.json')
-  fs.writeFileSync(repoResults, JSON.stringify(out, null, 2))
+  const runArtifactPath = path.join(os.tmpdir(), path.basename(RUN) + '-eval-v0169-results.json')
+  const writePlan = publishEvalResult(out, {
+    trackedPath: path.resolve('test/eval-v0169-results.json'),
+    runPath: runArtifactPath,
+    argv: process.argv,
+    env: process.env,
+    cwd: process.cwd(),
+  })
   closeAllStores()
   fs.rmSync(RUN, { recursive: true, force: true })
-  console.log('=== Veyra v0.1.69 real-world evaluation ===')
-  for (const t of summary) console.log((t.pass ? 'PASS' : 'FAIL') + '  ' + t.id + ': ' + t.name)
+  console.log('--- eval-v0169 A/B report ---')
+  console.log('run:   ' + RUN)
+  console.log('tasks: ' + results.tasks.map((t) => t.id + ':' + (t.pass ? 'pass' : 'FAIL')).join(' '))
   console.log('FAILURES: ' + results.failures.length)
   for (const f of results.failures) console.log('  - ' + f.id + ': expected ' + f.expected + ' | got: ' + f.actual.slice(0, 200))
   console.log('metrics: ' + JSON.stringify(results.metrics))
   console.log('tokenCost: ' + JSON.stringify(results.tokenCost))
-  console.log('results written to: ' + repoResults)
+  console.log('output destinations: ' + writePlan.written.map((d) => d.kind + '=' + d.path).join(' | '))
 }
 
 main().catch((e) => { console.error('EVAL FAILED:', e); process.exit(1) })

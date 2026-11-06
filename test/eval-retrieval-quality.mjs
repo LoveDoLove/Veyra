@@ -17,6 +17,7 @@ import path from 'node:path'
 import { execSync } from 'node:child_process'
 import { createToolHarness } from '../src/tools.mjs'
 import { buildRecallContext } from '../src/context.mjs'
+import { publishEvalResult } from './helpers/eval-output.mjs'
 
 const RUN = fs.mkdtempSync(path.join(os.tmpdir(), 'veyra-eval-rq-'))
 const FIX = path.join(RUN, 'fixture')
@@ -147,9 +148,14 @@ out.metrics = {
   tokenCostApprox: { armA_recallContext: Math.round(ctxA.length / 4), armB_recallContext: Math.round(ctxB.length / 4) },
 }
 out.finishedAt = new Date().toISOString()
-fs.writeFileSync(path.join(RUN, 'results.json'), JSON.stringify(out, null, 2))
-if (process.env.VEYRA_EVAL_WRITE_TRACKED !== '0') fs.writeFileSync('test/eval-retrieval-quality-results.json', JSON.stringify(out, null, 2))
-else console.log('tracked eval artifact write skipped (VEYRA_EVAL_WRITE_TRACKED=0)')
+const writePlan = publishEvalResult(out, {
+  trackedPath: path.resolve('test/eval-retrieval-quality-results.json'),
+  runPath: path.join(RUN, 'results.json'),
+  argv: process.argv,
+  env: process.env,
+  cwd: process.cwd(),
+})
+console.log('[eval-output] destinations: ' + writePlan.written.map((d) => d.kind + '=' + d.path).join(' | '))
 
 console.log('=== eval-retrieval-quality ===')
 for (const [dim, d] of Object.entries(out.dims)) for (const c of d.checks) console.log((c.pass ? 'PASS' : 'FAIL'), dim, c.id, '|', c.name, '=>', c.actual)
