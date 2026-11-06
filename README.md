@@ -34,7 +34,7 @@ Veyra runs two complementary layers that answer different questions:
 - **Change intelligence.** Repository changes reach the agent context automatically — a change summary leads the recall block, with the trust impact of that recall — and `veyra_change_impact` analyzes an explicit set of changed files: affected memories, affected evidence anchors, optional review candidates, per-category summary counts. Candidates are never auto-promoted to canonical.
 - **Health and maintenance.** `veyra_health` and `/veyra health` report memory-health findings read-only, plus write-gate accounting — how many learning decisions were accepted, merged, dropped or deferred, and why; the bundled `memory-maintenance` skill applies lifecycle actions (keep / supersede / invalidate / forget / tombstone / revalidate / defer) only on explicit request, with safety limits and before/after reporting.
 - **Human surfaces.** `/veyra` slash commands, a read-only Knowledge Observatory, and an interactive Network Graph at `/veyra` in DSH Web.
-- **One runtime npm dependency.** `@lovedolove/dsh-codebase-memory-mcp` — the standalone Codebase Memory bridge package — which drives the external native daemon. Everything else is pure ESM with no runtime dependencies; the package is ~198 kB packed.
+- **Declared runtime dependency.** Veyra declares `@lovedolove/dsh-codebase-memory-mcp` in [`package.json`](package.json) for the standalone Codebase Memory bridge package, which drives the external native daemon. Veyra’s own source is ESM with no other runtime npm dependencies; the package is ~198 kB packed.
 
 ---
 
@@ -115,7 +115,7 @@ Code Intelligence is a structural layer that connects Veyra to the external
 daemon. The bridge code — repository discovery, the graph client, the
 code-intelligence engine, the watcher, and the `cbm_*` tool definitions —
 lives in the standalone [`@lovedolove/dsh-codebase-memory-mcp`](https://www.npmjs.com/package/@lovedolove/dsh-codebase-memory-mcp)
-package, which Veyra declares as its one runtime dependency. Veyra itself
+package, which Veyra declares as a runtime dependency in [`package.json`](package.json). Veyra itself
 ships no native binary and no bridge internals: it re-exposes the six
 `cbm_*` tools plus `veyra_code_status` / `veyra_change_impact`, and keeps
 only `src/code/linking.mjs` (evidence-anchor ↔ code freshness) and
@@ -353,8 +353,8 @@ npm test               # node --test test/*.test.mjs  (806 tests, 800 pass, 6 sk
 npm run pack:check     # npm pack --dry-run — what would be published
 ```
 
-CI runs both on Node 22 and 24 for every push and pull request.
-Publishing is automatic: every push to `main` publishes to npm (patch-bumped first if the version already exists) unless the commit message contains `[skip publish]`. Every published version gets a matching GitHub Release tagged `vX.Y.Z`.
+CI runs tests on Node 22 and 24 for every push and pull request ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+npm publishing is handled by [`.github/workflows/publish-npm.yml`](.github/workflows/publish-npm.yml): it runs on a pushed `v*.*.*` tag or manual `workflow_dispatch` (with a `version` input). The workflow validates the release version/tag, checks that the version is not already on npm, runs `npm ci`, `npm run build` (if present), `npm test`, verifies runtime dependencies, publishes to npm, and creates a matching GitHub Release (`vX.Y.Z`) when needed.
 
 ---
 
@@ -362,13 +362,13 @@ Publishing is automatic: every push to `main` publishes to npm (patch-bumped fir
 
 | | |
 | --- | --- |
-| Current release | `0.1.70` |
+| Current release | `0.1.71` ([GitHub release](https://github.com/LoveDoLove/Veyra/releases/tag/v0.1.71), [npm](https://www.npmjs.com/package/@lovedolove/veyra/v/0.1.71)) |
 | Node | `>=22.5.0 <25.0.0` |
 | DSH | `>=0.1.2-rc.1 <0.3.0-0` |
-| Verified on | DSH `0.1.7-rc.2` (plugin boot, tools, `/veyra` + `/veyra/graph`); DSH `0.2.0-rc.1` (real compatibility gate + composed-host-service runtime); DSH `0.2.0-rc.2` (composed host-service runtime + real `ToolRuntime` tool-output validation against the declared range); CI on Node 22 and 24 |
+| Verified on  | DSH `0.1.7-rc.2` (plugin boot, tools, `/veyra` + `/veyra/graph`); DSH `0.2.0-rc.1` (real compatibility gate + composed-host-service runtime); DSH `0.2.0-rc.2` (composed host-service runtime + real `ToolRuntime` tool-output validation against the declared range); DSH `0.2.2-rc.1` (test/runtime composition compatibility fixes for tool-executor and settings/prompt effect handling; see [CHANGELOG.md](CHANGELOG.md)); CI on Node 22 and 24 |
 | Profiles | Installed per profile (`web`, `tui`, …); Settings section and Network Graph require the web surface |
 | Storage | `node:sqlite` + FTS5, one DB per project under the Veyra home |
-| Code Intelligence | Bridge declared as runtime dependency `@lovedolove/dsh-codebase-memory-mcp`; the external `codebase-memory-mcp` native daemon is optional — Code Intelligence degrades, memory layer is unaffected (binary: MIT, DeusData; bridge: MIT, LoveDoLove) |
+| Runtime dependency | `@lovedolove/dsh-codebase-memory-mcp` (declared in [`package.json`](package.json)); the external `codebase-memory-mcp` native daemon remains optional — Code Intelligence degrades gracefully, the memory layer is unaffected (binary: MIT, DeusData; bridge: MIT, LoveDoLove) |
 | License | MIT |
 
 Veyra is on a pre-1.0 `0.1.x` line — see the [CHANGELOG](https://github.com/LoveDoLove/Veyra/blob/main/CHANGELOG.md) for what shipped. APIs and command surface may still change between minor versions.
