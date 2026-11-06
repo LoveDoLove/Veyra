@@ -133,6 +133,32 @@ Separate query retrieval tests from automatic prompt-injection tests. A manual `
 
 **Exit:** a compact, deterministic benchmark set with explicit expected outcomes and no dependence on the user's live store.
 
+#### Phase 1 closure — Issue #3 real-world effectiveness experiment preparation (closed, `BLOCKED`)
+
+- **Final classification:** `BLOCKED` (documentation closure). **No Agent/model/API/network experiment was executed.** This records preparation/investigation evidence only and makes **no claim of experiment readiness or real-world retrieval effectiveness**.
+- **Phase 1.1 report (preparation, `BLOCKED`):** `/tmp/veyra-phase1-1-agent-delivery-preflight-report.md` (read-only static investigation; not a repo file). Confirmed Veyra `veyra:recall` registration/provider path is non-required (order 200) and enters agent request construction indirectly through the DSH system-prompt/surface path; actual delivery to a real Coding Agent session remained unproven.
+- **Phase 1.2 report (preparation, `BLOCKED`):** [`/tmp/veyra-phase1-2-observation-credential-report.md`](</tmp/veyra-phase1-2-observation-credential-report.md>) (28,285 bytes, read-only static investigation of installed DSH `@deepseek-ai/dsh` 0.2.2-rc.1 / Cordis 4.1.0 / Veyra `@lovedolove/veyra` 0.1.71, HEAD `2c59c60`; no Agent/model/API/network calls; no credential access/copy/print/disclosure; no DSH Web/plugin/profile/config changes; no eval/test execution).
+
+**Verified (static evidence):**
+- Low-level `dsh-llm` Cordis `llm/stream` waterfall exists before `adapterStream` dispatch/iteration in the inspected path, so pre-`adapterStream` options/messages may be observable *in principle*; **not a supported/verified delivery-proof mechanism** under constraints. `adapterStream` projects files/images/tool updates before adapter dispatch, so waterfall observation is not identical to final adapter wire payload. Agent-loop passes frozen `markAgentLoopRequest` request data (`messages`/tool history/tools/session metadata/signal) to `preparedCall?.stream(request)` / `ctx.llm.stream(request)`.
+- Durable/headless surfaces are insufficient for full outbound request proof: `dsh-session` has `request/header`/`request/context`; no `request/body` or `request/messages` durable event found in inspected session surface; `request/header` carries envelope/provider/model/reason/series metadata (not message bodies/system prompt text); headless `--json` emits durable/run NDJSON envelope, not outbound request bodies.
+- Credential precedence is clear in `dsh-credentials-local`: managed file `<resolved DSH home>/.credentials.yaml` (source `file`) > inherited launch env `process` layer (source `env`) > dotenv fallback `project-env` then `user-env` via `dsh-launch-environment` snapshot (`SOURCE_ORDER=["process","project-env","user-env"]`). DeepSeek API-key adapter resolves credentials service ref else launch-env ambient; missing => `MISSING_CREDENTIAL`. DeepSeek account resolves token; missing => `ACCOUNT_SIGN_IN_REQUIRED`. Headless patch disables `credentials`/`authorization`/`deepseek-account`.
+- Issue #3 masking/oracle preregistration manifest was prepared (git-verified SHAs: pre-fix `86b442235bbb6539aef20202b58339d8537e3a5e`; fix `0c97f7ee`; follow-ups `c6b0d215`, `d205366`; pre-registered P0 classifier oracle from fix context; P1/P2 scope-dependent). **Prepared only — not applied or verified in temp workspaces; no snapshots modified; no tests executed.**
+
+**Unresolved (blockers):**
+- No supported mechanism found to observe the **full outbound model request/messages** (including Veyra-injected `veyra:recall` content) for a real DSH Agent run before network transmission without custom in-composition hooks/mocks/installed-package modification. Actual `veyra:recall` delivery to a real Coding Agent session remains unproven.
+- No supported pre-network **capture-and-abort** mechanism (no headless CLI/API flag; no durable request-body artifact; low-level `llm/stream` observe-and-abort would require custom composition hook/protocol handling — unsupported/NOT_VERIFIED).
+- **Credential isolation is not verified/guaranteed** without secret-safe runtime-controlled proof (actual `DSH_HOME`/cwd/launch layers, dotenv files, default home resolution, and any other provider/account fallbacks were not inspected for secret presence and must not be).
+- Masking/oracle preregistration manifest not applied/verified; runtime parity, redacted delivered-context capture, and execution authorization remain unresolved.
+
+**Conditions required to reconsider Phase 1 experiment:**
+1. An *approved, supported* (or separately approved and reviewed) mechanism to capture final outbound LLM request/messages for a real agent run and deterministically abort before provider network transmission, with full message content, credential-safe operation, and no forbidden mocks/installed-package modification; plus proof that Veyra `veyra:recall` is present/absent as intended in delivered context.
+2. Approved secret-safe proof of credential isolation/no unintended fallback in the exact isolated execution path (including launch layers, DSH home, cwd dotenv behavior, and relevant provider/account fallbacks), without accessing/copying/printing existing `~/.dsh` credentials.
+3. Masking/oracle preregistration applied and verified in isolated temp workspaces (equal masking at `86b4422`, independent evaluator oracle, pre-registered P0/P1/P2 commands/adaptation rules, redaction plan).
+4. Explicit approval for any live paired Baseline/Treatment Agent/model/network/credential-bearing run, with pre-registered protocol and outcome classes (`IMPROVEMENT`/`NO_MEASURABLE_IMPROVEMENT`/`REGRESSION`/`INCONCLUSIVE`).
+
+**Phase 1 status:** **closed** pending external capability changes (supported request observation/capture-and-abort) or a newly verified safe execution strategy that satisfies all conditions above. Do not create another experiment phase or introduce alternative runtime hooks as part of this closure.
+
 ### Phase 2 — Measure the whole delivery path
 
 For each task, capture:
