@@ -152,21 +152,39 @@ Report counts and denominators. Do not combine synthetic retrieval metrics with 
 
 **Exit:** a clear diagnosis of whether failures originate in query construction, candidate generation, ranking, applicability/trust, context budgeting/rendering, delivery timing, or agent use.
 
-### Phase 3 — Prioritize one smallest useful vertical slice
+#### Phase 2.2 — Paired agent-experiment feasibility (closed, inconclusive)
 
-Rank only reproduced issues by user impact, confidence in root cause, expected measurable benefit, implementation risk, runtime cost, and maintenance cost.
+Phase 2.2 (2026-11-06) investigated whether paired Coding Agent experiments could be run reproducibly on DSH 0.2.2-rc.1 with isolated workspaces/Veyra homes, captured transcripts/context/diffs/tests/metadata, and controlled execution settings. **Feasibility investigation only; evidence below is summarized from read-only inspection and non-engineering config probes (no live agent runs).**
 
-Prefer improving an existing owner (`src/context.mjs`, `src/retrieve.mjs`, `src/intent.mjs`, or `src/code/retrieval.mjs`) over introducing another retrieval engine or service.
+- **Final classification:** `INCONCLUSIVE`.
+- **Phase 2.2.1 — runtime feasibility:** `PARTIALLY_FEASIBLE` (read-only CLI/implementation inspection + non-engineering config probes; no live agent run).
+- **Phase 2.2.2 — paired configuration control verification:** `PARTIALLY_VERIFIED`. Paired experiments were not executed and no experimental results were produced.
+- **Paired Coding Agent experiments were NOT executed.** No baseline/treatment Coding Agent tasks were run; no transcripts, diffs, acceptance outputs, or live `--json` NDJSON session captures were produced as paired evidence.
+- **No production retrieval defect or regression was established.** Phase 2.2 closed on control/runner feasibility and does not assert that Veyra automatic context delivery, retrieval, or runtime behavior is broken in production.
 
-Before implementation, specify:
-- the exact failure and reproduction;
-- the owning module;
-- the intended observable behavior;
-- the regression test and benchmark case;
-- effects on project isolation, eligibility, authority, evidence, freshness, contradiction visibility, latency, and context budget;
-- explicit non-goals and rollback boundary.
+**Preserved distinction (do not conflate):**
+- **Verified source-level behavior:** `normalizeRecallLimit` accepts explicit 0 ([`src/config.mjs`](src/config.mjs)); `buildRecallContext` returns `''` at limit 0 and `createContextProvider()` contributes no historical recall text ([`src/context.mjs`](src/context.mjs)); `hybridRetrieve`/`recall` short-circuit at limit 0 ([`src/retrieve.mjs`](src/retrieve.mjs)).
+- **Runtime behavior not verified end-to-end:** DSH runtime suppression by `recallLimit: 0` was **not** exercised in a live composed headless/web agent run (headless lacked Veyra; web patch application was not demonstrated).
+- **Experiments not executed / controls unverified:** reproducible baseline/treatment controls (differing only by Veyra historical context availability) were **not** proven in installed composed profiles.
 
-**Exit:** one reviewable implementation proposal. This document alone does not authorize implementation.
+**Concrete blockers (evaluation/runner limitations, not confirmed production defects):** Veyra absent from the composed headless profile (entry `id: veyra`, `@lovedolove/veyra` present in web dump but not observed in headless dump ids); web `--patch` entry targeting unresolved (isolated probe reported `patch: entry "veyra" not found` despite Veyra appearing in the full web dump; loader/target semantics unresolved); model/tool/permission parity not fully established (only sampled key settings compared; full tool list, permission/approval presets, budgets, and execution-relevant runtime settings not exhaustively diffed); live session and NDJSON capture not execution-verified.
+
+**Closed pending a genuinely reproducible isolated runner.** Do **not** schedule another configuration-probing phase. Revisit only when a supported, minimal isolated runner can (1) load Veyra in the chosen profile with verified `recallLimit:0` baseline vs seeded treatment under isolated `DSH_HOME`/`VEYRA_HOME`/cwd, (2) produce full redacted config diffs proving only the intended Veyra-context delta, and (3) run an authorized non-sensitive canary with `--json` capture confirming session isolation and context presence/absence.
+
+### Phase 3 — Prioritize one smallest useful vertical slice (closed, NO_JUSTIFIED_VERTICAL_SLICE)
+
+**Final classification:** `NO_JUSTIFIED_VERTICAL_SLICE` (2026-11-06).
+
+Outcome (based on existing verified evidence only):
+- **No production retrieval change or regression test was justified.** No single demonstrated, current production retrieval/delivery limitation met Phase 3 guardrails (actual demonstrated limitation, deterministic regression test, minimal change, independent of Phase 2.2 paired experiments, no speculative ranking change, preserves trust/evidence/applicability/contradiction/stale-record/project-isolation invariants).
+- **Current evaluations passed (recorded/evidence-backed):** retrieval quality D1–D6 pass, 10/10 checks, 0 failures, `nextSlice: null` (recorded in [`test/eval-retrieval-quality-results.json`](test/eval-retrieval-quality-results.json), pre-existing modified worktree artifact, read-only; harness [`test/eval-retrieval-quality.mjs`](test/eval-retrieval-quality.mjs), 2026-11-05T13:42:15.768Z run `/tmp/veyra-eval-rq-E9HSST`); Phase 2.1 task-shaped integrity pass 48/48 checks, 5/5 tasks, isolation pass (recorded in `/tmp/veyra-phase2-1-report.json`, phase `2.1-integrity`, run `/tmp/veyra-phase2-1-1793951960818-5el6`; harness [`test/eval-phase2-task-shaped.mjs`](test/eval-phase2-task-shaped.mjs), untracked); config/plugin `node --test test/config.test.mjs test/plugin.test.mjs` pass including `recallLimit 0` disables automatic context. **Phase 1 / Phase 1.1 task-shaped counts not claimed here as verified pass totals:** [`test/eval-phase1-task-shaped.mjs`](test/eval-phase1-task-shaped.mjs) (untracked, 255 lines) defines 4 cases (T1–T4) and 14 checks (C1.1–C1.4, C2.1–C2.4, C3.1–C3.3, C4.1–C4.3) but no `/tmp/veyra-phase1-task-shaped-report.json` was found; [`test/eval-phase1-1-applicability-contradiction.mjs`](test/eval-phase1-1-applicability-contradiction.mjs) (untracked) exists but no `/tmp/veyra-phase1-1-report.json` was found. Tool recall relevance floor remains covered by the passing suite/evals above.
+- **Phase 2.2 remains `INCONCLUSIVE` and was not used as defect evidence.** Paired agent experiments were not executed; end-to-end DSH runtime suppression/controls remain unverified per Phase 2.2 closure.
+- **Future implementation requires a reproducible, current production limitation** (not a stale resolved memory, not a fixture defect, not a snapshot/harness side effect), with the exact failure/reproduction, owning module, observable behavior, regression test + benchmark case, invariant/latency/budget effects, non-goals, and rollback boundary specified before implementation.
+- **Phase 3 is closed; do not schedule speculative retrieval changes.** Revisit only when new verified evidence demonstrates a real production limitation meeting the guardrails above.
+
+**Evaluation harness safety (recorded, then hardened):**
+- **Historical issue:** [`test/eval-v0169-ab.mjs`](test/eval-v0169-ab.mjs) previously wrote [`test/eval-v0169-results.json`](test/eval-v0169-results.json) unconditionally and did not honor `VEYRA_EVAL_WRITE_TRACKED=0`; an accidental overwrite occurred and pre-existing local snapshot recovery remains unresolved (do not restore/modify/commit that JSON without explicit user decision).
+- **Mitigation implemented (verified):** shared output policy [`test/helpers/eval-output.mjs`](test/helpers/eval-output.mjs) + deterministic tests [`test/eval-output.test.mjs`](test/eval-output.test.mjs), integrated into [`test/eval-v0169-ab.mjs`](test/eval-v0169-ab.mjs) and [`test/eval-retrieval-quality.mjs`](test/eval-retrieval-quality.mjs). Supports `--output`/`VEYRA_EVAL_OUTPUT`, honors `VEYRA_EVAL_WRITE_TRACKED=0/1`, refuses tracked/run/explicit path collisions, and does not silently overwrite existing tracked artifacts without authorization. Use isolated output paths for ad hoc runs; treat any tracked snapshot write as an explicit, authorized action.
 
 ### Phase 4 — Validate product impact
 
