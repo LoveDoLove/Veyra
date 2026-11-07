@@ -349,7 +349,7 @@ Design rationale and a guided tour of every mechanism: the [technical whitepaper
 ## Development
 
 ```sh
-npm test               # node --test test/*.test.mjs  (806 tests, 800 pass, 6 skipped)
+npm test               # node --test test/*.test.mjs
 npm run pack:check     # npm pack --dry-run — what would be published
 ```
 
@@ -362,7 +362,6 @@ npm publishing is handled by [`.github/workflows/publish-npm.yml`](.github/workf
 
 | | |
 | --- | --- |
-| Current release | `0.1.71` ([GitHub release](https://github.com/LoveDoLove/Veyra/releases/tag/v0.1.71), [npm](https://www.npmjs.com/package/@lovedolove/veyra/v/0.1.71)) |
 | Node | `>=22.5.0 <25.0.0` |
 | DSH | `>=0.1.2-rc.1 <0.3.0-0` |
 | Verified on  | DSH `0.1.7-rc.2` (plugin boot, tools, `/veyra` + `/veyra/graph`); DSH `0.2.0-rc.1` (real compatibility gate + composed-host-service runtime); DSH `0.2.0-rc.2` (composed host-service runtime + real `ToolRuntime` tool-output validation against the declared range); DSH `0.2.2-rc.1` (test/runtime composition compatibility fixes for tool-executor and settings/prompt effect handling; see [CHANGELOG.md](CHANGELOG.md)); CI on Node 22 and 24 |

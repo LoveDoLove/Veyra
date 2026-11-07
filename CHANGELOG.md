@@ -1,24 +1,23 @@
-## [0.1.70] - 2026-11-05
-
-### Fixed
-
-- **Retrieval ranking, eligibility, integrity, and polarity**: stabilized eligible memory ranking and preserved retrieval integrity, corrected trailing-without-polarity classification, and filtered zero-signal tool recall results so non-empty `veyra_recall` queries with no lexical/semantic relevance may return `count: 0, items: []` instead of unrelated matches.
+## [0.1.72] - 2026-11-07
 
 ### Added
 
-- **`veyra_change_impact` explicit rename evidence (Phase 1, additive)**: optional `renames: [{ from, to }]` maps a changed rename target to its original anchored path for unambiguous impact/trust classification. Paths are normalized via repository-safe resolution; malformed, conflicting, traversal, and out-of-repo rename evidence fails closed. Original stored evidence, authority, and validation are unchanged, and freshness remains conservative (a missing original path is not proof that a moved path is valid).
+- **P1 Stage A: Generation Evidence** (`veyra_apply_generation_v1`, local metadata-only): records bounded recall-generation completion evidence for statuses `generated`, `generated_empty`, and `generation_error` (one completion event per provider invocation; invocation-local deduplication prevents duplicate `generation_error` on the same invocation path). Evidence is bounded/corruption-tolerant and excludes raw queries, rendered prompt content, secrets, and unsafe hashes by default; `queryClass` and `errorClass` are bounded metadata. `delivery.status` and `used.status` remain `NOT_VERIFIED` (`source: stage-a-local`) — **no Delivered/Used evidence is verified in Stage A**. Optional explicit outcome linkage (`veyra_apply_outcome_link_v1`) is recorded only when a caller supplies a valid, retained `generationEventId`; linkage is explicit/non-inferential and does not assert actual usage or causality.
+- **P3: Write-Gate Trace** (`write_gate_trace_v1`, additive): records bounded, metadata-only trace entries for `ACCEPT`/`MERGE`/`DROP`/`DEFER` write-gate decisions. MERGE traces capture actual before/after scalars (including `authorityBefore`/`authorityAfter`) from the affected record; authority remains unchanged by MERGE. Trace storage is ring-bounded/size-capped, corruption-tolerant, and isolated from aggregate `write_gate_ledger` decisions (trace failures do not change learning verdicts or prevent the aggregate ledger attempt). `veyra_health` reporting is additive/read-only and includes P1 generation/trace summaries.
+
+### Tests / verification (local, verified 2026-11-07)
+
+- New regression coverage: `test/apply-generation-evidence.test.mjs` (P1 generation states, bounds/privacy, project isolation, explicit linkage, NOT_VERIFIED reporting, dedup/frozen-Error regressions) and `test/write-gate-trace.test.mjs` (P3 trace verdicts/MERGE scalars, bounds/isolation/corruption recovery, trace-failure isolation, additive health).
+- Integration run (read-only evaluation tracking): `cd /home/lovedolove/projects/Veyra && VEYRA_EVAL_WRITE_TRACKED=0 node --test test/*.test.mjs` → **932 tests, 932 pass, 0 fail, 0 skipped, 0 cancelled** (commit `bdeaa068c24385990dc1648eb827a3f4c3606f05`, `feat: add learning trace and generation evidence`, 2026-11-07T19:18:43+08:00, local `main`; not pushed/no CI for that SHA at review time).
 
 ### Compatibility / limitations
 
-- `veyra_change_impact` gains an optional `renames` field (schema-compatible, additive). `veyra_recall` behavior is corrected for non-empty zero-signal queries and may return fewer results.
-- D3.2 Phase 1 is explicit rename evidence only: no automatic git rename detection, no dependency/schema migrations, and no retrieval ranking changes. Rename mappings must be unambiguous.
-
+- Additive, metadata-only observability; no DSH Web/Profile/runtime changes. Existing write-gate decisions, recall/context rendering behavior, and explicit `veyra_feedback` semantics are preserved. P1 Stage B (Host/API delivery/usage evidence) is gated/deferred; Stage A delivery/used remain `NOT_VERIFIED`.
 
 ## [0.1.71] - 2026-11-05
 
 ### Added
-- Added `veyra_stale_ledger`, a read-only runtime diagnostic tool for enumerating stale Veyra memory records (`validation=stale`). It uses the same project/reusable store resolution and merge semantics as `veyra_health` (project-first, first-seen deduplication), supports bounded pagination (`offset`, `limit`) with total/returned/completion indicators, returns complete record fields for auditing, and includes evidence-anchor/freshness/path-resolution diagnostics where available. Diagnostic fields that cannot be resolved are reported explicitly as unavailable/unresolved (no inference). The tool is strictly read-only and does not modify memory, lifecycle, validation, authority, evidence state, or run maintenance/revalidation/promotion/cleanup.
-- Added focused `veyra_stale_ledger` coverage for stale filtering, health-parity store semantics, read-only behavior, pagination without omissions/duplicates, and explicit unresolved diagnostics. Updated tool-count/tool-name expectations in plugin, compatibility, and DSH runtime tests.
+- Added `veyra_stale_ledger`, a read-only runtime diagnostic tool for enumerating stale Veyra memory records (`validation=stale`). It uses the same project/reusable store resolution and merge semantics as `veyra_health` (project-first, first-seen deduplication), supports bounded pagination (`offset`, `limit`) with total/returned/completion indicators, returns complete record fields for auditing, and includes evidence-anchor/freshness/path-resolution diagnostics where available. Diagnostic fields that cannot be resolved are reported explicitly as unavailable/unresolved (no inference). The tool is strictly read-only and does not perform lifecycle, maintenance, promotion, revalidation, cleanup, or persistence writes.
 
 ### Fixed
 - Updated `test/m4-applicability-temporal.test.mjs` tool-surface assertion (16→17) for the intentional `veyra_stale_ledger` addition.
@@ -27,7 +26,7 @@
 ### Notes
 - `veyra_stale_ledger` is intended to safely expose the stale dataset needed for evidence audits in the same runtime context as `veyra_health`. Loading the updated tool into an already-running authoritative DSH runtime requires an explicit runtime reload/update path; direct authoritative SQLite file access remains intentionally avoided.
 - This patch does not claim that an authoritative runtime enumeration of all stale records has been completed.
-- The existing `v0.1.71` tag is preserved unchanged per release constraints. The tag-triggered `publish-npm.yml` workflow checks out the tag ref; publishing fixed code under an immutable `v0.1.71` tag is not possible without moving the tag (disallowed) or an approved workflow change. DSH Web deployment remains a separate phase.
+- Historical release evidence (verified 2026-11-07): npm published `@lovedolove/veyra@0.1.71` at `2026-11-05T17:24:50.655Z`; Git tag `v0.1.71` points to commit `d08ea67f4380cb27072312227a317bc0e93035c7` (tagged 2026-11-06T01:22:28+08:00); GitHub Release `v0.1.71` was published `2026-11-05T17:23:09Z` (release body summarized PR #4 “fix: DSH 0.2.2-rc.1 compat for v0.1.71 tests/runtime fixtures”).
 
 ## [0.1.70] - 2026-11-05
 
@@ -43,12 +42,6 @@
 
 - `veyra_change_impact` gains an optional `renames` field (schema-compatible, additive). `veyra_recall` behavior is corrected for non-empty zero-signal queries and may return fewer results.
 - D3.2 Phase 1 is explicit rename evidence only: no automatic git rename detection, no dependency/schema migrations, and no retrieval ranking changes. Rename mappings must be unambiguous.
-
-
-## [0.1.71] - 2026-11-05
-
-### Added
-- Added `veyra_stale_ledger`, a read-only runtime diagnostic tool for enumerating stale Veyra memory records (`validation=stale`). It uses the same project/reusable store resolution and merge semantics as `veyra_health` (project-first, first-seen deduplication), supports bounded pagination (`offset`, `limit`) with total/returned/completion indicators, returns complete record fields for auditing, and includes evidence-anchor/freshness/path-resolution diagnostics where available. Diagnostic fields that cannot be resolved are reported explicitly as unavailable/unresolved (no inferred states). The tool is strictly read-only and does not perform lifecycle, maintenance, promotion, revalidation, cleanup, or persistence writes.
 
 ## [0.1.69] - 2026-11-04
 
