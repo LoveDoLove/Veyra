@@ -304,6 +304,14 @@ const LEDGER_REASON_LIMIT = 24
 /** Recent verdicts kept as a ring, newest last. */
 const LEDGER_RECENT_LIMIT = 8
 
+// --- P3 write-gate trace (bounded, metadata-only, additive) -----------------
+export const WRITE_GATE_TRACE_KEY = 'write_gate_trace_v1'
+const TRACE_ENTRY_LIMIT = 64
+const TRACE_ENTRY_HARD_LIMIT = 128
+const TRACE_SERIALIZED_MAX_BYTES = 32 * 1024
+const TRACE_REASON_MAX_CHARS = 64
+const TRACE_HASH_MAX_CHARS = 128
+
 function emptyLedger() {
   return {
     total: 0,
@@ -339,6 +347,172 @@ function normalizeLedger(value) {
     }
   }
   return ledger
+}
+
+
+function emptyTrace() {
+  return { v: 1, updatedAt: null, nextSeq: 1, entries: [] }
+}
+
+function normalizeTraceReason(reason) {
+  return String(reason ?? 'unknown').slice(0, TRACE_REASON_MAX_CHARS)
+}
+
+function normalizeTraceScope(store, verdict) {
+  const raw = verdict?.scope ?? store?.scope ?? store?.projectId ? 'project' : 'unknown'
+  if (raw === 'project' || raw === 'reusable') return raw
+  return store?.scope === 'reusable' ? 'reusable' : 'project'
+}
+
+function evidenceSummaryFrom(candidate) {
+  const evidence = Array.isArray(candidate?.evidence) ? candidate.evidence : []
+  let hasPathAnchor = false
+  let hasTestPass = false
+  let hasTestFail = false
+  for (const e of evidence) {
+    if (e && typeof e === 'object' && typeof e.path === 'string' && e.path.trim()) hasPathAnchor = true
+    const text = typeof e === 'string' ? e : `${e?.path || ''} ${e?.note || ''}`
+    if (/(^|[^a-z0-9-])test-passed([^a-z0-9-]|$)/i.test(text)) hasTestPass = true
+    if (/(^|[^a-z0-9-])test-failed([^a-z0-9-]|$)/i.test(text)) hasTestFail = true
+  }
+  return { anchorCount: evidence.length, hasPathAnchor, hasTestPass, hasTestFail }
+}
+
+function provenanceClassFrom(candidate) {
+  if (candidate?.source?.userContextOnly === true) return 'user-context-only'
+  if (candidate?.source?.automatic === false) return 'explicit'
+  if (candidate?.source?.automatic === true) return 'automatic'
+  return 'unknown'
+}
+
+function mergeEffectSnapshot(before, after) {
+  if (!before || !after) return undefined
+  return {
+    observationsBefore: Number(before.source?.observations) || 1,
+    observationsAfter: Number(after.source?.observations) || 1,
+    validationBefore: typeof before.validation === 'string' ? before.validation : 'unknown',
+    validationAfter: typeof after.validation === 'string' ? after.validation : 'unknown',
+    confidenceBefore: typeof before.confidence === 'string' ? before.confidence : 'unknown',
+    confidenceAfter: typeof after.confidence === 'string' ? after.confidence : 'unknown',
+    authorityBefore: typeof before.authority === 'string' ? before.authority : 'unknown',
+    authorityAfter: typeof after.authority === 'string' ? after.authority : 'unknown',
+  }
+}
+
+function normalizeTraceEntry(entry) {
+  if (!entry || typeof entry !== 'object' || typeof entry.decision !== 'string') return null
+  const decision = entry.decision.toUpperCase()
+  if (!['ACCEPT', 'MERGE', 'DROP', 'DEFER'].includes(decision)) return null
+  const out = {
+    traceId: typeof entry.traceId === 'string' ? entry.traceId.slice(0, 64) : null,
+    at: typeof entry.at === 'string' ? entry.at : null,
+    decision,
+    reason: normalizeTraceReason(entry.reason),
+    source: 'learn.writeGate',
+    scope: entry.scope === 'reusable' ? 'reusable' : (entry.scope === 'project' ? 'project' : 'unknown'),
+  }
+  if (typeof entry.candidateHash === 'string' && entry.candidateHash) out.candidateHash = entry.candidateHash.slice(0, TRACE_HASH_MAX_CHARS)
+  if (entry.candidateClass && typeof entry.candidateClass === 'object') {
+    const cc = {}
+    if (typeof entry.candidateClass.kind === 'string') cc.kind = entry.candidateClass.kind.slice(0, 32)
+    if (typeof entry.candidateClass.authority === 'string') cc.authority = entry.candidateClass.authority.slice(0, 32)
+    if (Object.keys(cc).length) out.candidateClass = cc
+  }
+  if (typeof entry.targetRecordId === 'string' && entry.targetRecordId) out.targetRecordId = entry.targetRecordId.slice(0, 128)
+  if (typeof entry.provenanceClass === 'string') out.provenanceClass = entry.provenanceClass.slice(0, 32)
+  if (entry.evidenceSummary && typeof entry.evidenceSummary === 'object') {
+    const es = entry.evidenceSummary
+    out.evidenceSummary = {
+      anchorCount: Number.isFinite(es.anchorCount) && es.anchorCount >= 0 ? Math.trunc(es.anchorCount) : 0,
+      hasPathAnchor: es.hasPathAnchor === true,
+      hasTestPass: es.hasTestPass === true,
+      hasTestFail: es.hasTestFail === true,
+    }
+  }
+  if (entry.mergeEffect && typeof entry.mergeEffect === 'object') out.mergeEffect = { ...entry.mergeEffect }
+  return out.traceId && out.at ? out : null
+}
+
+function normalizeTrace(value) {
+  const trace = emptyTrace()
+  if (!value || typeof value !== 'object') return trace
+  trace.v = 1
+  trace.updatedAt = typeof value.updatedAt === 'string' ? value.updatedAt : null
+  trace.nextSeq = Number.isFinite(value.nextSeq) && value.nextSeq >= 1 ? Math.trunc(value.nextSeq) : 1
+  if (Array.isArray(value.entries)) {
+    for (const e of value.entries.slice(-TRACE_ENTRY_HARD_LIMIT)) {
+      const n = normalizeTraceEntry(e)
+      if (n) trace.entries.push(n)
+    }
+  }
+  return trace
+}
+
+function capTraceSize(trace) {
+  while (trace.entries.length > TRACE_ENTRY_LIMIT) trace.entries.shift()
+  let json = JSON.stringify(trace)
+  while (trace.entries.length > 0 && Buffer.byteLength(json, 'utf8') > TRACE_SERIALIZED_MAX_BYTES) {
+    trace.entries.shift()
+    json = JSON.stringify(trace)
+  }
+  return trace
+}
+
+export function recordWriteGateTrace(store, verdict, meta = {}) {
+  if (!store || typeof store.getMeta !== 'function' || typeof store.setMeta !== 'function') return null
+  if (!verdict || typeof verdict.decision !== 'string') return null
+  try {
+    let trace
+    try {
+      const raw = store.getMeta(WRITE_GATE_TRACE_KEY)
+      trace = raw ? normalizeTrace(JSON.parse(raw)) : emptyTrace()
+    } catch {
+      trace = emptyTrace()
+    }
+    const at = typeof meta.at === 'string' ? meta.at : new Date().toISOString()
+    const scope = normalizeTraceScope(store, verdict)
+    const seq = trace.nextSeq
+    trace.nextSeq = seq + 1
+    const prefix = scope === 'reusable' ? 'r' : 'p'
+    const entry = {
+      traceId: `wgt_${prefix}_${seq.toString(36).padStart(6, '0')}`,
+      at,
+      decision: verdict.decision.toUpperCase(),
+      reason: normalizeTraceReason(verdict.reason),
+      source: 'learn.writeGate',
+      scope,
+      provenanceClass: provenanceClassFrom(meta.candidate),
+      evidenceSummary: evidenceSummaryFrom(meta.candidate),
+    }
+    // candidateHash omitted by default unless explicitly provided and privacy-approved.
+    if (meta.candidateHash && typeof meta.candidateHash === 'string') entry.candidateHash = meta.candidateHash.slice(0, TRACE_HASH_MAX_CHARS)
+    if (meta.candidate && (meta.candidate.kind || meta.candidate.authority)) {
+      entry.candidateClass = {}
+      if (typeof meta.candidate.kind === 'string') entry.candidateClass.kind = meta.candidate.kind
+      if (typeof meta.candidate.authority === 'string') entry.candidateClass.authority = meta.candidate.authority
+    }
+    if (typeof meta.targetRecordId === 'string' && meta.targetRecordId) entry.targetRecordId = meta.targetRecordId.slice(0, 128)
+    if (meta.mergeEffect && typeof meta.mergeEffect === 'object') entry.mergeEffect = meta.mergeEffect
+    trace.entries.push(entry)
+    trace.updatedAt = at
+    capTraceSize(trace)
+    store.setMeta(WRITE_GATE_TRACE_KEY, JSON.stringify(trace))
+    return trace
+  } catch {
+    return null
+  }
+}
+
+export function readWriteGateTrace(store) {
+  if (!store || typeof store.getMeta !== 'function') return null
+  try {
+    const raw = store.getMeta(WRITE_GATE_TRACE_KEY)
+    if (!raw) return null
+    const trace = normalizeTrace(JSON.parse(raw))
+    return trace.entries.length > 0 ? trace : null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -427,6 +601,9 @@ function gateOnce(store, candidate, { related = [], workspace = null } = {}) {
   // learning. Strengthen the existing neighbor with accumulated evidence and
   // observations, while keeping the candidate inspectable.
   if (evolved.action === 'duplicate' && evolved.neighbor) {
+    let mergeBefore = null
+    let mergeAfter = null
+    let mergedRecord = null
     if (candidate.id) {
       store.put({
         ...candidate,
@@ -434,15 +611,32 @@ function gateOnce(store, candidate, { related = [], workspace = null } = {}) {
       })
     }
     if (evolved.neighbor.authority === AUTHORITIES.DERIVED) {
-      const strengthened = strengthenMemory(evolved.neighbor, candidate, { workspace })
+      const current = store.get(evolved.neighbor.id) || evolved.neighbor
+      mergeBefore = {
+        source: { observations: current.source?.observations },
+        validation: current.validation,
+        confidence: current.confidence,
+        authority: current.authority,
+      }
+      current.source = { ...(current.source || {}), writeGate: { decision: WRITE_GATES.MERGE, reason: 'near-duplicate-strengthened' } }
+      const strengthened = strengthenMemory(current, candidate, { workspace })
       store.put(strengthened)
+      mergedRecord = strengthened
+      mergeAfter = {
+        source: { observations: strengthened.source?.observations },
+        validation: strengthened.validation,
+        confidence: strengthened.confidence,
+        authority: strengthened.authority,
+      }
     }
     return {
       decision: WRITE_GATES.MERGE,
       reason: 'near-duplicate-strengthened',
-      record: null,
-      neighbor: evolved.neighbor,
+      record: null, // compat: no new record written
+      neighbor: mergedRecord || evolved.neighbor,
       evolveAction: evolved.action,
+      mergeBefore,
+      mergeAfter,
     }
   }
 
@@ -497,7 +691,19 @@ function gateOnce(store, candidate, { related = [], workspace = null } = {}) {
  */
 export function writeGate(store, candidate, options = {}) {
   const verdict = gateOnce(store, candidate, options)
-  recordWriteGateVerdict(store, verdict)
+  // Aggregate ledger is the existing source of truth; always attempt.
+  try { recordWriteGateVerdict(store, verdict) } catch {}
+  // Trace is additive metadata-only observability; must never affect verdict.
+  try {
+    const mergeEffect = verdict.mergeBefore && verdict.mergeAfter
+      ? mergeEffectSnapshot(verdict.mergeBefore, verdict.mergeAfter)
+      : undefined
+    recordWriteGateTrace(store, verdict, {
+      candidate,
+      targetRecordId: verdict.record?.id || verdict.neighbor?.id || null,
+      mergeEffect,
+    })
+  } catch {}
   return verdict
 }
 

@@ -15,6 +15,7 @@ import { injectionWarning } from './redact.mjs'
 import { recall, temporalState } from './retrieve.mjs'
 import { checkRecordFreshness } from './code/linking.mjs'
 import { classifyRecordTrust, TRUST_CATEGORIES } from './trust.mjs'
+import { recordGenerationEvidence } from './apply-generation-evidence.mjs'
 
 /** Evidence items rendered per record before the rest are summarised as a count. */
 export const CONTEXT_EVIDENCE_LIMIT = 3
@@ -787,56 +788,125 @@ function changeSummaryLines(changes, composed) {
   return lines
 }
 
-export function buildRecallContext({ veyraHome, cwd, query = '', limit = DEFAULT_RECALL_LIMIT, includeReusable = true, goal = null, changedFiles = null, degraded = false, budget = DEFAULT_RECALL_CHARS }) {
+function emitGenerationEvidence(projectStore, payload) {
+  try {
+    recordGenerationEvidence(projectStore, payload)
+  } catch {
+    // Stage A telemetry must never change recall/render behavior.
+  }
+}
+
+function inferGenerationQueryClass(query, changedFiles) {
+  if (changedFiles && changedFiles.length) return 'change_signal'
+  if (!query || !String(query).trim()) return 'empty'
+  return 'explicit_query'
+}
+
+export function buildRecallContext({ veyraHome, cwd, query = '', limit = DEFAULT_RECALL_LIMIT, includeReusable = true, goal = null, changedFiles = null, degraded = false, budget = DEFAULT_RECALL_CHARS, _generationQueryClass = null, _emitGenerationEvidence = true, _testThrowBeforeStoreOpen = false, _testThrowAfterStoreOpen = false, _testThrowFrozenError = false, _invocation = null } = {}) {
   if (limit === 0) return ''
   const workspace = cwd || process.cwd()
   const projectId = projectIdFor(workspace)
-  const projectStore = openProjectStore(veyraHome, projectId)
-  const reusableStore = includeReusable ? openReusableStore(veyraHome) : null
-  const records = recall({
-    projectStore,
-    reusableStore,
-    query,
-    goal,
-    limit,
-    includeReusable,
-    changedFiles,
-  })
-  if (records.length === 0) {
-    // GOAL.md Phase 2 — "no known history" must be a distinguishable state,
-    // not silence: an agent has to be able to tell apart "known solution /
-    // known failed solution / known unresolved / nothing remembered here".
-    // `limit: 0` above stays silent — recall is disabled there.
-    // Phase 3 — a change signal still reaches the agent even when no memory
-    // was recalled (changed files are context, not only an impact verdict).
-    return [
-      'Veyra recalled engineering memory',
-      '',
-      'No known engineering history: Veyra has no eligible recall for this query.',
-      'Absence of memory is not evidence. Verify against the repository.',
-      '',
-      ...changeSummaryLines(changedFiles, []),
-    ].join('\n')
+  let projectStore
+  let reusableStore
+  try {
+    if (_testThrowBeforeStoreOpen) throw new Error('test:before_store_open')
+    projectStore = openProjectStore(veyraHome, projectId)
+    if (_testThrowAfterStoreOpen) {
+      const e = new Error('test:after_store_open')
+      if (_testThrowFrozenError) Object.freeze(e)
+      throw e
+    }
+    reusableStore = includeReusable ? openReusableStore(veyraHome) : null
+    const records = recall({
+      projectStore,
+      reusableStore,
+      query,
+      goal,
+      limit,
+      includeReusable,
+      changedFiles,
+    })
+    if (records.length === 0) {
+      // GOAL.md Phase 2 — "no known history" must be a distinguishable state,
+      // not silence: an agent has to be able to tell apart "known solution /
+      // known failed solution / known unresolved / nothing remembered here".
+      // `limit: 0` above stays silent — recall is disabled there.
+      // Phase 3 — a change signal still reaches the agent even when no memory
+      // was recalled (changed files are context, not only an impact verdict).
+      const emptyText = [
+        'Veyra recalled engineering memory',
+        '',
+        'No known engineering history: Veyra has no eligible recall for this query.',
+        'Absence of memory is not evidence. Verify against the repository.',
+        '',
+        ...changeSummaryLines(changedFiles, []),
+      ].join('\n')
+      if (_emitGenerationEvidence) {
+        emitGenerationEvidence(projectStore, {
+          status: 'generated_empty',
+          queryClass: _generationQueryClass || inferGenerationQueryClass(query, changedFiles),
+          resultCount: 0,
+          recordRefs: [],
+          renderedChars: emptyText.length,
+          charBudget: budget,
+          scope: reusableStore ? 'mixed' : 'project',
+        })
+      }
+      return emptyText
+    }
+    projectStore.touch(records.filter((r) => r.scope !== 'reusable').map((r) => r.id))
+    if (reusableStore) reusableStore.touch(records.filter((r) => r.scope === 'reusable').map((r) => r.id))
+    // M6 Phase-1: compose the engineering-aware view (lifecycle, evidence,
+    // inbound supersession) before rendering. Read-time projection only.
+    const rendered = renderAgentContext(composeAgentContext(records, {
+      stores: [projectStore, reusableStore],
+      workspace,
+      changedFiles,
+      degraded,
+    }), { changes: changedFiles, budget })
+    if (_emitGenerationEvidence) {
+      emitGenerationEvidence(projectStore, {
+        status: rendered && String(rendered).trim() ? 'generated' : 'generated_empty',
+        queryClass: _generationQueryClass || inferGenerationQueryClass(query, changedFiles),
+        resultCount: records.length,
+        recordRefs: records.map((r) => r.id).filter(Boolean),
+        renderedChars: typeof rendered === 'string' ? rendered.length : 0,
+        charBudget: budget,
+        scope: reusableStore ? 'mixed' : 'project',
+      })
+    }
+    return rendered
+  } catch (err) {
+    if (_emitGenerationEvidence && projectStore) {
+      try {
+        emitGenerationEvidence(projectStore, {
+          status: 'generation_error',
+          queryClass: _generationQueryClass || inferGenerationQueryClass(query, changedFiles),
+          resultCount: 0,
+          recordRefs: [],
+          renderedChars: 0,
+          charBudget: budget,
+          errorClass: 'retrieval',
+          scope: reusableStore ? 'mixed' : 'project',
+        })
+        if (_invocation && typeof _invocation === 'object') _invocation.generationErrorEmitted = true
+      } catch {}
+    }
+    throw err
   }
-  projectStore.touch(records.filter((r) => r.scope !== 'reusable').map((r) => r.id))
-  if (reusableStore) reusableStore.touch(records.filter((r) => r.scope === 'reusable').map((r) => r.id))
-  // M6 Phase-1: compose the engineering-aware view (lifecycle, evidence,
-  // inbound supersession) before rendering. Read-time projection only.
-  return renderAgentContext(composeAgentContext(records, {
-    stores: [projectStore, reusableStore],
-    workspace,
-    changedFiles,
-    degraded,
-  }), { changes: changedFiles, budget })
 }
 
 export function createContextProvider(runtime) {
   return (assembleContext) => {
+    let cwdForError
+    const invocation = { generationErrorEmitted: false }
     try {
       const agent = assembleContext?.agent
       const cwd = resolveWorkspace(agent) || runtime.fallbackCwd
+      cwdForError = cwd
       runtime.ensureWatcher?.(cwd)
       const query = queryFromAssemble(assembleContext)
+      const queryClass = query ? (changedFilesFromSignal(runtime, cwd)?.length ? 'change_signal' : 'claimed_prompt') : 'empty'
       // Phase 3 — the existing change signal for THIS workspace only. Fail
       // closed: no signal / foreign workspace → unchanged context behavior.
       const signal = runtime.changeSignals instanceof Map ? runtime.changeSignals.get(cwd) : null
@@ -852,12 +922,39 @@ export function createContextProvider(runtime) {
         // agent-facing context (reduced evidence, never fabricated symbols).
         degraded: Boolean(runtime.codeEngine?.isDegraded),
         changedFiles,
+        _generationQueryClass: queryClass,
+        _testThrowBeforeStoreOpen: runtime._testThrowBeforeStoreOpen === true,
+        _testThrowAfterStoreOpen: runtime._testThrowAfterStoreOpen === true,
+        _testThrowFrozenError: runtime._testThrowFrozenError === true,
+        _invocation: invocation,
       })
     } catch (err) {
+      // Provider contract: return '' on failure. Stage A may record generation_error best-effort.
+      // Skip fallback emission when buildRecallContext already emitted for this invocation.
+      // Invocation-local state is used (never mutate err) so frozen/non-extensible errors are safe.
+      try {
+        if (!invocation.generationErrorEmitted && runtime?.veyraHome && cwdForError) {
+          const projectStore = openProjectStore(runtime.veyraHome, projectIdFor(cwdForError))
+          emitGenerationEvidence(projectStore, {
+            status: 'generation_error',
+            queryClass: 'unknown',
+            resultCount: 0,
+            recordRefs: [],
+            renderedChars: 0,
+            errorClass: 'render',
+            scope: 'project',
+          })
+        }
+      } catch {}
       runtime.log?.warn?.(`[veyra] recall context failed: ${err instanceof Error ? err.message : String(err)}`)
       return ''
     }
   }
+}
+
+function changedFilesFromSignal(runtime, cwd) {
+  const signal = runtime?.changeSignals instanceof Map ? runtime.changeSignals.get(cwd) : null
+  return signal?.changedFiles?.length ? signal.changedFiles : null
 }
 
 // ── §16 memory provenance chain ──────────────────────────────────────────────

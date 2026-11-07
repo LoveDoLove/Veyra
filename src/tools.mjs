@@ -35,10 +35,11 @@ import { openProjectStore, openReusableStore } from './store.mjs'
 import { RELEVANCE_SEM_FLOOR, inspect, recall, summarizeForPrompt, temporalState } from './retrieve.mjs'
 import { tokenOverlap } from './text.mjs'
 import { provenanceChain } from './context.mjs'
-import { promote, readWriteGateLedger, remember } from './learn.mjs'
+import { promote, readWriteGateLedger, readWriteGateTrace, remember } from './learn.mjs'
 import { forget as lifecycleForget } from './lifecycle.mjs'
 import { detectRecurrence, eligibleForCandidate, recordFeedback, recurrenceCandidate } from './feedback.mjs'
 import { memoryHealth, renderHealth } from './health.mjs'
+import { readGenerationEvidence, summarizeGenerationEvidence, recordExplicitOutcomeLink } from './apply-generation-evidence.mjs'
 import { CodeIntelligenceEngine, FRESHNESS_STATUS, createCbmToolDefinitions } from '@lovedolove/dsh-codebase-memory-mcp'
 import { checkRecordFreshness, checkAnchorFreshness, extractAnchorsFromRecord, findAffectedMemories, buildStaleReviewCandidate } from './code/linking.mjs'
 import { resolveSafeRepoPath } from '@lovedolove/dsh-codebase-memory-mcp/discovery'
@@ -556,6 +557,10 @@ export function buildToolDefinitions(runtime) {
         if (!existing) return { ok: false, error: 'record not found' }
         const store = existing.scope === SCOPES.REUSABLE ? reusableStore : projectStore
         const res = recordFeedback(store, { id: args.id, outcome: args.outcome, note: args.note ?? null })
+        let outcomeLink = null
+        if (res.ok && typeof args.generationEventId === 'string' && args.generationEventId.trim()) {
+          try { outcomeLink = recordExplicitOutcomeLink(store, { recordId: args.id, outcome: args.outcome, generationEventId: args.generationEventId.trim() }) } catch {}
+        }
         if (!res.ok) return { ok: false, error: res.error }
         return {
           ok: true,
@@ -675,7 +680,9 @@ export function buildToolDefinitions(runtime) {
         // Write-gate accounting rides the same read-only report: it explains
         // learning decisions that produced no record (DROP / DEFER / MERGE).
         const writeGate = readWriteGateLedger(projectStore)
-        const report = memoryHealth([...byId.values()], { workspace: cwd, failureThreshold, writeGate })
+        const writeGateTrace = readWriteGateTrace(projectStore)
+        const applyGeneration = summarizeGenerationEvidence(readGenerationEvidence(projectStore))
+        const report = memoryHealth([...byId.values()], { workspace: cwd, failureThreshold, writeGate, writeGateTrace, applyGeneration })
         return { ok: true, ...report }
       },
       presentCall: (args) => ({ card: 'generic', title: 'Memory health', kind: 'other', rawInput: `failure threshold ${args.failureThreshold ?? 2}` }),

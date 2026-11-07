@@ -49,7 +49,7 @@ function finding(record, extra = {}) {
  *                                           counted as a memory-quality finding.
  * @returns report — see return literal. Pure: no I/O, no mutation.
  */
-export function memoryHealth(records, { workspace = null, failureThreshold = 2, writeGate = null } = {}) {
+export function memoryHealth(records, { workspace = null, failureThreshold = 2, writeGate = null, writeGateTrace = null, applyGeneration = null } = {}) {
   const rawList = Array.isArray(records)
     ? records
     : (typeof records?.list === 'function' ? records.list() : [])
@@ -177,8 +177,35 @@ export function memoryHealth(records, { workspace = null, failureThreshold = 2, 
   const gate = writeGate && typeof writeGate === 'object' && Number(writeGate.total) > 0
     ? writeGate
     : null
+  const gateTrace = writeGateTrace && typeof writeGateTrace === 'object' && Array.isArray(writeGateTrace.entries) && writeGateTrace.entries.length > 0
+    ? {
+        available: true,
+        count: writeGateTrace.entries.length,
+        updatedAt: typeof writeGateTrace.updatedAt === 'string' ? writeGateTrace.updatedAt : null,
+        recent: writeGateTrace.entries.slice(-5).map((e) => ({
+          traceId: e?.traceId || null,
+          at: e?.at || null,
+          decision: e?.decision || null,
+          reason: e?.reason || null,
+          targetRecordId: e?.targetRecordId || null,
+          hasMergeEffect: Boolean(e?.mergeEffect),
+        })),
+      }
+    : null
 
-  return { scanned: list.length, threshold, categories, findings, counts, totalFindings, writeGate: gate }
+  const generation = applyGeneration && typeof applyGeneration === 'object' && applyGeneration.available === true
+    ? {
+        available: true,
+        count: Number(applyGeneration.count) || 0,
+        updatedAt: typeof applyGeneration.updatedAt === 'string' ? applyGeneration.updatedAt : null,
+        byStatus: applyGeneration.byStatus && typeof applyGeneration.byStatus === 'object' ? applyGeneration.byStatus : null,
+        delivery: applyGeneration.delivery || { status: 'NOT_VERIFIED', source: 'stage-a-local' },
+        used: applyGeneration.used || { status: 'NOT_VERIFIED', source: 'stage-a-local' },
+        recent: Array.isArray(applyGeneration.recent) ? applyGeneration.recent.slice(-5) : [],
+      }
+    : null
+
+  return { scanned: list.length, threshold, categories, findings, counts, totalFindings, writeGate: gate, writeGateTrace: gateTrace, applyGeneration: generation }
 }
 
 /**
@@ -246,6 +273,19 @@ export function renderHealth(report) {
     )
   }
 
+  if (report.writeGateTrace) {
+    const t = report.writeGateTrace
+    lines.push(`Write-gate trace (additive, metadata-only): ${t.count} recent decision trace(s) retained.`)
+    for (const r of (t.recent || [])) {
+      lines.push(`  - ${r.decision || '?'} ${r.reason || ''}${r.targetRecordId ? ` target=${r.targetRecordId}` : ''}${r.hasMergeEffect ? ' (merge before/after)' : ''}`.trim())
+    }
+  }
+  if (report.applyGeneration) {
+    const g = report.applyGeneration
+    const s = g.byStatus || {}
+    lines.push(`P1 Stage A generation evidence (local, metadata-only): ${g.count} event(s); generated=${s.generated||0}, generated_empty=${s.generated_empty||0}, generation_error=${s.generation_error||0}.`)
+    lines.push(`  delivery=${g.delivery?.status || 'NOT_VERIFIED'} · used=${g.used?.status || 'NOT_VERIFIED'}`)
+  }
   if (report.totalFindings === 0) {
     lines.push('', 'No memory-quality problems found in the scanned window.')
   }
