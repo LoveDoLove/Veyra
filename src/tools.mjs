@@ -204,10 +204,13 @@ export function buildToolDefinitions(runtime) {
     {
       name: 'veyra_remember',
       description:
-        'Store durable engineering knowledge in Veyra. Use after discovering non-obvious root causes, '
-        + 'verifying tricky fix patterns, establishing durable architecture decisions, or recording project '
-        + 'constraints. Stored items become derived memory (never canonical). Secrets are redacted. Project '
-        + 'scope is the default; use reusable only for experience that is truly project-agnostic.',
+        'Store durable engineering knowledge in Veyra. After producing a verified, durable, reusable '
+        + 'engineering outcome (non-obvious root cause, verified fix pattern, durable architecture decision, '
+        + 'or project constraint), proactively consider recording it. Record only evidence-backed, project-'
+        + 'specific knowledge; never store temporary state, unsupported assumptions, secrets, or transient '
+        + 'conversation noise. Stored items become derived memory (never canonical) — canonical authority '
+        + 'requires explicit veyra_promote. Secrets are redacted. Project scope is the default; use '
+        + 'reusable only for experience that is truly project-agnostic.',
       parameters: {
         title: { type: 'string', required: true, description: 'Short title for the memory.' },
         body: { type: 'string', required: true, description: 'The knowledge itself, with enough context to reuse later.' },
@@ -311,9 +314,13 @@ export function buildToolDefinitions(runtime) {
       name: 'veyra_recall',
       description:
         'Search durable engineering memory, architecture decisions, past troubleshooting solutions, '
-        + 'constraints, and RAG knowledge. Use when investigating project history, architecture rationale, '
-        + 'past failure remedies, or domain constraints whenever the initial turn snapshot is absent or '
-        + 'does not cover the specific technical topic.',
+        + 'constraints, and RAG knowledge. At the beginning of a new non-trivial engineering task, '
+        + 'proactively perform a targeted recall for relevant historical knowledge. An injected recall '
+        + 'snapshot is supplementary context, not a replacement for initial targeted recall. If no '
+        + 'applicable memory is found, continue normal work immediately — never block on empty recall. '
+        + 'Avoid unnecessary repeated recall calls for the same unresolved question. Never use for '
+        + 'session continuity or current turn progress. Verify recalled knowledge against current '
+        + 'repository evidence before acting; similarity is not authority.',
       parameters: {
         query: { type: 'string', required: true, description: 'What to look for.' },
         goal: { type: 'string', description: 'Optional goal-directed routing: the task you are working toward. Steers ranking toward relevant experience; it is a direction, never an authority, and never promotes or demotes anything. Omit for ordinary search.' },

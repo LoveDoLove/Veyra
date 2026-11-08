@@ -10,10 +10,9 @@ description: >
   veyra_inspect / veyra_forget / veyra_promote, how candidate vs derived vs canonical differ,
   causal facets, and that repo truth wins.
 whenToUse: >
-  Cross-session engineering context, durable decisions, project RAG documentation,
-  causal troubleshooting, remember/forget/promote requests, or when automatic recall
-  for durable knowledge is missing or too thin. Never for in-session turn progress or
-  session continuity.
+  Cross-session engineering context, durable decisions, project RAG documentation, causal
+  troubleshooting, remember/forget/promote requests, or when automatic recall for durable
+  knowledge is missing or too thin. Never for in-session turn progress or session continuity.
 ---
 
 # Veyra
@@ -24,111 +23,89 @@ relevant context via unified Hybrid Search. Treat it as an assistant, not as tru
 
 ## A session's lifecycle
 
-1. **Start** — the plugin may have injected a recall snapshot
-   (look for a Veyra context block). Recalled items are background engineering
-   context and constraints, NEVER chronological turn logs or conversation history.
-   Never use recalled items to answer session-continuity questions ("上一轮我们做了什么",
-   "where were we", current progress). If the injected snapshot does not cover
-   the specific technical topic you need, call `veyra_recall`.
-2. **During the task** — call `veyra_recall` for targeted hybrid search when
-   needing cross-session engineering knowledge (prior architecture decisions,
-   constraints, postmortems) that the snapshot lacks. NEVER call `veyra_recall`
-   for session continuity, recent turn progress, or git status. Call `veyra_inspect`
-   to read one record by id with full evidence anchors, causal facets, and relationships.
-3. **Data in** — when a durable decision, root cause, constraint, fix pattern,
-   or project guideline appears, call `veyra_remember`. Use `kind: 'memory'` for
-   engineering experience, or `kind: 'knowledge'` for project documentation.
-   Do not mirror routine conversational chatter.
-4. **End** — the plugin observes the turn and may persist a *candidate*.
-   Durable observations can be promoted to *derived*. That is not canonical.
+1. **Proactive Recall at start** — at the beginning of a new non-trivial engineering task,
+   proactively call `veyra_recall` with a targeted query for relevant historical engineering
+   knowledge (architecture decisions, constraints, prior fixes, failures). The plugin may have
+   injected a recall snapshot, but an injected snapshot is supplementary context, not a
+   replacement for initial targeted recall. If no applicable memory is found, continue normal
+   engineering work immediately — never block on empty recall. Avoid unnecessary repeated
+   recall calls for the same unresolved question.
+   Recalled items are background engineering context and constraints, NEVER chronological
+   turn logs or conversation history. Durable memory ≠ Session continuity. Never use
+   recalled items to answer session-continuity questions ("上一轮我们做了什么", "where were we",
+   current progress).
+2. **Normal Work** — do the engineering work using current repository evidence. If recall is
+   irrelevant or empty, proceed immediately. Memory is supporting context, not truth.
+   Repository truth remains authoritative.
+3. **During the task** — call `veyra_recall` only for targeted cross-session engineering
+   knowledge the current context lacks (prior architecture decisions, constraints, postmortems).
+   NEVER call `veyra_recall` for session continuity, recent turn progress, or git status. Call
+   `veyra_inspect` to read one record by id with full evidence anchors, causal facets, and
+   relationships. Verify recalled knowledge against current repository evidence before acting.
+4. **Opportunistic Learning** — when a verified, durable, reusable engineering outcome appears
+   (non-obvious root cause, verified fix pattern, durable architecture decision, or project
+   constraint), proactively consider calling `veyra_remember`. Use `kind: 'memory'` for
+   engineering experience, or `kind: 'knowledge'` for project documentation/RAG data.
+   Record only evidence-backed, project-specific knowledge. Never store temporary state,
+   unsupported assumptions, secrets, or transient conversation noise. Do not guess at the schema.
+5. **End of turn** — Veyra may persist useful observations from the
+   session as candidates. That happens in the background; do not assume it did.
 
 ## Tools
 
-| Tool | Use it for |
-| --- | --- |
-| `veyra_remember` | Keep a durable lesson or RAG knowledge. Always stored as **derived**. |
-| `veyra_recall` | Unified Hybrid Search (lexical + semantic + causal + relations). |
-| `veyra_inspect` | Read one `vey_…` id with evidence anchors, causal facets, and graph relations. |
-| `veyra_forget` | Soft-forget with an audited `reason`; protected records need `override: true`. Leaves recall, stays inspectable. |
-| `veyra_promote` | Change standing. **canonical requires `explicit: true`**. |
-| `veyra_feedback` | Report the outcome of applying a recalled record: success strengthens it; failure demotes validation/confidence one step. |
-| `veyra_recurrence` | Detect recurring failures with the same root cause / symptom / remedy; optionally gate an auto-candidate. |
-| `veyra_health` | Read-only memory-health report: quality buckets plus maintenance findings (contradictions, staleness, unresolved investigations). |
-| `veyra_code_status` | CBM code-index freshness: index status, current generation, and memories affected by drift. |
-| `veyra_change_impact` | Analyze a code change's impact: affected knowledge, read-time trust classification, optional review candidates. |
+- `veyra_recall` — proactive/targeted hybrid search over durable engineering memory and RAG
+  knowledge (project + reusable, by default). Use at the start of non-trivial tasks and when
+  specific cross-session context is needed. Snapshot injection does not replace targeted recall;
+  empty recall must not block work. Returns summaries with trust metadata, verification badges,
+  superseded-by markers, and relationship badges. Similarity is not authority.
+- `veyra_inspect` — read one record by id in full (evidence, causal facets,
+  provenance chain, relationships). Use when a recall summary needs detail.
+- `veyra_remember` — store an engineering insight or project knowledge. It is written as
+  `derived` (never auto-canonical). Use proactively for verified, durable, reusable outcomes;
+  never for temporary state, unsupported assumptions, secrets, or noise. Pass `kind`, `scope`,
+  `tags`, `evidence` (e.g. `path` anchors), and causal facets (`symptom`,
+  `rootCause`, `remedy`, `verifiedOutcome`) when they are known.
+- `veyra_forget` — soft-forget a record that proved wrong or irrelevant.
+- `veyra_promote` — raise authority, usually to `derived`. Canonical is
+  granted only on an explicit user request (`explicit: true`) because it
+  marks a team-level convention, not just a correct finding.
 
-The user-facing `/veyra` command covers the same operations, plus the human Knowledge Observatory.
+## Trust and authority
 
-## Hybrid Search & Unified RAG
+- Auto-captured observations are recorded as **candidates** and never auto-recalled.
+- Candidate ≠ Truth. Only derived and canonical records are recall-eligible.
+- A recalled item is context, not authority. A record's standing is never
+  raised by recall or similarity.
+- `canonical` means a human explicitly blessed the record (the `veyra:canonical`
+  label) — not that it is permanently true.
+- Knowledge without evidence is not authoritative. Treat Veyra results as
+  evidence to verify, not as facts to repeat.
+- Repo truth wins. If a memory contradicts the current code, the code wins.
+- Never auto-promote to canonical. Never merge, overwrite, or silently retire memory.
 
-Veyra retrieves project knowledge and engineering memory together through a multi-signal pipeline:
+## Relevance & Retrieval
+
+Veyra's recall uses a robust multi-dimensional hybrid search:
 - **Lexical**: FTS5 BM25 match with exact token, symbol, and file-path boosts.
 - **Semantic**: Token-level Jaccard overlap and query concept coverage.
 - **Memory & Causal**: Intent affinity (`why` → rootCause, `how` → remedy, `outcome` → verifiedOutcome).
 - **Relationships**: Graph connections (`updates`, `extends`, `derives`, `contradicts`, `supersedes`). Recall may add a bounded 1-hop of recall-eligible neighbors.
 - **Scoring**: Transparent multi-dimensional scoring (relevance, semantic, evidence, validation, proximity, freshness, confidence). Never a single opaque score.
 
-## Structured Causal Knowledge
+## Verification lifecycle
 
-Engineering troubleshooting captures four explicit causal facets:
-- **Symptom**: Observed failure, error message, or broken state.
-- **Root Cause**: Underlying defect or mechanism producing the symptom.
-- **Remedy**: Concrete change or fix that addresses the root cause.
-- **Verified Outcome**: Deterministic outcome confirming the remedy (e.g. passing test).
-
-*Negative Rules*: Temporal adjacency alone creates no causal link. Simultaneous changes
-do not arbitrarily identify one root cause. A failed remedy is never a verified remedy.
-
-## Authority
-
-| Standing | How it is created | Auto-recalled? |
-| --- | --- | --- |
-| `candidate` | Automatic observation | no |
-| `derived` | `veyra_remember` or learned promotion | yes |
-| `canonical` | Explicit `veyra_promote` only | yes |
-
-Automatic behavior never creates canonical truth. Only an explicit
-`veyra_promote` with `explicit: true`, triggered by the user, can do that.
-
-## Knowledge Observatory (Human Surface)
-
-Humans can explore Veyra's internal state via the `/veyra observatory` slash command:
-- `/veyra observatory overview`: Memory, RAG knowledge, validation health, and graph counts.
-- `/veyra observatory search <q>`: Inspect hybrid search signals and dimensional scores.
-- `/veyra observatory record <id>`: Deep inspection answering the 6 questions (What, Why, Where, When, Evidence, Validation).
-- `/veyra observatory causality`: Map of all symptom → root cause → remedy → outcome chains.
-- `/veyra observatory relationships [id]`: Directed graph projection of knowledge links.
-- `/veyra observatory local <id>`: 1-hop Local Graph around a record (default graph view).
-- `/veyra observatory graph [id]`: Local Graph when an id is given; otherwise the project edge list.
-- `/veyra observatory contradictions`: Conflicting knowledge claims displayed side-by-side.
-- `/veyra observatory consolidation`: Detect and propose consolidation candidates (duplicate, contradiction, outdated, replacement, retirement) — read-only; never merges or edits records.
-- Network Graph WebUI: host page `/veyra` shows a bounded workspace overview; `/veyra?id=<record>` centers the Local Graph over the same derived projection. Visible ≠ trusted.
-
-## Rules you must keep
-
-- Observe ≠ Store. Not every event is worth remembering.
-- Candidate ≠ Truth. Automatic captures are unverified.
-- Similarity ≠ Authority. A recalled match is not proof.
-- Memory ≠ Knowledge. Remembered experience is not the repository.
-- Knowledge without evidence is not authoritative.
-- Repository truth remains authoritative. When memory conflicts with the
-  current codebase, tests, or git history, believe the repository.
-- Project isolation is preserved. Do not treat reusable experience as this
-  project's architecture.
-- Memory assists engineering; it does not replace verification.
-- Similarity ≠ identity. Overlapping memories are linked, never silently merged.
-- If two recalled items contradict, keep both and believe the repository.
-- Durable memory ≠ Session continuity. Veyra stores cross-session engineering
-  knowledge, NOT conversational turn history or recent work progress. To answer
-  "上一轮我们做了什么" / "刚才做到哪里" / "继续之前的工作", consult conversation
-  history, ACP summaries, git status/diff, or task state — never Veyra.
-- STALE and INSUFFICIENT_EVIDENCE are not current truth. Records marked
-  `trust: STALE` have broken code anchors or outdated validation; records marked
-  `trust: INSUFFICIENT_EVIDENCE` lack verifiable evidence. Never rely on them
-  as current status or verified facts without revalidating against the repository.
-- Outcome: test-failed is a failed attempt, not completed work. A remedy or
-  action marked `Outcome: test-failed` represents a falsified trial, never
-  successful progress or an accepted solution.
+Recall surfaces trust markers so you can judge freshness and reliability:
+- `Outcome: test-failed` marks a falsified attempt or negative lesson — never a
+  successful fix or completed progress. Outcome: test-failed is a failed attempt, not completed work.
+- `[NEGATIVE · known failed solution]` marks a rejected approach — do not retry it
+  without new evidence; historical evidence, not an authoritative ban.
+- `[UNRESOLVED · known open investigation]` marks a known unknown — never treat
+  repeated retrieval as resolution; it never becomes canonical by being recalled.
+- `[stale]` / `[unverified]` mark records whose code anchors no longer resolve or
+  whose claims lack verification; treat them as historical context, not current status.
+  STALE and INSUFFICIENT_EVIDENCE are not current truth.
+- When repository evidence shows remembered knowledge is stale or contradictory,
+  verify against the repository, show both sides, and do not silently merge or retire.
 
 ## Where memory lives
 

@@ -1,3 +1,11 @@
+## [0.1.73] - 2026-11-08
+
+### Changed
+
+- **Proactive engineering memory guidance (agent-facing):** aligned Veyra system guidance, `veyra_recall`/`veyra_remember` tool descriptions, and the bundled `veyra` skill around an explicit loop — proactive targeted recall at the start of new non-trivial engineering work (with injected recall snapshots treated as supplementary context, not a replacement), normal work continuing without blocking when no applicable memory is found, and opportunistic learning guidance to consider recording only verified, durable, reusable, evidence-backed outcomes. This improves agent-facing guidance/instructions; it does **not** claim real-world autonomous agent behavior, retrieval success, context delivery/use, or engineering improvement has been measured.
+- **Safety boundaries preserved:** repository evidence remains authoritative; recalled memory is supporting context, not truth; session continuity/current turn progress remains out of scope for recall; Veyra does not store secrets, temporary state, unsupported assumptions, or transient conversation noise; derived memory is never automatically promoted to canonical (canonical authority remains an explicit `veyra_promote` action); evidence, trust, provenance, contradiction, stale-record, and project-isolation boundaries remain intact.
+- **Bundled skill contract repair:** restored `skills/veyra/SKILL.md` frontmatter/required contract phrases to match the bundled skill definition expected by tests while preserving the aligned workflow.
+
 ## [0.1.72] - 2026-11-07
 
 ### Added
