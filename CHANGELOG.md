@@ -1,3 +1,15 @@
+## [0.1.74] - 2026-11-09
+
+### Changed (contract- and test-verified; no claim of measured real-world autonomous Coding Agent improvement)
+
+- **Evidence-aware recall:** `veyra_recall` tool-floor signal now includes indexed evidence text (`note`/`path`/`uri`/`anchor`), so evidence-only FTS matches are not dropped when title/body/tags lack query tokens. Semantic floor, negative-coverage handling, and stopword safety are preserved; no retrieval redesign.
+- **Learning outcome semantics:** test-outcome handling preserves historical failure evidence and does not infer success from incomplete or failed execution. A later pass may represent final verification only when ordered evidence supports failure → identifiable corrective action → pass; otherwise failure remains a failed attempt. Ambiguous cases remain conservative.
+- **Reusable memory applicability:** cross-platform reusable knowledge is no longer auto-stamped with capture `os` in a way that can mark it OS-incompatible without explicit applicability evidence. Project-local OS stamping and explicit `context.os` constraints remain honored.
+- **Lifecycle & supersession integrity:** explicit `supersede()` preserves the single retired→replacement edge invariant (rejects different-target re-supersession of an already-superseded record) and rejects unusable replacement targets (forgotten, non-current, invalid, stale) without partial mutation. Missing/cross-store behavior, same-target idempotency, and canonical-target authority semantics are preserved.
+- **Promotion & authority integrity:** promotion rejects unsafe/non-current/invalid/stale/forgotten paths as applicable and does not manufacture evidence or verification. Canonical promotion preserves existing validation state (it does not manufacture `REVIEWED` from `UNVERIFIED`); unresolved contradictions remain visible; authority/validation/lifecycle-history semantics are preserved.
+- **Contradiction visibility:** recall surfaces contradiction visibility for eligible recalled records when a CONTRADICTS partner is not recall-eligible (stale/invalid/forgotten/non-current), without recalling the ineligible partner as normal memory and without silently resolving conflicts.
+- **Workspace evidence safety:** workspace containment for evidence-anchor path checks is restored using the existing safe repo-path resolution contract; out-of-workspace absolute paths do not become `{ path }` evidence anchors.
+
 ## [0.1.73] - 2026-11-08
 
 ### Changed

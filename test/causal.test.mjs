@@ -117,9 +117,15 @@ test('multi-step troubleshooting turn accumulates complete causal lifecycle', ()
   assert.ok(distilled.source.causal)
   assert.equal(distilled.source.causal.rootCause, 'missing PRAGMA busy_timeout')
   assert.equal(distilled.source.causal.remedy, 'add busy_timeout = 5000 in openDatabase')
+  // Task 16 semantics: ordered failure -> corrective action (edit) -> pass
+  // may represent final verification only with that evidence. Historical
+  // failure must remain visible; derived never becomes canonical silently.
   assert.equal(distilled.source.causal.verifiedOutcome, 'test-passed')
+  assert.ok(distilled.tags.includes('verified-test'))
+  assert.ok(distilled.evidence.some((e) => e.note === 'test-failed'), 'historical failure preserved')
+  assert.ok(distilled.evidence.some((e) => e.note === 'test-passed'), 'final verified recovery recorded')
 
-  // Learning progression: candidate → derived
+  // Learning progression: candidate → derived (bounded; not auto-canonical)
   const store = openEphemeralStore()
   const written = store.put(distilled)
   assert.equal(written.record.authority, AUTHORITIES.CANDIDATE)
@@ -127,9 +133,8 @@ test('multi-step troubleshooting turn accumulates complete causal lifecycle', ()
   const learned = maybeLearn(store, written.record)
   assert.ok(learned)
   assert.equal(learned.authority, AUTHORITIES.DERIVED)
-  assert.equal(learned.source.causal.verifiedOutcome, 'test-passed')
-  // Because it had test-passed, initial validation tier is REVIEWED
-  assert.equal(learned.validation, VALIDATIONS.REVIEWED)
+  assert.notEqual(learned.authority, AUTHORITIES.CANONICAL)
+  assert.ok((learned.evidence || distilled.evidence).some((e) => e.note === 'test-failed'), 'learned record keeps failure history')
 
   // Promotion to canonical requires explicit flag; auto-promote fails
   const denied = promote(store, learned.id, { to: AUTHORITIES.CANONICAL, explicit: false })

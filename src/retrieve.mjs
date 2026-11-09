@@ -1257,15 +1257,34 @@ export function hybridRetrieve({
 
   // PMA invariant: never hide one side of a contradiction.
   // Pull opposing recall-eligible records even if search missed them.
+  // If a contradicting partner exists but is not recall-eligible
+  // (stale/invalid/forgotten/superseded/candidate/non-current), keep the
+  // conflict visible on the eligible side without recalling the partner
+  // as normal memory content (Similarity ≠ Authority; ineligible records
+  // must not become authoritative recall results).
   const seen = new Set(limited.map((r) => r.id))
   const extras = []
+  const ineligibleContradictions = new Map()
   for (const rec of limited) {
     for (const rel of rec.relations || []) {
       if (rel.type !== 'contradicts' || seen.has(rel.targetId)) continue
       const extra = projectStore?.get(rel.targetId) || reusableStore?.get(rel.targetId)
-      if (!extra || !isRecallEligible(extra)) continue
-      seen.add(extra.id)
-      extras.push(extra)
+      if (!extra) continue
+      if (isRecallEligible(extra)) {
+        seen.add(extra.id)
+        extras.push(extra)
+        continue
+      }
+      const why = extra.forgotten ? 'forgotten'
+        : extra.status === 'superseded' ? 'superseded'
+        : extra.status && extra.status !== 'current' ? extra.status
+        : extra.validation && extra.validation !== 'reviewed' && extra.validation !== 'verified' && extra.validation !== 'unverified' ? extra.validation
+        : 'not recall-eligible'
+      const arr = ineligibleContradictions.get(rec.id) || []
+      if (!arr.some((x) => x.targetId === extra.id)) {
+        arr.push({ targetId: extra.id, targetTitle: String(extra.title || extra.id).slice(0, 120), why })
+        ineligibleContradictions.set(rec.id, arr)
+      }
     }
   }
 
@@ -1278,8 +1297,24 @@ export function hybridRetrieve({
   }).filter((rec) => !kind || rec.kind === kind)
   extras.push(...neighbors)
 
-  if (extras.length === 0) return withCoverage(limited)
-  return withCoverage(annotateContradictions(rankRecords([...limited, ...extras], { query, intent: detectedIntent, preferProject: true, goal: activeGoal, changedFiles })))
+  const annotateIneligible = (records) => records.map((rec) => {
+    const marks = ineligibleContradictions.get(rec.id)
+    if (!marks?.length) return rec
+    const existingIds = new Set(rec.contradictions || [])
+    const existingBanners = new Set(rec.contradictionBanners || [])
+    const contradictions = [...(rec.contradictions || [])]
+    const contradictionBanners = [...(rec.contradictionBanners || [])]
+    for (const m of marks) {
+      if (!existingIds.has(m.targetId)) { existingIds.add(m.targetId); contradictions.push(m.targetId) }
+      const banner = `[CONTRADICTION: '${String(rec.title || rec.id).slice(0, 120)}' conflicts with non-recallable record '${m.targetTitle}' (${m.why}) — verify against the repository]`
+      if (!existingBanners.has(banner)) { existingBanners.add(banner); contradictionBanners.push(banner) }
+    }
+    return { ...rec, contradictions, contradictionBanners }
+  })
+
+  if (extras.length === 0) return annotateIneligible(withCoverage(limited))
+  return annotateIneligible(withCoverage(annotateContradictions(rankRecords([...limited, ...extras], { query, intent: detectedIntent, preferProject: true, goal: activeGoal, changedFiles }))))
+
 }
 
 /**

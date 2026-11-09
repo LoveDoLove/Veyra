@@ -773,10 +773,20 @@ export function remember(store, input, { explicitCanonical = false, repair = fal
         ...(validUntil ? { validUntil } : {}),
       }
     }
+    // §12 applicability context: runtime is always auto-stamped; OS is
+    // auto-stamped for project-local captures (environment-bound by default).
+    // Reusable/cross-project knowledge must NOT inherit the capture OS as an
+    // implicit applicability constraint — insufficient evidence that OS
+    // matters would make cross-platform reusable knowledge falsely
+    // inapplicable on other OSes (Similarity ≠ Applicability). An explicit
+    // `context.os` constraint is still honored.
+    const explicitContext = input.context && typeof input.context === 'object' ? input.context : {}
+    const inputScope = input.scope === 'reusable' ? 'reusable' : 'project'
+    const autoContext = { runtime: process.version }
+    if (inputScope !== 'reusable' || explicitContext.os !== undefined) autoContext.os = process.platform
     source.context = {
-      os: process.platform,
-      runtime: process.version,
-      ...(input.context && typeof input.context === 'object' ? input.context : {}),
+      ...autoContext,
+      ...explicitContext,
     }
     input = { ...input, source }
   }
@@ -861,11 +871,32 @@ export function promote(store, id, { to = AUTHORITIES.DERIVED, explicit = false 
   const existing = store.get(id)
   if (!existing) return { ok: false, error: 'not found' }
   if (existing.forgotten) return { ok: false, error: 'forgotten' }
+  if (existing.status !== STATUSES.CURRENT) {
+    return { ok: false, error: 'promotion requires current status' }
+  }
+  // Promotion is a standing change, not evidence manufacture or truth repair.
+  // Failed/stale validation must not be promoted into higher authority with
+  // manufactured review state (Task 20 contract).
+  if (existing.validation === VALIDATIONS.INVALID) {
+    return { ok: false, error: 'cannot promote invalid record' }
+  }
+  if (existing.validation === VALIDATIONS.STALE) {
+    return { ok: false, error: 'cannot promote stale record' }
+  }
   if (to === AUTHORITIES.CANONICAL && !explicit) {
     return { ok: false, error: 'canonical promotion requires an explicit user action' }
   }
+  if (existing.authority === to) {
+    // Idempotent: preserve existing validation/standing; never manufacture.
+    return { ok: true, record: existing, already: true }
+  }
+  // Preserve existing valid canonical authority semantics: the promotion path
+  // must not reduce standing of an already-canonical record.
+  if (existing.authority === AUTHORITIES.CANONICAL) {
+    return { ok: false, error: 'canonical authority cannot be changed through promotion' }
+  }
   const nextValidation = to === AUTHORITIES.CANONICAL
-    ? VALIDATIONS.REVIEWED
+    ? existing.validation
     : (existing.validation === VALIDATIONS.UNVERIFIED ? VALIDATIONS.REVIEWED : existing.validation)
   const written = store.put({
     ...existing,

@@ -355,9 +355,25 @@ function basename(path) {
   return parts[parts.length - 1] || path
 }
 
-function testOutcomeFrom(tools, files) {
+function isCorrectiveToolCall(t) {
+  const n = String(t?.name || '').split(':')[0]
+  if (n === 'edit' || n === 'write' || n === 'str_replace_editor') return true
+  // run_code can mutate files but we only have structured args/description;
+  // treat it as corrective only when it explicitly signals an edit/write.
+  if (n === 'run_code') {
+    const args = t?.args && typeof t.args === 'object' ? t.args : {}
+    return /(?:edit|write)/i.test(String(args.description || '')) || /(?:tools\.edit|tools\.write)/.test(String(args.code || ''))
+  }
+  return false
+}
+
+function testOutcomeAnalysis(tools, files) {
   let hasTestTool = false
-  let lastResult = null
+  let sawFailure = false
+  let sawPass = false
+  let correctiveAfterFailure = false
+  let recoveredPass = false
+  let failureSeen = false
 
   for (const t of tools || []) {
     const name = String(t.name || '')
@@ -366,30 +382,56 @@ function testOutcomeFrom(tools, files) {
     const isTestCall = /test/i.test(name) || /test|spec/i.test(cmd) || /test|spec/i.test(desc)
     if (isTestCall) hasTestTool = true
 
+    if (!name.includes(':result') && isCorrectiveToolCall(t) && failureSeen) {
+      correctiveAfterFailure = true
+    }
+
     if (name.includes(':result')) {
       const prev = String(t.preview || '')
-      if (/(?<!\b0\s)(?:exit code:\s*[1-9]|npm ERR!|\bFAIL(?:ed|ures?)?\b|\b[1-9]\d*\s+failed)/i.test(prev)) {
-        lastResult = 'test-failed'
-      } else if (/(?:✔|✓|\bpass(?:ed)?\b|\bok\b|tests?\s+\d+.*pass|\b0\s+fail(?:ed|ures?)\b)/i.test(prev)) {
-        lastResult = 'test-passed'
+      const zeroFailed = /\b0\s+fail(?:ed|ures?)?\b/i.test(prev)
+      const hasNonzeroFailed = (!zeroFailed && /\b[1-9]\d*\s+fail(?:ed|ures?)?\b/i.test(prev)) || /(?<!\b0\s)(?:exit code:\s*[1-9]|npm[\s\S]{0,20}ERR!)/i.test(prev) || /\bFAIL\b/.test(prev)
+      const failed = hasNonzeroFailed
+      const passed = !failed && (zeroFailed || /(?:[✔✓]|\bpass(?:ed)?\b|\bok\b|All tests passed)/i.test(prev))
+      if (failed) {
+        sawFailure = true
+        failureSeen = true
+        correctiveAfterFailure = false
+        recoveredPass = false
+      }
+      if (passed) {
+        sawPass = true
+        if (failureSeen && correctiveAfterFailure) recoveredPass = true
       }
     }
   }
 
-  if (lastResult) return lastResult
-  const fileTest = files && files.some((p) => /test|spec|fixture/i.test(p))
-  if (hasTestTool || fileTest) return 'tests-touched'
-  return null
+  // Preserve failure history. A later pass may represent final verification only
+  // when existing ordered events show a failure, an identifiable corrective
+  // action (edit/write/str_replace_editor/run_code), and then a passing result.
+  // Failure without that evidence remains a failed attempt (no inferred recovery).
+  let outcome = null
+  if (sawFailure && !(recoveredPass && correctiveAfterFailure)) outcome = 'test-failed'
+  else if (sawPass || recoveredPass) outcome = 'test-passed'
+  else if (hasTestTool || (files || []).some((f) => /test|spec/i.test(f))) outcome = 'tests-touched'
+
+  return { outcome, hadFailure: sawFailure, recovered: sawFailure && recoveredPass && correctiveAfterFailure }
 }
 
-// Evidence anchors carry repository-code weight: trust validation resolves
-// them against the workspace. Paths outside the workspace must stay in
-// source provenance (source.files) but never become {path} anchors.
-function isInsideWorkspace(workspace, absPath) {
-  // Reuses the symlink-aware, traversal-safe repo-path resolution: returns a
-  // truthy relative path when absPath is inside workspace, null otherwise.
-  return resolveSafeRepoPath(workspace, absPath) !== null
+function testOutcomeFrom(tools, files) {
+  return testOutcomeAnalysis(tools, files).outcome
 }
+
+// Evidence anchors carry repository-code weight: trust validation resolves them
+// against the workspace. Paths outside the workspace must stay in source
+// provenance (source.files) but never become {path} anchors.
+function isInsideWorkspace(workspace, absPath) {
+  try {
+    return !!resolveSafeRepoPath(workspace, absPath)
+  } catch {
+    return false
+  }
+}
+
 function evidenceFrom(files, symbols, tools, workspace = null) {
   const items = []
   for (const path of files.slice(0, 12)) {
@@ -399,8 +441,13 @@ function evidenceFrom(files, symbols, tools, workspace = null) {
   for (const symbol of symbols.slice(0, 8)) {
     items.push({ note: `sym:${symbol}` })
   }
-  const outcome = testOutcomeFrom(tools, files)
-  if (outcome) items.push({ note: outcome })
+  const { outcome, hadFailure, recovered } = testOutcomeAnalysis(tools, files)
+  // Preserve historical failure evidence. A later pass may represent final
+  // verification only when supported by ordered failure -> corrective action
+  // -> pass evidence; the earlier failure must never be silently discarded.
+  if (hadFailure) items.push({ note: 'test-failed' })
+  if (outcome === 'test-passed' || recovered) items.push({ note: 'test-passed' })
+  else if (outcome === 'tests-touched' && !hadFailure) items.push({ note: 'tests-touched' })
   return items
 }
 

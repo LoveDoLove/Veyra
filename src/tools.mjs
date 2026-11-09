@@ -365,9 +365,24 @@ export function buildToolDefinitions(runtime) {
         // answer, so a non-empty query with no genuine signal returns nothing.
         // FTS rank is not a signal test here: toFtsQuery OR-joins stopwords
         // ("and"), which match almost every body and yield relevance 1.
+        // Evidence note/path/uri/anchor is included because veyra_search_text
+        // indexes it (store.mjs): an evidence-only FTS match is genuine signal
+        // even when title/body/tags share no query tokens.
+        const evidenceSignalText = (ev) => {
+          if (!Array.isArray(ev)) return ''
+          const parts = []
+          for (const e of ev) {
+            if (!e) continue
+            if (typeof e === 'string') { parts.push(e); continue }
+            for (const k of ['note', 'path', 'uri', 'anchor']) {
+              if (typeof e[k] === 'string' && e[k]) parts.push(e[k])
+            }
+          }
+          return parts.join(' ')
+        }
         const queryText = String(args.query ?? '').trim()
         const hasSignal = items.some((r) => r.negativeCoverage === true
-          || tokenOverlap(queryText, [r.title || '', r.body || '', ...(r.tags || [])].join(' ')).hits > 0
+          || tokenOverlap(queryText, [r.title || '', r.body || '', ...(r.tags || []), evidenceSignalText(r.evidence)].join(' ')).hits > 0
           || Number(r.scores?.semantic) >= RELEVANCE_SEM_FLOOR)
         const visible = queryText && !hasSignal ? [] : items
         projectStore.touch(visible.filter((r) => r.scope !== SCOPES.REUSABLE).map((r) => r.id))

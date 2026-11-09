@@ -184,8 +184,26 @@ export function supersede(store, fromId, toId, { why = '' } = {}) {
   const to = store.get(toId)
   if (!to) return { ok: false, error: 'replacement not found' }
   const relations = Array.isArray(from.relations) ? [...from.relations] : []
-  const linked = relations.some((r) => r?.type === RELATIONS.SUPERSEDES && r?.targetId === toId)
+  const existingSupersedes = relations.filter((r) => r?.type === RELATIONS.SUPERSEDES)
+  const linked = existingSupersedes.some((r) => r?.targetId === toId)
   if (from.status === STATUSES.SUPERSEDED && linked) return { ok: true, record: from, already: true }
+  // Preserve the single-edge invariant: exactly one SUPERSEDES edge exists per
+  // supersede event (retired -> replacement). A retired record must not gain a
+  // conflicting second replacement edge, which would make replacement/history
+  // ambiguous and violate lifecycle maintenance safety.
+  if (existingSupersedes.length > 0 && !linked) {
+    return { ok: false, error: 'already superseded by a different record' }
+  }
+  // Replacement target integrity: "retired in favour of a replacement" (§22)
+  // requires a usable, inspectable current target. Reject forgotten/invalid/
+  // non-current targets before any mutation so a bad replacement never
+  // partially mutates the retired record or creates a misleading "what
+  // replaced it" link. Missing/cross-store targets already fail above.
+  // Canonical authority is preserved (not a target validity failure).
+  if (to.forgotten) return { ok: false, error: 'replacement must not be forgotten' }
+  if (to.status !== STATUSES.CURRENT) return { ok: false, error: 'replacement must be current' }
+  if (to.validation === VALIDATIONS.INVALID) return { ok: false, error: 'replacement must not be invalid' }
+  if (to.validation === VALIDATIONS.STALE) return { ok: false, error: 'replacement must not be stale' }
   if (!linked) relations.push({ type: RELATIONS.SUPERSEDES, targetId: toId })
   const whyText = reasonText(why)
   const source = withLifecycle(from, 'supersede', whyText ? { why: whyText, replacedBy: toId } : { replacedBy: toId })
