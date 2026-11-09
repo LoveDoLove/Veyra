@@ -186,7 +186,7 @@ Neither brain replaces the other.
 | Memory health | `veyra_health` / `/veyra health` findings plus write-gate accounting (decisions and reasons, read-only), plus the `memory-maintenance` skill that applies lifecycle actions on explicit request only. |
 | Knowledge Observatory | Read-only text dashboard: overview, search signals, record inspection, causality, relationships, contradictions, and consolidation proposals. |
 | Network Graph | Host-native SVG page at `/veyra` (overview + 1-hop Local Graph), served by the DSH web server; JSON at `/veyra/graph`, `/veyra/record`, `/veyra/search`. |
-| Settings | `Recall limit` and `Include reusable` in the DSH Settings dialog (Veyra section); changes apply from the next turn, no restart. |
+| Settings | Veyra works automatically with built-in defaults. No dedicated Settings UI. Advanced YAML overrides: `recallLimit` defaults to `5` (`0` disables automatic recalled-memory context only; manual recall, `/veyra`, Observatory, and stored memory remain unaffected), `includeReusable` defaults to `true` (project isolation preserved). Changes apply on next turn/remount; no restart required. |
 | Project isolation | Memory is keyed by workspace path + git remote. Two unrelated folders never share memory; `scope: 'reusable'` is opt-in. |
 | Secret redaction | Secrets are redacted before anything is stored. A validated tier also catches payment cards (Luhn), IBANs (ISO 13616 mod-97) and US SSNs (structural rules) that carry no secret-looking shape. |
 

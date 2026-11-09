@@ -1,3 +1,10 @@
+## [0.1.75] - 2026-11-09
+
+### Changed
+
+- **Settings UI removed:** Veyra no longer registers a dedicated DSH Settings section or client Settings form. It operates automatically with built-in defaults: `recallLimit` defaults to `5` (`0` remains an advanced YAML/programmatic override that disables automatic recalled-memory context only; manual recall, `/veyra`, Observatory, and stored memory are unaffected), `includeReusable` defaults to `true`, and project-specific memory isolation remains unchanged. `observe` and `learn` remain enabled by default. Advanced YAML/Cordis config still uses Veyra `Config` exports.
+- **Client bundle:** `./client` remains the Network Graph browser entry point (sidebar/footer action and right-pane tab) and no longer depends on `configForms` or Settings registration.
+
 ## [0.1.74] - 2026-11-09
 
 ### Changed (contract- and test-verified; no claim of measured real-world autonomous Coding Agent improvement)

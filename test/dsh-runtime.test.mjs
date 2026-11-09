@@ -122,12 +122,16 @@ test('Veyra composes against the real DSH host services', { skip }, async () => 
   assert.equal(expected.length, 17)
 
   // Registration is async (tool loading falls back through a dynamic import),
-  // so poll for the full seam to come up before asserting.
+  // so poll for the full seam to come up before asserting. The dedicated
+  // Settings UI registration has been removed; Veyra still registers tools,
+  // command, prompts, and skill.
   const up = await until(() => {
     const visible = ctx.tools?.view()?.visible
     if (!visible || !expected.every((name) => visible.has(name))) return false
     if (!ctx.commands.list(undefined).some((d) => d.name === 'veyra')) return false
-    return ctx.settings.presentations.size === 1
+    return ctx.systemPrompt.assemble({
+      agent: { session: { header: { cwd: '/tmp' }, deriveMessages: () => [] }, inbox: {} },
+    }).then((a) => a.sections.some((s) => s.name === 'veyra:guidance') && a.contexts.some((c) => c.name === 'veyra:recall')).catch(() => false)
   })
   assert.ok(up, 'Veyra registrations did not come up against the real services')
 
@@ -138,7 +142,9 @@ test('Veyra composes against the real DSH host services', { skip }, async () => 
   // 2. Prompt seam: real SystemPrompt assembles both Veyra contributions —
   // and the agent policy rides in as exactly one static section, re-assembled
   // by DSH before every model step without duplicating.
-  const assembly = await ctx.systemPrompt.assemble({})
+  // Task 30: automatic proactive recall fails closed without a task-shaped signal.
+  const assembleCtx = { agent: { session: { header: { cwd: '/tmp' }, deriveMessages: () => [{ role: 'user', content: 'veyra runtime composition recall seam check', source: { kind: 'user' } }] } } }
+  const assembly = await ctx.systemPrompt.assemble(assembleCtx)
   const guidanceSections = assembly.sections.filter((s) => s.name === 'veyra:guidance')
   assert.equal(guidanceSections.length, 1, 'exactly one veyra:guidance section expected per assembly')
   assert.ok(guidanceSections[0].text.includes('Veyra Agent Policy'), 'assembled veyra:guidance lost the agent policy text')
@@ -148,7 +154,7 @@ test('Veyra composes against the real DSH host services', { skip }, async () => 
   assert.ok(guidanceSections[0].text.includes('Future Reuse'), 'policy future reuse contract missing from assembly')
   assert.ok(guidanceSections[0].text.includes('Never block work because memory is unavailable or empty'), 'policy must not block on empty recall')
   assert.ok(assembly.contexts.filter((c) => c.name === 'veyra:recall').length === 1, 'veyra:recall context missing')
-  const second = await ctx.systemPrompt.assemble({})
+  const second = await ctx.systemPrompt.assemble(assembleCtx)
   assert.equal(second.sections.filter((s) => s.name === 'veyra:guidance').length, 1, 're-assembly must not duplicate the policy section')
   assert.equal(second.sections.find((s) => s.name === 'veyra:guidance').text, guidanceSections[0].text, 'static policy text must be stable across model steps')
 
@@ -163,10 +169,25 @@ test('Veyra composes against the real DSH host services', { skip }, async () => 
   assert.ok(skillNames.includes('veyra'), `veyra skill missing: ${skillNames.join(',')}`)
   assert.ok(skillNames.includes('legacy-onboarding'), `legacy-onboarding skill missing: ${skillNames.join(',')}`)
 
-  // 5. Settings seam: real SettingsForms carries Veyra's presentation policy.
-  const policies = [...ctx.settings.presentations.values()]
-  assert.equal(policies.length, 1, 'exactly one Veyra settings presentation expected')
-  assert.equal(policies[0].auto, true)
+  // 5. Advanced config/runtime seam: Veyra's dedicated Settings UI is removed.
+  assert.equal(fiber.runtime.Config, veyra.Config)
+  const rawDesc = typeof fiber.runtime.Config.describe === 'function' ? fiber.runtime.Config.describe() : null
+  const toJson = typeof veyra.Config.toJSON === 'function' ? veyra.Config.toJSON() : null
+  const root = toJson?.refs?.[toJson?.uid]
+  const resolveRef = (n) => (typeof n === 'number' ? toJson?.refs?.[n] : n)
+  const desc = rawDesc?.type === 'object' && rawDesc?.properties ? rawDesc
+    : toJson?.type === 'object' && toJson?.properties ? toJson
+    : { type: 'object', properties: Object.fromEntries(Object.entries(root?.dict || {}).map(([k, v]) => [k, resolveRef(v)])) }
+  const recallMeta = desc.properties?.recallLimit?.meta || desc.properties?.recallLimit || {}
+  const reusableMeta = desc.properties?.includeReusable?.meta || desc.properties?.includeReusable || {}
+  assert.equal(recallMeta.default, 5)
+  assert.equal(reusableMeta.default, true)
+  fiber.update({ home: tmpHome, recallLimit: 3 })
+  await fiber.await()
+  assert.equal(fiber.config.recallLimit, 3)
+  fiber.update({ home: tmpHome, recallLimit: 0 })
+  await fiber.await()
+  assert.equal(fiber.config.recallLimit, 0)
 
   // 6. WebUI seam: no webServer service in this context, so registration must
   // defer rather than crash (the live DSH Web service is never involved).
@@ -211,7 +232,7 @@ test('Veyra composes against the real DSH host services', { skip }, async () => 
     !ctx.commands.list(undefined).some((d) => d.name === 'veyra'),
     '/veyra command must be unregistered after ctx.dispose()',
   )
-  const assemblyAfter = await ctx.systemPrompt.assemble({})
+  const assemblyAfter = await ctx.systemPrompt.assemble(assembleCtx)
   assert.equal(
     assemblyAfter.sections.filter((s) => s.name === 'veyra:guidance').length,
     0,

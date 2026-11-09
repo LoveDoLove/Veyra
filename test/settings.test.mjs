@@ -1,9 +1,9 @@
 /**
- * Settings surface integration: boots Veyra on real cordis and proves the
- * exact seams DSH SettingsForms reads:
- *   entry.fiber.runtime.Config  → schema()/describe() surface
- *   settings.configure({auto})  → section presentation
- *   fiber.config                → validated value flowing into apply()
+ * Advanced configuration/runtime seam: Veyra's dedicated DSH Settings UI is
+ * removed, but runtime.Config, advanced YAML/programmatic config, defaults, and
+ * recallLimit behavior must remain intact.
+ *   entry.fiber.runtime.Config  → schema()/describe() surface for Host tooling
+ *   fiber.config / fiber.update → validated config flowing into apply()
  * Skips cleanly when @deepseek-ai/cordis is not resolvable.
  */
 import { test } from 'node:test'
@@ -32,56 +32,59 @@ async function loadCordis() {
   return null
 }
 
-test('DSH Settings seam: runtime.Config, auto presentation, live recallLimit update', async (t) => {
+test('advanced config seam: runtime.Config exports and live recallLimit/includeReusable updates', async (t) => {
   const cordis = await loadCordis()
   if (!cordis) {
     t.skip('@deepseek-ai/cordis not resolvable')
     return
   }
   const dir = mkdtempSync(join(tmpdir(), 'veyra-settings-'))
-  const configureCalls = []
   const promptHooks = []
   const ctx = new cordis.Context()
   ctx.provide('tools', { register() {} })
-  ctx.provide('settings', {
-    configure(presentation, owner) {
-      configureCalls.push({ presentation, owner })
-      return () => {}
-    },
-  })
   ctx.provide('systemPrompt', {
-    // DSH 0.2.2-rc.1: section/context return a Cordis disposer Function;
-    // Cordis rejects non-disposer return values from effect callbacks.
-    section: (s) => { promptHooks.push(s) },
-    context: (c) => { promptHooks.push(c) },
+    section(desc) { promptHooks.push(desc?.name); return () => {} },
+    context(desc) { promptHooks.push(desc?.name); return () => {} },
   })
 
-  const fiber = ctx.plugin(veyra, { home: dir, recallLimit: 0 })
-  await fiber
+  const fiber = ctx.plugin(veyra, { home: dir, codebaseWatch: false, eagerStartCodebaseMemory: false })
+  await fiber.await()
 
-  // SettingsForms.schema(): entry.fiber?.runtime?.Config
-  assert.equal(fiber.runtime.Config, Config)
-  // auto=true surfaces the section; owner is Veyra's own fiber
-  assert.equal(configureCalls.length, 1)
-  assert.deepEqual(configureCalls[0].presentation, { auto: true })
-  assert.equal(configureCalls[0].owner.runtime, fiber.runtime)
-  // Config['~standard'] validated the value; explicit 0 survives into apply().
-  // DSH 0.2.2-rc.1 Cordis may omit schema defaults from fiber.config; the
-  // plugin/runtime still applies includeReusable !== false.
-  assert.equal(fiber.config.recallLimit, 0)
-  assert.equal(fiber.config.includeReusable ?? true, true)
-  // recallLimit 0 → recall context provider is registered on the live plugin
-  assert.ok(
-    promptHooks.some((h) => h.name === 'veyra:recall' && typeof h.text === 'function'),
-    'veyra:recall context provider registered',
-  )
+  assert.equal(fiber.runtime.Config, veyra.Config)
+  assert.equal(typeof veyra.Config['~standard']?.validate, 'function')
+  const rawDesc = typeof fiber.runtime.Config.describe === 'function' ? fiber.runtime.Config.describe() : null
+  const toJson = typeof veyra.Config.toJSON === 'function' ? veyra.Config.toJSON() : null
+  const root = toJson?.refs?.[toJson?.uid]
+  const resolveRef = (n) => (typeof n === 'number' ? toJson?.refs?.[n] : n)
+  const desc = rawDesc?.type === 'object' && rawDesc?.properties ? rawDesc
+    : toJson?.type === 'object' && toJson?.properties ? toJson
+    : { type: 'object', properties: Object.fromEntries(Object.entries(root?.dict || {}).map(([k, v]) => [k, resolveRef(v)])) }
+  assert.equal(desc?.type, 'object')
+  assert.ok(desc?.properties?.recallLimit)
+  const recallMeta = desc.properties.recallLimit.meta || desc.properties.recallLimit
+  const reusableMeta = desc.properties.includeReusable.meta || desc.properties.includeReusable
+  assert.equal(recallMeta?.default, 5)
+  assert.ok(desc?.properties?.includeReusable)
+  assert.equal(reusableMeta?.default, true)
 
-  // Live settings save path: SettingsForms.write → configEditor → fiber.update
-  fiber.update({ home: dir, recallLimit: 3 })
+  assert.equal(fiber.config?.recallLimit ?? 5, 5)
+  assert.equal(fiber.config?.includeReusable ?? true, true)
+  assert.equal(Config['~standard'].validate({}).value.recallLimit, 5)
+  assert.equal(Config['~standard'].validate({ recallLimit: 0 }).value.recallLimit, 0)
+  assert.ok(promptHooks.includes('veyra:guidance'))
+  assert.ok(promptHooks.includes('veyra:recall'))
+
+  // Advanced config save path: fiber.update applies validated config and remounts.
+  fiber.update({ home: dir, recallLimit: 3, includeReusable: false, codebaseWatch: false, eagerStartCodebaseMemory: false })
   await fiber.await()
   assert.equal(fiber.config.recallLimit, 3)
+  assert.equal(fiber.config.includeReusable, false)
 
-  // Invalid edits are rejected by our schema through cordis resolveConfig
+  fiber.update({ home: dir, recallLimit: 0, codebaseWatch: false, eagerStartCodebaseMemory: false })
+  await fiber.await()
+  assert.equal(fiber.config.recallLimit, 0)
+
+  // Invalid edits are rejected by schema through cordis resolveConfig.
   await assert.rejects(async () => {
     fiber.update({ home: dir, recallLimit: -1 })
     await fiber.await()

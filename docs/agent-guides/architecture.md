@@ -114,8 +114,7 @@ why repository changes can weaken a memory without rewriting it.
    path is best-effort and must not break a turn.
 4. **Code Intelligence is a dependency, not code.** Veyra owns only the linking
    and unified retrieval glue.
-5. **Settings are Veyra's.** Configuration is exposed through Veyra's `Config`
-   and `client.js`; never patch DSH core or another plugin to fix Veyra.
+5. **Configuration is Veyra's.** Veyra works automatically with built-in defaults. Advanced YAML/programmatic configuration is validated through Veyra's `Config` (`src/config.mjs`); never patch DSH core or another plugin to fix Veyra. There is no dedicated Settings UI.
 
 ## Related
 

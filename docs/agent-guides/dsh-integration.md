@@ -8,7 +8,6 @@ registered there or delegated from there.
 
 | Seam | Registered from | Behavior |
 | --- | --- | --- |
-| `settings.configure` | `plugin.mjs` via `ctx.inject(['settings'])` | Surfaces the Veyra Settings section (`Config` in `src/config.mjs`) |
 | `systemPrompt.section` | `registerPrompt` | Static `GUIDANCE_TEXT` — memory is not repository truth |
 | `systemPrompt.context` | `registerPrompt` | Per-turn automatic recall via `createContextProvider(runtime)` |
 | `ctx.tools.register` | `registerTools` | 16 tools: ten `veyra_*` plus six `cbm_*` from the bridge factory |
