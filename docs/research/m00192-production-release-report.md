@@ -199,6 +199,8 @@ This is the established behaviour of this repository, not a regression: run `426
 
 Worth fixing independently: the approval step is not documented anywhere in the repo (`grep -rn "stage approve\|stage list\|2FA\|proof-of-presence"` → no matches), so the release process cannot be reproduced from the repository alone. That is a documentation gap for the next round, not a defect in this release.
 
+> **Closed in m00193.** The staging mechanics, the manual approval step, the 404 window, verification commands, and failure handling are now documented in [`m00193-npm-staged-publishing-documentation.md`](./m00193-npm-staged-publishing-documentation.md), and summarised in [`docs/agent-guides/release-and-packaging.md`](../agent-guides/release-and-packaging.md).
+
 ---
 
 ## 6. Changed files and Git state
@@ -217,7 +219,7 @@ These are stated plainly, and none is claimed as a gain:
 - **No measured efficiency improvement is claimed.** The m00190 study found n=10 pairs with 20/20 arms correct; repeat-reads 6.30 vs 6.80, p=0.7266, and memory about 1.9× tokens. That is a tie, and the release does not present it as a win.
 - **Pre-0.2.0 memory is not migrated.** By design. The old directories are left untouched and unread.
 - **Ten CI tests skip** in an environment without a DSH install. They are DSH-integration tests and they run and pass locally.
-- **The staged-publish approval step is undocumented** (section 5).
+- **The staged-publish approval step was undocumented** at release time (section 5) — closed by m00193; see [`m00193-npm-staged-publishing-documentation.md`](./m00193-npm-staged-publishing-documentation.md).
 - **`docs/research/` carries absolute local paths** in historical prose, the same class as the pre-existing `CHANGELOG.md:84` entry. The account name is already public through the repository URL.
 
 ---

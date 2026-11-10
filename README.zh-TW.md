@@ -357,12 +357,15 @@ DSH 設定不再提供專屬的 **Veyra** 區塊——Veyra 以內建預設值�
 ## 開發
 
 ```sh
-npm test               # node --test test/*.test.mjs  (806 tests, 800 pass, 6 skipped)
+npm test               # node --test test/*.test.mjs
 npm run pack:check     # npm pack --dry-run — 即將發布的內容
 ```
 
 CI 在每次 push 與 pull request 時，對 Node 22 與 24 兩者皆執行（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）。
-npm 發布由 [`.github/workflows/publish-npm.yml`](.github/workflows/publish-npm.yml) 處理：它在推送 `v*.*.*` 標籤或手動 `workflow_dispatch`（可帶 `version` 輸入）時執行。該工作流程會驗證發布版本／標籤、確認該版本尚未存在於 npm、執行 `npm ci`、`npm run build`（若有）、`npm test`、驗證執行時相依，然後發布到 npm，並在需要時建立對應的 GitHub Release（`vX.Y.Z`）。
+
+發布由 [`.github/workflows/publish-npm.yml`](.github/workflows/publish-npm.yml) 處理：推送 `v*.*.*` 標籤或手動 `workflow_dispatch`（可帶 `version` 輸入）時觸發。它會驗證標籤等於 `package.json` 且該版本尚未存在於 npm，執行 `npm install` 與 `npm test`，檢查執行時相依，然後執行 **`npm stage publish`**——將 tarball 與其 provenance 聲明暫存，把 2FA 驗證延後到維護者核准。同一輪會建立對應的 GitHub Release（`vX.Y.Z`）。
+
+因為「暫存」不等於「發布」，在維護者核准之前，套件會回傳 **HTTP 404**——這是預期行為，不是發布失敗。核准方式、`latest` dist-tag 為何落後、待核准／失敗的暫存如何處理，以及核准後的驗證指令，都記錄在 [`docs/research/m00193-npm-staged-publishing-documentation.md`](docs/research/m00193-npm-staged-publishing-documentation.md)。
 
 ---
 

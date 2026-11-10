@@ -370,7 +370,10 @@ npm run pack:check     # npm pack --dry-run — what would be published
 ```
 
 CI runs tests on Node 22 and 24 for every push and pull request ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
-npm publishing is handled by [`.github/workflows/publish-npm.yml`](.github/workflows/publish-npm.yml): it runs on a pushed `v*.*.*` tag or manual `workflow_dispatch` (with a `version` input). The workflow validates the release version/tag, checks that the version is not already on npm, runs `npm ci`, `npm run build` (if present), `npm test`, verifies runtime dependencies, publishes to npm, and creates a matching GitHub Release (`vX.Y.Z`) when needed.
+
+Releasing is handled by [`.github/workflows/publish-npm.yml`](.github/workflows/publish-npm.yml), triggered by a pushed `v*.*.*` tag or a manual `workflow_dispatch` (with a `version` input). It validates that the tag equals `package.json` and does not already exist on npm, runs `npm install` and `npm test`, verifies runtime dependencies, and then runs **`npm stage publish`** — which stages the tarball and its provenance statement but defers the 2FA check to a maintainer. A matching GitHub Release (`vX.Y.Z`) is created in the same run.
+
+Because staging is not publishing, the package returns **HTTP 404 from the registry until a maintainer approves the staged version** — this is expected, not a failed release. Approval, why the `latest` dist-tag lags, how to handle pending or failed stages, and the post-approval verification commands are documented in [`docs/research/m00193-npm-staged-publishing-documentation.md`](docs/research/m00193-npm-staged-publishing-documentation.md).
 
 ---
 
