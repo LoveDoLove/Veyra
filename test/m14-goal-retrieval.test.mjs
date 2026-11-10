@@ -43,8 +43,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { readFileSync, readdirSync } from 'node:fs'
 
-import { AUTHORITIES, KINDS, STATUSES, VALIDATIONS } from '../src/types.mjs'
+import { AUTHORITIES, KINDS, SCOPES, STATUSES, VALIDATIONS } from '../src/types.mjs'
 import { openEphemeralStore, closeAllStores } from '../src/store.mjs'
+import { roomStore, testRuntime } from './helpers/room.mjs'
 import { addRejected } from '../src/negative.mjs'
 import {
   GOAL_WEIGHT,
@@ -261,8 +262,23 @@ test('goal affinity never rewrites authority, validation, confidence or scope', 
 
 test('project isolation survives an explicit goal', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'veyra-goal-iso-'))
-  const harness = createToolHarness({ veyraHome: dir, fallbackCwd: process.cwd() })
+  const ownWorkspace = mkdtempSync(join(tmpdir(), 'veyra-goal-own-'))
+  const otherWorkspace = mkdtempSync(join(tmpdir(), 'veyra-goal-other-'))
+  // Room identity replaces the old path-identity rule: isolation means another
+  // workspace's room is unreachable, not that a record is tagged "foreign".
+  const runtime = testRuntime(dir, ownWorkspace, { paths: [ownWorkspace, otherWorkspace] })
+  const harness = createToolHarness(runtime)
   try {
+    // Plant a would-be answer in a DIFFERENT room with the same query text.
+    const foreign = roomStore(dir, otherWorkspace)
+    const foreignRecord = foreign.put({
+      title: 'Index rebuild during deploy',
+      body: 'postgres index rebuild during deploy is slow',
+      authority: AUTHORITIES.DERIVED,
+      validation: VALIDATIONS.VERIFIED,
+      kind: KINDS.MEMORY,
+    }).record
+
     await harness.call('veyra_remember', { title: 'Index rebuild during deploy', body: 'postgres index rebuild during deploy is slow' })
     const results = await harness.call('veyra_recall', {
       query: 'postgres index rebuild during deploy',
@@ -270,12 +286,17 @@ test('project isolation survives an explicit goal', async () => {
     })
     assert.equal(results.ok, true)
     assert.ok(results.count > 0)
+    const ids = results.items.map((item) => item.id)
+    assert.equal(ids.includes(foreignRecord.id), false,
+      'another workspace room is never recalled, even with an explicit goal')
     for (const item of results.items) {
-      assert.notEqual(item.scope, 'foreign')
+      assert.equal(item.scope, SCOPES.PROJECT, 'every recalled record is in the caller project scope')
     }
   } finally {
     closeAllStores()
     rmSync(dir, { recursive: true, force: true })
+    rmSync(ownWorkspace, { recursive: true, force: true })
+    rmSync(otherWorkspace, { recursive: true, force: true })
   }
 })
 
@@ -301,7 +322,8 @@ test('the coverage tail zeroes goal_affinity too (zero-score entries stay last)'
 
 test('veyra_recall accepts a goal and returns the steered order', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'veyra-goal-tool-'))
-  const harness = createToolHarness({ veyraHome: dir, fallbackCwd: process.cwd() })
+  const cwd = process.cwd()
+  const harness = createToolHarness(testRuntime(dir, cwd))
   try {
     await harness.call('veyra_remember', { title: 'Cache warming', body: 'redis cache warming takes minutes on cold start' })
     await harness.call('veyra_remember', { title: 'Index rebuild', body: 'postgres index rebuild during deploy blocks writes' })

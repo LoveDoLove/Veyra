@@ -22,6 +22,7 @@ import { sweepStale, markStale, verifyEvidenceHealth, evolveAgainst } from '../s
 import { maybeLearn, reviewCandidate, strengthenMemory } from '../src/learn.mjs'
 import { AUTHORITIES, KINDS, STATUSES, VALIDATIONS } from '../src/types.mjs'
 import { apply, MAINTENANCE_EVERY_N_TURNS, _resetMaintenanceCounter, _maintenanceTurns } from '../src/plugin.mjs'
+import { fakeContext } from './helpers/room.mjs'
 
 const daysAgo = (d) => new Date(Date.now() - d * 86400000).toISOString()
 const OLD = 200 * 86400000
@@ -325,6 +326,10 @@ test('the real turn-stopping handler runs maintenance on turns 5 and 10', () => 
   const logs = []
   const hooks = {}
   const ctx = {
+    // Learning resolves a memory ROOM from the DSH workspace registry; without
+    // one the handler fails closed and maintenance never runs. Session `s1`
+    // owns this workspace, which is how the handler resolves it.
+    ...fakeContext([{ path: process.cwd(), sessionIds: ['s1'] }]),
     on(ev, fn) { hooks[ev] = fn },
     effect() { return () => {} },
     logger: { info: (m) => logs.push(m) },

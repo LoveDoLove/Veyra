@@ -14,8 +14,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { closeAllStores, openEphemeralStore, openProjectStore } from '../src/store.mjs'
-import { projectIdFor } from '../src/ids.mjs'
+import { closeAllStores, openEphemeralStore } from '../src/store.mjs'
+import { roomStore, testRuntime } from './helpers/room.mjs'
 import { handleVeyraCommand } from '../src/commands.mjs'
 import { auditContradictionEdges, MAX_FINDINGS, MAX_RECORDS } from '../src/audit.mjs'
 import { AUTHORITIES, RELATIONS } from '../src/types.mjs'
@@ -189,8 +189,10 @@ test('/veyra audit contradictions end-to-end is read-only', () => {
   const dir = mkdtempSync(join(tmpdir(), 'veyra-issue3-audit-'))
   const cwd = mkdtempSync(join(tmpdir(), 'veyra-issue3-audit-ws-'))
   try {
-    const runtime = { veyraHome: dir, fallbackCwd: cwd, recallLimit: 5, includeReusable: true }
-    const store = openProjectStore(dir, projectIdFor(cwd))
+    // Commands resolve the workspace room for the invocation's agent, so the
+    // runtime must carry a Memory Server; the seeded store must be that same room.
+    const runtime = testRuntime(dir, cwd, { recallLimit: 5, includeReusable: true })
+    const store = roomStore(dir, cwd)
     const run = (text) => handleVeyraCommand(runtime, {
       text, agent: { session: { header: { cwd } } },
     })

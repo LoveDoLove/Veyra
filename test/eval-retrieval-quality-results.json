@@ -1,7 +1,7 @@
 {
   "harness": "eval-retrieval-quality",
-  "startedAt": "2026-11-05T05:20:26.627Z",
-  "runDir": "/tmp/veyra-eval-rq-92UrAI",
+  "startedAt": "2026-11-05T13:42:15.768Z",
+  "runDir": "/tmp/veyra-eval-rq-E9HSST",
   "dims": {
     "D1": {
       "checks": [
@@ -9,39 +9,33 @@
           "id": "D1.1",
           "name": "true root cause is top-1 for its own query",
           "expected": "RC rank 1",
-          "actual": "RC rank 3",
-          "pass": false
+          "actual": "RC rank 1",
+          "pass": true
         },
         {
           "id": "D1.2",
           "name": "zero-overlap query returns no records (irrelevance floor)",
           "expected": "0 records",
-          "actual": "5 records",
-          "pass": false
+          "actual": "0 records",
+          "pass": true
         }
       ],
       "metric": {
         "relOrder": [
-          "vey_1a1aa26b80b_5c8e1dc36a4a",
-          "vey_1a1aa26b80d_f74ef77522d8",
-          "vey_1a1aa26b808_9e9334904746",
-          "vey_1a1aa26b80f_d923f52670ab",
+          "vey_1a1abf225eb_77078c8fc617",
+          "vey_1a1abf225fc_bb021a63d028",
+          "vey_1a1abf2260b_3f8fb87f174d",
+          "vey_1a1abf2260f_2c4815c624f1",
           "rej_062e55ebd9"
         ],
-        "RCrank": 3,
-        "DISTRrank": 2,
+        "RCrank": 1,
+        "DISTRrank": 3,
         "precisionAt1": 1,
         "precisionAt3": 0.667,
         "precisionAt5": 0.6,
         "unrelated": {
-          "order": [
-            "vey_1a1aa26b808_9e9334904746",
-            "vey_1a1aa26b80b_5c8e1dc36a4a",
-            "vey_1a1aa26b80f_d923f52670ab",
-            "vey_1a1aa26b810_d6c1f4d7d92d",
-            "vey_1a1aa26b80d_f74ef77522d8"
-          ],
-          "returned": 5
+          "order": [],
+          "returned": 0
         }
       }
     },
@@ -51,20 +45,20 @@
           "id": "D2.1",
           "name": "evidenced record ranks above unsupported no-evidence same-topic record",
           "expected": "RC rank < noEv rank",
-          "actual": "RC=4 noEv=1",
-          "pass": false
+          "actual": "RC=1 noEv=2",
+          "pass": true
         }
       ],
       "metric": {
         "order": [
-          "vey_1a1aa26b81b_82ca8d9c4953",
-          "vey_1a1aa26b80b_5c8e1dc36a4a",
-          "vey_1a1aa26b80d_f74ef77522d8",
-          "vey_1a1aa26b808_9e9334904746",
+          "vey_1a1abf225eb_77078c8fc617",
+          "vey_1a1abf2262f_14d9d83fca8c",
+          "vey_1a1abf225fc_bb021a63d028",
+          "vey_1a1abf2260b_3f8fb87f174d",
           "rej_062e55ebd9"
         ],
-        "RC_evidenced_rank": 4,
-        "noEvidence_rank": 1,
+        "RC_evidenced_rank": 1,
+        "noEvidence_rank": 2,
         "evCount_RC": 2,
         "evCount_noEv": 0
       }
@@ -82,8 +76,8 @@
           "id": "D3.2",
           "name": "file rename (move) still flags the anchored memory stale",
           "expected": "RC flagged after move",
-          "actual": "category=null affected=[]",
-          "pass": false
+          "actual": "category=stale affected=[\"vey_1a1abf225fc_bb021a63d028\",\"vey_1a1abf225eb_77078c8fc617\"]",
+          "pass": true
         }
       ],
       "metric": {
@@ -96,9 +90,12 @@
           "contradicted": 0,
           "insufficientEvidence": 0
         },
-        "renamedPath_detected": false,
-        "renamedCategory": null,
-        "renamedAffected": []
+        "renamedPath_detected": true,
+        "renamedCategory": "stale",
+        "renamedAffected": [
+          "vey_1a1abf225fc_bb021a63d028",
+          "vey_1a1abf225eb_77078c8fc617"
+        ]
       }
     },
     "D4": {
@@ -138,8 +135,8 @@
         "linked": true,
         "count": 5,
         "rcAndR5": [
-          "vey_1a1aa26b808_9e9334904746",
-          "vey_1a1aa26b82a_4dea7ef6c90d"
+          "vey_1a1abf225eb_77078c8fc617",
+          "vey_1a1abf22665_0de8e4c1c56f"
         ]
       }
     },
@@ -149,7 +146,7 @@
           "id": "D6.1",
           "name": "arm A (with Veyra) surfaces the relevant root cause",
           "expected": "root cause in arm A context",
-          "actual": "hit=true chars=2333",
+          "actual": "hit=true chars=2368",
           "pass": true
         },
         {
@@ -162,7 +159,7 @@
       ],
       "metric": {
         "armA": {
-          "ctxChars": 2333,
+          "ctxChars": 2368,
           "relevantSurfaced": true
         },
         "armB": {
@@ -176,48 +173,36 @@
   "metrics": {
     "precisionAt": {
       "relOrder": [
-        "vey_1a1aa26b80b_5c8e1dc36a4a",
-        "vey_1a1aa26b80d_f74ef77522d8",
-        "vey_1a1aa26b808_9e9334904746",
-        "vey_1a1aa26b80f_d923f52670ab",
+        "vey_1a1abf225eb_77078c8fc617",
+        "vey_1a1abf225fc_bb021a63d028",
+        "vey_1a1abf2260b_3f8fb87f174d",
+        "vey_1a1abf2260f_2c4815c624f1",
         "rej_062e55ebd9"
       ],
-      "RCrank": 3,
-      "DISTRrank": 2,
+      "RCrank": 1,
+      "DISTRrank": 3,
       "precisionAt1": 1,
       "precisionAt3": 0.667,
       "precisionAt5": 0.6,
       "unrelated": {
-        "order": [
-          "vey_1a1aa26b808_9e9334904746",
-          "vey_1a1aa26b80b_5c8e1dc36a4a",
-          "vey_1a1aa26b80f_d923f52670ab",
-          "vey_1a1aa26b810_d6c1f4d7d92d",
-          "vey_1a1aa26b80d_f74ef77522d8"
-        ],
-        "returned": 5
+        "order": [],
+        "returned": 0
       }
     },
     "fpOnUnrelated": {
-      "order": [
-        "vey_1a1aa26b808_9e9334904746",
-        "vey_1a1aa26b80b_5c8e1dc36a4a",
-        "vey_1a1aa26b80f_d923f52670ab",
-        "vey_1a1aa26b810_d6c1f4d7d92d",
-        "vey_1a1aa26b80d_f74ef77522d8"
-      ],
-      "returned": 5
+      "order": [],
+      "returned": 0
     },
     "evidenceRanking": {
       "order": [
-        "vey_1a1aa26b81b_82ca8d9c4953",
-        "vey_1a1aa26b80b_5c8e1dc36a4a",
-        "vey_1a1aa26b80d_f74ef77522d8",
-        "vey_1a1aa26b808_9e9334904746",
+        "vey_1a1abf225eb_77078c8fc617",
+        "vey_1a1abf2262f_14d9d83fca8c",
+        "vey_1a1abf225fc_bb021a63d028",
+        "vey_1a1abf2260b_3f8fb87f174d",
         "rej_062e55ebd9"
       ],
-      "RC_evidenced_rank": 4,
-      "noEvidence_rank": 1,
+      "RC_evidenced_rank": 1,
+      "noEvidence_rank": 2,
       "evCount_RC": 2,
       "evCount_noEv": 0
     },
@@ -231,9 +216,12 @@
         "contradicted": 0,
         "insufficientEvidence": 0
       },
-      "renamedPath_detected": false,
-      "renamedCategory": null,
-      "renamedAffected": []
+      "renamedPath_detected": true,
+      "renamedCategory": "stale",
+      "renamedAffected": [
+        "vey_1a1abf225fc_bb021a63d028",
+        "vey_1a1abf225eb_77078c8fc617"
+      ]
     },
     "staleRendering": {
       "ctxChars": 3630,
@@ -244,13 +232,13 @@
       "linked": true,
       "count": 5,
       "rcAndR5": [
-        "vey_1a1aa26b808_9e9334904746",
-        "vey_1a1aa26b82a_4dea7ef6c90d"
+        "vey_1a1abf225eb_77078c8fc617",
+        "vey_1a1abf22665_0de8e4c1c56f"
       ]
     },
     "baseline": {
       "armA": {
-        "ctxChars": 2333,
+        "ctxChars": 2368,
         "relevantSurfaced": true
       },
       "armB": {
@@ -260,36 +248,11 @@
       }
     },
     "tokenCostApprox": {
-      "armA_recallContext": 583,
+      "armA_recallContext": 592,
       "armB_recallContext": 44
     }
   },
-  "failures": [
-    {
-      "dim": "D1",
-      "id": "D1.1",
-      "expected": "RC rank 1",
-      "actual": "RC rank 3"
-    },
-    {
-      "dim": "D1",
-      "id": "D1.2",
-      "expected": "0 records",
-      "actual": "5 records"
-    },
-    {
-      "dim": "D2",
-      "id": "D2.1",
-      "expected": "RC rank < noEv rank",
-      "actual": "RC=4 noEv=1"
-    },
-    {
-      "dim": "D3",
-      "id": "D3.2",
-      "expected": "RC flagged after move",
-      "actual": "category=null affected=[]"
-    }
-  ],
+  "failures": [],
   "nextSlice": null,
-  "finishedAt": "2026-11-05T05:20:26.676Z"
+  "finishedAt": "2026-11-05T13:42:15.943Z"
 }

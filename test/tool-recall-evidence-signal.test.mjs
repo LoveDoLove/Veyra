@@ -15,29 +15,29 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { createToolHarness } from '../src/tools.mjs'
-import { closeAllStores, openProjectStore } from '../src/store.mjs'
-import { projectIdFor } from '../src/ids.mjs'
+import { closeAllStores } from '../src/store.mjs'
+import { agentFor, roomIdFor, roomStore, testHome, testRuntime } from './helpers/room.mjs'
 
-function setup() {
-  const home = mkdtempSync(join(tmpdir(), 'veyra-toolevidence-'))
-  const cwd = join(home, 'ws')
-  const projectId = projectIdFor(cwd)
-  const projectStore = openProjectStore(home, projectId)
-  const h = createToolHarness({ veyraHome: home })
-  const exec = { agent: { session: { header: { cwd } } } }
+function setup(t) {
+  // The room store seeded here is the one the runtime resolves for this
+  // workspace: `veyra_recall` fails closed without a Memory Server, and a seed
+  // in any other store would be invisible to the tool.
+  const home = testHome(t, 'veyra-toolevidence-')
+  const cwd = testHome(t, 'veyra-toolevidence-ws-')
+  const projectId = roomIdFor(cwd)
+  const projectStore = roomStore(home, cwd)
+  const h = createToolHarness(testRuntime(home, cwd))
+  const exec = { agent: agentFor(cwd) }
   return {
     home, cwd, projectId, projectStore,
     recall: (args) => h.call('veyra_recall', args, exec),
-    cleanup: () => { closeAllStores(); rmSync(home, { recursive: true, force: true }) },
+    cleanup: () => { closeAllStores() },
   }
 }
 
-test('veyra_recall keeps an evidence-matched FTS hit when title/body/tags lack query tokens', async () => {
-  const t = setup()
+test('veyra_recall keeps an evidence-matched FTS hit when title/body/tags lack query tokens', async (tc) => {
+  const t = setup(tc)
   try {
     t.projectStore.put({
       id: 'veyra_probe_evidence_match',
@@ -61,8 +61,8 @@ test('veyra_recall keeps an evidence-matched FTS hit when title/body/tags lack q
   }
 })
 
-test('veyra_recall still returns nothing for a stopword-only query with no real signal', async () => {
-  const t = setup()
+test('veyra_recall still returns nothing for a stopword-only query with no real signal', async (tc) => {
+  const t = setup(tc)
   try {
     t.projectStore.put({
       id: 'veyra_probe_stopword',

@@ -16,13 +16,13 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { openProjectStore, openReusableStore, closeAllStores } from '../src/store.mjs'
+import { closeAllStores } from '../src/store.mjs'
 import { remember, promote } from '../src/learn.mjs'
 import { recordFeedback } from '../src/feedback.mjs'
 import { forget } from '../src/lifecycle.mjs'
 import { recall, inspect } from '../src/retrieve.mjs'
 import { createToolHarness } from '../src/tools.mjs'
-import { projectIdFor } from '../src/ids.mjs'
+import { centralStore, roomIdFor, roomStore, testRuntime } from './helpers/room.mjs'
 import { AUTHORITIES, VALIDATIONS, KINDS, SCOPES } from '../src/types.mjs'
 
 // Helpers
@@ -41,8 +41,13 @@ function claim(title, body, overrides = {}) {
 test('ISB-1: identical high-overlap query does not leak cross-project', () => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-isb-1-'))
   try {
-    const alpha = openProjectStore(home, 'proj-alpha')
-    const beta = openProjectStore(home, 'proj-beta')
+    // Two workspaces are two rooms: isolation is now keyed by WorkspaceId.
+    const pathA = join(home, 'workspace-alpha')
+    const pathB = join(home, 'workspace-beta')
+    const alpha = roomStore(home, pathA)
+    const beta = roomStore(home, pathB)
+    const alphaRoom = roomIdFor(pathA)
+    const betaRoom = roomIdFor(pathB)
 
     // Both projects write nearly identical records with HIGH lexical overlap
     const alphaId = remember(alpha, claim(
@@ -64,9 +69,9 @@ test('ISB-1: identical high-overlap query does not leak cross-project', () => {
 
     assert.ok(fromAlpha.length > 0, 'alpha recall returned results')
     assert.ok(fromBeta.length > 0, 'beta recall returned results')
-    assert.ok(fromAlpha.every((r) => r.projectId === 'proj-alpha'),
+    assert.ok(fromAlpha.every((r) => r.projectId === alphaRoom),
       'alpha recall returns only alpha records despite high-overlap query')
-    assert.ok(fromBeta.every((r) => r.projectId === 'proj-beta'),
+    assert.ok(fromBeta.every((r) => r.projectId === betaRoom),
       'beta recall returns only beta records despite high-overlap query')
     assert.ok(!fromAlpha.some((r) => r.id === betaId), 'alpha never sees beta id')
     assert.ok(!fromBeta.some((r) => r.id === alphaId), 'beta never sees alpha id')
@@ -79,8 +84,8 @@ test('ISB-1: identical high-overlap query does not leak cross-project', () => {
 test('ISB-2: reusable record does not pollute project-local scope', () => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-isb-2-'))
   try {
-    const project = openProjectStore(home, 'proj-main')
-    const reusable = openReusableStore(home)
+    const project = roomStore(home, join(home, 'workspace-main'))
+    const reusable = centralStore(home)
 
     // Reusable memory
     const reusableId = remember(reusable, claim(
@@ -117,7 +122,9 @@ test('ISB-2: reusable record does not pollute project-local scope', () => {
 
 test('ISB-3: malformed exec.agent falls back safely (fail-closed)', async () => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-isb-3-'))
-  const runtime = { veyraHome: home, fallbackCwd: process.cwd() }
+  // Fail-closed identity fallback now lands in the registry-keyed room for
+  // process.cwd(); the Memory Server is what makes that room resolvable.
+  const runtime = testRuntime(home, process.cwd())
   const harness = createToolHarness(runtime)
 
   try {
@@ -137,9 +144,9 @@ test('ISB-3: malformed exec.agent falls back safely (fail-closed)', async () => 
     // documented fallback chain ends at process.cwd() (ids.mjs:133), so
     // missing/malformed identity collapses deterministically to ONE project,
     // never to a null/shared bucket and never to a random other project.
-    const fallbackProjectId = projectIdFor(process.cwd())
-    assert.ok(/^p_[0-9a-f]{16}$/.test(fallbackProjectId), 'malformed identity still yields a well-formed project id')
-    const store = openProjectStore(home, fallbackProjectId)
+    const fallbackProjectId = roomIdFor(process.cwd())
+    assert.ok(/^w_[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(fallbackProjectId), 'malformed identity still yields a well-formed room id')
+    const store = roomStore(home, process.cwd())
     const rows = store.list({ limit: 10 })
     assert.ok(rows.length >= 3, 'all three writes landed in the fallback project')
   } finally {
@@ -152,7 +159,8 @@ test('ISB-4: veyra_remember scope arg cannot inject foreign projectId at storage
   const home = mkdtempSync(join(tmpdir(), 'veyra-isb-4-'))
   const cwdA = join(home, 'workspace-a')
   const cwdB = join(home, 'workspace-b')
-  const runtime = { veyraHome: home, fallbackCwd: cwdA }
+  // Both workspaces are registered so A and B are two distinct rooms.
+  const runtime = testRuntime(home, cwdA, { paths: [cwdA, cwdB] })
   const harness = createToolHarness(runtime)
 
   try {
@@ -192,7 +200,8 @@ test('ISB-5: veyra_feedback on foreign record id returns not-found (scope-aware)
   const home = mkdtempSync(join(tmpdir(), 'veyra-isb-5-'))
   const cwdA = join(home, 'workspace-a')
   const cwdB = join(home, 'workspace-b')
-  const runtime = { veyraHome: home, fallbackCwd: cwdA }
+  // Both workspaces are registered so A and B are two distinct rooms.
+  const runtime = testRuntime(home, cwdA, { paths: [cwdA, cwdB] })
   const harness = createToolHarness(runtime)
 
   try {
@@ -223,7 +232,8 @@ test('ISB-6: veyra_promote on foreign record id returns not-found', async () => 
   const home = mkdtempSync(join(tmpdir(), 'veyra-isb-6-'))
   const cwdA = join(home, 'workspace-a')
   const cwdB = join(home, 'workspace-b')
-  const runtime = { veyraHome: home, fallbackCwd: cwdA }
+  // Both workspaces are registered so A and B are two distinct rooms.
+  const runtime = testRuntime(home, cwdA, { paths: [cwdA, cwdB] })
   const harness = createToolHarness(runtime)
 
   try {
@@ -251,7 +261,8 @@ test('ISB-7: veyra_forget on foreign record id returns not-found', async () => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-isb-7-'))
   const cwdA = join(home, 'workspace-a')
   const cwdB = join(home, 'workspace-b')
-  const runtime = { veyraHome: home, fallbackCwd: cwdA }
+  // Both workspaces are registered so A and B are two distinct rooms.
+  const runtime = testRuntime(home, cwdA, { paths: [cwdA, cwdB] })
   const harness = createToolHarness(runtime)
 
   try {
@@ -285,7 +296,8 @@ test('ISB-8: veyra_inspect on foreign record id returns not-found (scope-aware)'
   const home = mkdtempSync(join(tmpdir(), 'veyra-isb-8-'))
   const cwdA = join(home, 'workspace-a')
   const cwdB = join(home, 'workspace-b')
-  const runtime = { veyraHome: home, fallbackCwd: cwdA }
+  // Both workspaces are registered so A and B are two distinct rooms.
+  const runtime = testRuntime(home, cwdA, { paths: [cwdA, cwdB] })
   const harness = createToolHarness(runtime)
 
   try {
@@ -313,7 +325,8 @@ test('ISB-9: veyra_health scoped correctly (no cross-project health data)', asyn
   const home = mkdtempSync(join(tmpdir(), 'veyra-isb-9-'))
   const cwdA = join(home, 'workspace-a')
   const cwdB = join(home, 'workspace-b')
-  const runtime = { veyraHome: home, fallbackCwd: cwdA }
+  // Both workspaces are registered so A and B are two distinct rooms.
+  const runtime = testRuntime(home, cwdA, { paths: [cwdA, cwdB] })
   const harness = createToolHarness(runtime)
 
   try {
@@ -323,7 +336,7 @@ test('ISB-9: veyra_health scoped correctly (no cross-project health data)', asyn
       title: 'Alpha verified',
       body: 'belongs to A',
     }, { agent: { session: { header: { cwd: cwdA } } } })
-    const storeA = openProjectStore(home, projectIdFor(cwdA))
+    const storeA = roomStore(home, cwdA)
     const recA = storeA.get(writeA.record.id)
     storeA.put({ ...recA, validation: VALIDATIONS.VERIFIED })
 
@@ -355,8 +368,8 @@ test('ISB-9: veyra_health scoped correctly (no cross-project health data)', asyn
 test('ISB-10: evidence field with secret patterns scrubbed before cross-scope operations', () => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-isb-10-'))
   try {
-    const project = openProjectStore(home, 'proj-main')
-    const reusable = openReusableStore(home)
+    const project = roomStore(home, join(home, 'workspace-main'))
+    const reusable = centralStore(home)
 
     // Write project-local memory with evidence containing a secret pattern
     const written = remember(project, claim(
@@ -391,8 +404,8 @@ test('ISB-10: evidence field with secret patterns scrubbed before cross-scope op
 test('ISB-11: source.provenance.workspace does not leak cross-project (attribution only)', () => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-isb-11-'))
   try {
-    const alpha = openProjectStore(home, 'proj-alpha')
-    const beta = openProjectStore(home, 'proj-beta')
+    const alpha = roomStore(home, join(home, 'workspace-alpha'))
+    const beta = roomStore(home, join(home, 'workspace-beta'))
 
     // Write in alpha with provenance attribution
     const alphaId = remember(alpha, claim(

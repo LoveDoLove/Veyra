@@ -61,8 +61,8 @@ DSH session events
       ▼
   derived memory     authority = derived     (recall-eligible)
       │
-      ├──► SQLite store     $DSH_HOME/veyra/projects/<projectId>/memory.db
-      │                     $DSH_HOME/veyra/reusable/memory.db
+      ├──► SQLite store     $DSH_HOME/veyra/rooms/<roomId>/memory.db
+      │                     $DSH_HOME/veyra/central/memory.db
       │
       ▼  read-only projections
   ┌───────────────┬──────────────┬───────────────┬────────────────────┐
@@ -99,11 +99,60 @@ why repository changes can weaken a memory without rewriting it.
 ## Storage and identity
 
 - Root: `config.home` → `$VEYRA_HOME` → `$DSH_HOME/veyra` (`src/ids.mjs`).
-- One SQLite database per project; one shared reusable database.
-- Project id: stable hash of resolved workspace path plus git remote, so two
-  checkouts of the same remote share memory and unrelated folders never collide.
 - Schema: `node:sqlite` with FTS5, `SCHEMA_VERSION = 1`. A mismatched version
   refuses to open rather than guessing.
+
+There is exactly one layout since the clean break.
+
+| Layout | Project memory | Shared memory | Enabled when |
+| --- | --- | --- | --- |
+| Memory Server | `rooms/<roomId>/memory.db` | `central/memory.db` | DSH workspace registry is available |
+
+The pre-rooms layout — `projects/<projectId>/memory.db` and
+`reusable/memory.db`, both keyed by a hash of path plus git remote — is **no
+longer read, written, migrated, merged, or deleted**. It stays on disk,
+untouched, and the running system never opens it. There is no compatibility
+mode and no `--dry-run` import path, because a path-derived identity cannot
+express two workspaces on one repository, and any import would have to guess
+which workspace owns each record.
+
+**A room is a DSH WorkspaceId, not a path** (`src/rooms.mjs`). Two workspaces
+opened on the same repository are two rooms with separate memory. `w_<id>` is
+the room id, with a hashed form for ids that are not filesystem-safe, so a
+workspace id can never traverse out of `rooms/`.
+
+The resolver (`src/workspace-resolver.mjs`) answers one question — *which
+workspace is this turn?* — in a fixed order: session id → exact path →
+path containment → fail. It never falls back to "close enough": a failure is
+reported as `ambiguous-session`, `ambiguous-path`, `unresolved`,
+`registry-unreadable`, `registry-not-ready`, `registry-unavailable`, or
+`no-context`, and the caller degrades. Containment may only **narrow** a
+candidate set: when several registered roots contain the cwd, the **deepest
+canonical root wins**, so a nested workspace never maps to its parent's room,
+and equal-depth candidates stay `ambiguous-path`.
+
+`RESOLUTION_MODES` therefore has one member, `registry`, and
+`resolver.mode()` returns it unconditionally — a second answer there would be
+a lie, because no resolution can reach a second model. The three-state
+registry diagnostic lives in `resolver.state()` (`available`, `absent`,
+`unavailable`) and is surfaced by `health().registryState`:
+
+- `absent` — the host never declared a workspace service, so no workspace id
+  can exist. Resolution fails closed with `workspace-registry-unavailable`.
+- `unavailable` — declared but unobtainable, or `list()` threw because the
+  Host has not finished initialising it. A **fault**, not missing capability;
+  resolution fails closed with `workspace-registry-not-ready`. Reporting a
+  transient fault as permanent absence is how a "temporary" workaround becomes
+  permanent. Because a getter that answers is not the same as a registry that
+  works, `state()` calls `list()` rather than trusting the getter alone —
+  otherwise a not-started registry reports `available` while every resolution
+  refuses.
+
+Central Memories is the only cross-workspace store, and promotion is the only
+way in (`src/promotion.mjs`). `veyra_promote` refuses a `candidate`, refuses
+`canonical` without `explicit: true`, and requires evidence or
+`validation: verified`; a record whose content hash already exists in Central
+is linked rather than duplicated.
 
 ## Hard boundaries
 

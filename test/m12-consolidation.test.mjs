@@ -8,11 +8,11 @@ import {
 } from '../src/consolidate.mjs'
 import { observatoryConsolidation } from '../src/observatory.mjs'
 import { isRecallEligible, STATUSES, VALIDATIONS, AUTHORITIES, KINDS, RELATIONS } from '../src/types.mjs'
-import { openEphemeralStore, openProjectStore, closeAllStores } from '../src/store.mjs'
+import { openEphemeralStore, closeAllStores } from '../src/store.mjs'
 import { sharesSubject } from '../src/diff.mjs'
 import { supersedeEligible, markStale } from '../src/evolve.mjs'
 import { handleVeyraCommand } from '../src/commands.mjs'
-import { projectIdFor } from '../src/ids.mjs'
+import { fakeContext, roomIdFor, roomStore, testRuntimeWithStores } from './helpers/room.mjs'
 import { apply, MAINTENANCE_EVERY_N_TURNS, _resetMaintenanceCounter, _maintenanceTurns } from '../src/plugin.mjs'
 
 // ============================================================================
@@ -537,14 +537,14 @@ test('C3 scoping ISOLATION: a replacement pair split across project/reusable sto
 // operator actually types (`/veyra observatory consolidation`) was not, so a
 // routing regression could have hidden a fully-green detector.
 
-test('C3 DISPATCH: observatory consolidation + aliases reach the read-only surface', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'veyra-m12-dispatch-'))
-  const cwd = join(dir, 'workspace')
-  mkdirSync(cwd, { recursive: true })
-  const projectStore = openProjectStore(dir, projectIdFor(cwd))
-  for (const r of relatedReplacement()) projectStore.put({ ...r })
+test('C3 DISPATCH: observatory consolidation + aliases reach the read-only surface', (t) => {
+  const cwd = mkdtempSync(join(tmpdir(), 'veyra-m12-dispatch-ws-'))
+  t.after(() => rmSync(cwd, { recursive: true, force: true }))
+  // Seed the workspace room the command resolves; records carry its room id.
+  const { runtime, store, roomId } = testRuntimeWithStores(t, cwd, { recallLimit: 5, includeReusable: true })
+  const projectStore = store
+  for (const r of relatedReplacement()) projectStore.put({ ...r, projectId: roomId })
 
-  const runtime = { veyraHome: dir, fallbackCwd: cwd, recallLimit: 5, includeReusable: true }
   const invocation = { agent: { session: { header: { cwd } } } }
 
   for (const sub of ['consolidation', 'consolidate', 'proposals']) {
@@ -567,7 +567,6 @@ test('C3 DISPATCH: observatory consolidation + aliases reach the read-only surfa
   assert.equal(projectStore.list({ limit: 200 }).length, 2, 'dispatch left both records in place (no merge/delete)')
 
   closeAllStores()
-  rmSync(dir, { recursive: true, force: true })
 })
 
 // -- (13) cadence: the plugin maintenance path --------------------------------
@@ -585,11 +584,15 @@ test('C3 CADENCE: maintenance reports proposals read-only on the existing 5-turn
   // M5 evidence-health check finds `src/store.mjs` present, so `markStale` has
   // nothing to demote and the snapshot below isolates what C3 itself does.
   const cwd = process.cwd()
-  const projectId = projectIdFor(cwd)
+  // The plugin resolves memory by workspace room, so the fake host must expose
+  // a workspace registry containing this cwd — otherwise turn-stopping refuses
+  // to learn and maintenance never runs.
+  const projectId = roomIdFor(cwd)
 
   const logs = []
   const listeners = {}
   const ctx = {
+    ...fakeContext([cwd]),
     logger: { info: (m) => logs.push(String(m)), warn: (m) => logs.push(String(m)), debug: () => {} },
     tools: { register: () => {} },
     commands: { register: () => {} },
@@ -600,8 +603,8 @@ test('C3 CADENCE: maintenance reports proposals read-only on the existing 5-turn
   }
   const dispose = apply(ctx, { home: dir, observe: true })
 
-  const projectStore = openProjectStore(dir, projectId)
-  for (const r of relatedReplacement()) projectStore.put({ ...r })
+  const projectStore = roomStore(dir, cwd)
+  for (const r of relatedReplacement()) projectStore.put({ ...r, projectId })
   const seededBefore = snapshot([projectStore.get('relOld'), projectStore.get('relNew')])
 
   const session = { id: 'cadence-session', header: { cwd } }

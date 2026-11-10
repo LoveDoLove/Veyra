@@ -38,6 +38,7 @@ import { causalRelevance, rankRecords } from '../src/retrieve.mjs'
 import { provenanceChain } from '../src/context.mjs'
 import { provenanceAllowsLearning } from '../src/learn.mjs'
 import { buildToolDefinitions } from '../src/tools.mjs'
+import { testRuntime } from './helpers/room.mjs'
 
 // ---------------------------------------------------------------- fixtures
 
@@ -124,7 +125,7 @@ test('§15: provenance ≠ authority and ≠ capture origins — dims never open
 test('§15: veyra_remember stamps attribution dimensions, never capture origins', async () => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-m5-'))
   try {
-    const defs = buildToolDefinitions({ veyraHome: home, fallbackCwd: home })
+    const defs = buildToolDefinitions(testRuntime(home, home))
     const rememberDef = defs.find((d) => d.name === 'veyra_remember')
     const res = await rememberDef.execute(
       { title: 'Deliberate §15 note', body: 'A deliberately remembered note proving deliberate writes carry attribution dimensions without fabricating capture-stream origins.', scope: 'project' },
@@ -320,7 +321,7 @@ test('§16: legacy record says unknown, pending stays pending — nothing is inv
 test('§16: veyra_inspect exposes and renders the provenance chain', async () => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-m5-'))
   try {
-    const defs = buildToolDefinitions({ veyraHome: home, fallbackCwd: home })
+    const defs = buildToolDefinitions(testRuntime(home, home))
     const rememberDef = defs.find((d) => d.name === 'veyra_remember')
     const exec = { agent: { session: { id: 's_chain', header: { cwd: home } }, provider: 'deepseek', model: 'ds-test' } }
     const written = await rememberDef.execute(

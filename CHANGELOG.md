@@ -1,3 +1,49 @@
+## [0.2.0] - 2026-11-10
+
+The Memory Server rewrite: memory is now owned by an explicit server with per-workspace rooms, a governed router, and Central Memories reachable only by promotion. This is a deliberate clean break — there is no migration, no fallback, and no compatibility mode from the pre-rooms layout.
+
+### Added
+
+- **Memory Server** (`src/memory-server.mjs`). One instance per Cordis plugin lifecycle, owning a workspace resolver, a memory router, one private Memory Room per DSH workspace, one shared Central store, and governed promotion between them. It runs no daemon, timer, or background job, and every failure path degrades to an empty result instead of throwing into the agent loop.
+- **Workspace rooms** (`src/rooms.mjs`, `src/workspace-resolver.mjs`). A room is a DSH `WorkspaceId` — `w_<id>`, never a filesystem path — so two workspaces opened on the same repository are two rooms with separate memory. Storage is `$DSH_HOME/veyra/rooms/<roomId>/memory.db`, with a hashed form for ids that are not filesystem-safe so a workspace id can never traverse out of `rooms/`.
+- **Governed router** (`src/memory-router.mjs`). Every memory operation is a dotted id (`recall.auto`, `recall.manual`, `learn.auto`, `write.manual`, `promote`, `forget`, `health`, …) checked against an explicit workspace/central access table. An operation always needs a resolved workspace binding; a request may never name a room or workspace other than the resolved one; automatic learning writes only the resolved room; unknown operations and unknown targets fail closed.
+- **Central promotion** (`src/promotion.mjs`). Promotion is the only path into Central Memories. Content-hash matches link to an existing record instead of duplicating it, and `canonical` still requires an explicit instruction.
+- **Automatic learning and automatic recall** wired through the server, so tools, `/veyra` commands, the WebUI, the file watcher, and the ambient context provider all share one resolver.
+
+### Changed
+
+- **Workspace resolution fails closed.** Resolution order is session id → exact path → path containment → fail; there is no path-keyed fallback. Without a usable workspace registry, memory is unavailable with `VEYRA_MEMORY_UNAVAILABLE` rather than being served from a guessed store. The resolver exposes a three-state registry diagnostic (`available` / `absent` / `unavailable`) instead of collapsing a fault into a permanent condition.
+- **Modification evidence is what actually changed a file** (`src/observe.mjs`, `src/understand.mjs`). Only tools that can mutate files — `edit`, `write`, `str_replace_editor`, and a `run_code` call whose description or code targets edit/write — contribute modified files. A `read`, `grep`, or `glob` is recorded as activity, and a path mentioned merely in prose never becomes modification evidence.
+- **The learning gate reads text, not formatting** (`src/understand.mjs`). Command-style text is stripped of list markers and Markdown task checkboxes before the claim classifier runs, so the same instruction is judged identically whether it arrives as prose, as a `- ` bullet, as a `1.` list, or as a `- [ ]` task item. A checkbox is not a way around the gate.
+- **Causal facets survive identifiers.** Facet extraction no longer stops at a `.` that belongs to a filename such as `src/codec.mjs`, and clips long text at a sentence boundary.
+- **Evidence anchors are repository-relative** in Central Memories, so a promoted anchor is re-verified against whichever repository reads it rather than being frozen to the originating checkout's absolute path.
+- **Test outcomes fail closed.** A suite is only treated as passing when its output actually evidences passing; an unreadable or failing preview yields `test-failed` and never stamps `verified-test`.
+- **WebUI** reports `409 VEYRA_WORKSPACE_UNAVAILABLE` instead of serving an unresolved workspace.
+
+### Removed
+
+- **Legacy memory layout.** `projects/` and `reusable/` are no longer read, written, migrated, merged, or deleted; the legacy resolver mode, the migration command, and the quarantine flow are gone. Pre-rooms directories that already exist on disk are left untouched and unread.
+- **Migration and quarantine commands** (`/veyra migrate`, `/veyra quarantine`).
+
+### Compatibility
+
+- Runtime: Node `>=22.5.0 <25.0.0`. No new runtime dependencies; the only declared dependency remains `@lovedolove/dsh-codebase-memory-mcp`.
+- Upgrade note: **existing pre-0.2.0 memory is not carried forward.** Memories learned under `projects/` stay on disk and are not imported. This is intentional — room identity cannot be reconstructed from a path without guessing which workspace a record belonged to.
+
+### Tests / verification (local, verified 2026-11-10)
+
+- Full suite: **1110 tests, 1110 pass, 0 fail** (`node --test test/*.test.mjs`).
+- `test/m191-evidence-integrity.test.mjs`: 24 tests covering 13 formats (prose, dash/star/plus/numbered/numberedParen lists, and 7 Markdown task-checkbox variants).
+- `scripts/m191-mutations.mjs`: 14 mutations, 14 caught, source restored byte-for-byte.
+- `scripts/m188-mutations.mjs`: governed-activation mutations, all caught.
+- Isolated DSH home: `dsh plugin --profile web add @lovedolove/veyra` then a real `dsh --profile web` boot registers the plugin, the `/veyra` command, 5 skills, and all 17 tools.
+
+### Limitations (unchanged or newly explicit)
+
+- **No claim of measured engineering-efficiency gain.** The controlled study in `docs/research/m00190-repeated-investigation-benefit.md` (n=10 pairs, 20/20 arms correct) found no significant reduction in repeated investigation: repeat-reads 6.30 vs 6.80, p=0.7266, with memory costing roughly 1.9× the tokens. Automatic learning and recall are verified to work; they are not verified to make an agent faster.
+- Markers outside the Markdown shape (`a) `, `• `) are not normalised by the learning gate.
+- `run_code` mutation detection is a text heuristic, not an AST analysis; writes performed inside `bash` (`sed -i`, `>`, `git apply`) are not counted as modification evidence. Veyra prefers to miss a change over inventing one.
+
 ## [0.1.75] - 2026-11-09
 
 ### Changed

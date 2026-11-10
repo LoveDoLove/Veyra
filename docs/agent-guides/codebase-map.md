@@ -16,7 +16,7 @@ the module you are about to change.
 | `CHANGELOG.md` | Released history, one section per version |
 | `THIRD_PARTY.md` | Third-party attributions |
 | `cordis.patch.yml` | Bundle patch that inserts the `veyra` plugin into a DSH profile |
-| `client.js` | Browser half: Settings section + Network Graph sidebar entry |
+| `client.js` | Browser half: Network Graph sidebar tab (no Settings section) |
 | `scripts/runtime-deps-check.mjs` | Release guardrail: every bare import must be builtin, host-provided, or a declared dependency |
 | `package.json` | Package manifest, published file set, DSH compatibility block |
 | `.github/workflows/ci.yml` | Push/PR: runtime-dep check, `npm test`, `npm pack --dry-run` on Node 22 and 24 |
@@ -52,7 +52,11 @@ the module you are about to change.
 
 | File | Responsibility |
 | --- | --- |
-| `src/store.mjs` | `node:sqlite` + FTS5 storage: schema, `MemoryStore`, `put`/`get`/`list`/`search`/`forget`, `getMeta`/`setMeta` (the existing `meta` key/value table, used for schema version and small bookkeeping that is not a memory row), dedupe, corrupt-row refusal, `openProjectStore`, `openReusableStore`, `openEphemeralStore` |
+| `src/store.mjs` | `node:sqlite` + FTS5 storage: schema, `MemoryStore`, `put`/`get`/`list`/`search`/`forget`, `getMeta`/`setMeta` (the existing `meta` key/value table, used for schema version and small bookkeeping that is not a memory row), dedupe, corrupt-row refusal, `openProjectStore`, `openReusableStore`, `openRoomStore`, `openCentralStore`, `openEphemeralStore`, `closeAllStores` |
+| `src/rooms.mjs` | Memory Room layout: `ROOMS_DIR`/`CENTRAL_DIR`, `roomIdForWorkspaceId` (`w_<workspaceId>`, hashed when not filesystem-safe), `roomDbPath`, `centralDbPath`, `assertSafeRoomId`, `pathContains`. No migration ledger, no legacy room id |
+| `src/workspace-resolver.mjs` | Answers *which workspace is this turn*: `createWorkspaceResolver`, `resolve` (session → exact path → containment with deepest-root preference → fail), `resolvePath`, `mode` (always `registry`), `state` (`available`/`absent`/`unavailable`), `RESOLUTION_MODES`, `RESOLUTION_FAILURES`, `REGISTRY_STATES` (both `absent` and `unavailable` fail closed with distinct reasons) |
+| `src/memory-server.mjs` | Room/Central store router: `createMemoryServer`, `storesFor`/`storesForPath`/`storesForBinding`, `recallStores`, `promote`, `health` (incl. `registryState`), `dispose`; no migrate path and no legacy store |
+| `src/promotion.mjs` | The only path into Central Memories: `evaluatePromotion` gates (candidate refused, canonical needs `explicit`, evidence required), `promoteRecord` (create / merge / link by content hash) |
 | `src/lifecycle.mjs` | Lifecycle transitions: forget, invalidate, supersede, tombstone, protect/unprotect |
 | `src/evolve.mjs` | Staleness: `markStale`, `sweepStale` |
 | `src/consolidate.mjs` | Read-only detection of consolidation candidates — never mutates |
@@ -86,7 +90,7 @@ Bridge internals do **not** live here. See [CBM integration](./cbm-integration.m
 
 | File | Responsibility |
 | --- | --- |
-| `src/tools.mjs` | Model-facing tool definitions: 10 `veyra_*` tools plus 6 `cbm_*` spliced in from the bridge factory, schema shaping, `registerTools`, `createToolHarness` for tests |
+| `src/tools.mjs` | Model-facing tool definitions: 11 `veyra_*` tools plus 6 `cbm_*` spliced in from the bridge factory, schema shaping, `registerTools`, `createToolHarness` for tests |
 | `src/commands.mjs` | `/veyra` slash command parsing, dispatch, help text, `packageVersion` |
 | `src/skills.mjs` | `BUNDLED_SKILL_DEFINITIONS` and bundled skill provider registration |
 | `src/observatory.mjs` | Read-only Observatory projections: overview, record, search, causality, relationships, local graph, contradictions, consolidation |

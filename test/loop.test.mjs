@@ -7,14 +7,18 @@ import { apply } from '../src/plugin.mjs'
 import { createContextProvider, queryFromAssemble, rememberClaimedPrompt } from '../src/context.mjs'
 import { closeAllStores } from '../src/store.mjs'
 import { AUTHORITIES } from '../src/types.mjs'
+import { agentFor, fakeRegistry, testRuntime } from './helpers/room.mjs'
 
-function mockCtx() {
+function mockCtx(paths = []) {
   const listeners = {}
   return {
     tools: { register: () => {} },
     commands: { register: () => {} },
     skills: { register: () => {}, registerProvider: () => () => {} },
     systemPrompt: { section: () => {}, context: () => {} },
+    // The plugin builds its Memory Server from ctx, so the registry must be here
+    // for the observed session's room to resolve at all.
+    workspaceRegistry: fakeRegistry(paths),
     on: (event, fn) => {
       listeners[event] = listeners[event] || []
       listeners[event].push(fn)
@@ -63,7 +67,7 @@ test('queryFromAssemble falls back to deriveMessages when nothing is claimed', (
 test('session A work is observed, learned, and recalled on session B assemble', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'veyra-e2e-'))
   const cwd = process.cwd()
-  const ctx = mockCtx()
+  const ctx = mockCtx([cwd])
   const dispose = apply(ctx, { home: dir, observe: true, learn: true })
 
   const sessionA = { id: 'session-a', header: { cwd } }
@@ -122,12 +126,9 @@ test('session A work is observed, learned, and recalled on session B assemble', 
     message: userMessage('The sqlite writer is racing again. How did we lock DatabaseSync last time?'),
   })
 
-  const provider = createContextProvider({
-    veyraHome: dir,
-    fallbackCwd: cwd,
-    recallLimit: 5,
-    includeReusable: true,
-  })
+  // Same home and same registered workspace path as the plugin's ctx registry,
+  // so this provider resolves the very room the plugin learned into.
+  const provider = createContextProvider(testRuntime(dir, cwd))
   const injected = provider({ agent: agentB })
   assert.ok(injected.includes('not repository truth'))
   assert.match(injected, /sqlite|DatabaseSync|writer/i)

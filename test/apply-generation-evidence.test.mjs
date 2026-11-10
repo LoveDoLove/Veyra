@@ -15,6 +15,7 @@ import {
   recordExplicitOutcomeLink, readExplicitOutcomeLinks, readGenerationEvidence, summarizeGenerationEvidence,
 } from '../src/apply-generation-evidence.mjs'
 import { memoryHealth } from '../src/health.mjs'
+import { roomStore, testRuntime } from './helpers/room.mjs'
 
 const NOW = new Date().toISOString()
 const BASE = {
@@ -137,18 +138,20 @@ test('P1 regression: generation failure after project store available emits exac
   const cwd = join(dir, 'ws')
   const { mkdirSync } = await import('node:fs')
   mkdirSync(cwd, { recursive: true })
-  const { projectIdFor } = await import('../src/ids.mjs')
-  const { openProjectStore } = await import('../src/store.mjs')
   const { createContextProvider } = await import('../src/context.mjs')
   const { readGenerationEvidence } = await import('../src/apply-generation-evidence.mjs')
-  const provider = createContextProvider({
-    veyraHome: dir, fallbackCwd: cwd, recallLimit: 5, includeReusable: false, recallChars: 4000,
+  // The provider resolves the workspace room for `cwd`, so the runtime must carry
+  // a Memory Server and the reader must open that same room — a path-keyed
+  // legacy store would be a different database and always look empty.
+  const runtime = testRuntime(dir, cwd, {
+    recallLimit: 5, includeReusable: false, recallChars: 4000,
     changeSignals: new Map(), codeEngine: null, ensureWatcher() {}, log: { warn() {} },
     _testThrowAfterStoreOpen: true,
   })
+  const provider = createContextProvider(runtime)
   const out = provider({ agent: { cwd } })
   assert.equal(out, '')
-  const store = openProjectStore(dir, projectIdFor(cwd))
+  const store = roomStore(dir, cwd)
   const log = readGenerationEvidence(store)
   assert.ok(log && log.entries.length === 1, `expected 1 event, got ${log?.entries?.length ?? 0}`)
   assert.equal(log.entries[0].status, 'generation_error')
@@ -162,18 +165,18 @@ test('P1 regression: fallback telemetry still works when generation path could n
   const cwd = join(dir, 'ws')
   const { mkdirSync } = await import('node:fs')
   mkdirSync(cwd, { recursive: true })
-  const { projectIdFor } = await import('../src/ids.mjs')
-  const { openProjectStore } = await import('../src/store.mjs')
   const { createContextProvider } = await import('../src/context.mjs')
   const { readGenerationEvidence } = await import('../src/apply-generation-evidence.mjs')
-  const provider = createContextProvider({
-    veyraHome: dir, fallbackCwd: cwd, recallLimit: 5, includeReusable: false, recallChars: 4000,
+  // Same workspace room as the runtime resolves; see the note above.
+  const runtime = testRuntime(dir, cwd, {
+    recallLimit: 5, includeReusable: false, recallChars: 4000,
     changeSignals: new Map(), codeEngine: null, ensureWatcher() {}, log: { warn() {} },
     _testThrowBeforeStoreOpen: true,
   })
+  const provider = createContextProvider(runtime)
   const out = provider({ agent: { cwd } })
   assert.equal(out, '')
-  const store = openProjectStore(dir, projectIdFor(cwd))
+  const store = roomStore(dir, cwd)
   const log = readGenerationEvidence(store)
   assert.ok(log && log.entries.length === 1, `expected 1 fallback event, got ${log?.entries?.length ?? 0}`)
   assert.equal(log.entries[0].status, 'generation_error')
@@ -187,20 +190,20 @@ test('P1 regression: frozen Error object causes no mutation TypeError and no dup
   const cwd = join(dir, 'ws')
   const { mkdirSync } = await import('node:fs')
   mkdirSync(cwd, { recursive: true })
-  const { projectIdFor } = await import('../src/ids.mjs')
-  const { openProjectStore } = await import('../src/store.mjs')
   const { createContextProvider } = await import('../src/context.mjs')
   const { readGenerationEvidence } = await import('../src/apply-generation-evidence.mjs')
-  const provider = createContextProvider({
-    veyraHome: dir, fallbackCwd: cwd, recallLimit: 5, includeReusable: false, recallChars: 4000,
+  // Same workspace room as the runtime resolves; see the note above.
+  const runtime = testRuntime(dir, cwd, {
+    recallLimit: 5, includeReusable: false, recallChars: 4000,
     changeSignals: new Map(), codeEngine: null, ensureWatcher() {}, log: { warn() {} },
     _testThrowAfterStoreOpen: true,
     _testThrowFrozenError: true,
   })
+  const provider = createContextProvider(runtime)
   let out
   assert.doesNotThrow(() => { out = provider({ agent: { cwd } }) }, 'provider must not throw on frozen error telemetry path')
   assert.equal(out, '')
-  const store = openProjectStore(dir, projectIdFor(cwd))
+  const store = roomStore(dir, cwd)
   const log = readGenerationEvidence(store)
   assert.ok(log && log.entries.length === 1, `expected 1 event, got ${log?.entries?.length ?? 0}`)
   assert.equal(log.entries[0].status, 'generation_error')

@@ -10,9 +10,8 @@
 
 import { DEFAULT_RECALL_LIMIT, RELATIONS, STATUSES } from './types.mjs'
 import { extractText, projectIdFor, resolveWorkspace } from './ids.mjs'
-import { openProjectStore, openReusableStore } from './store.mjs'
 import { injectionWarning } from './redact.mjs'
-import { recall, temporalState } from './retrieve.mjs'
+import { recall, temporalState, RELEVANCE_SEM_FLOOR } from './retrieve.mjs'
 import { checkRecordFreshness } from './code/linking.mjs'
 import { classifyRecordTrust, TRUST_CATEGORIES } from './trust.mjs'
 import { recordGenerationEvidence } from './apply-generation-evidence.mjs'
@@ -747,6 +746,27 @@ const TRUST_IMPACT_ORDER = [
 ]
 
 /**
+ * Is this path an editor/atomic-write artifact rather than a real change?
+ *
+ * DSH's editor writes a temp sibling next to the file it rewrites
+ * (`src/migrate.mjs.tmp`, `src/.migrate.mjs.440731.<uuid>.tmpdir`), and Veyra's
+ * own persistence writes `${filePath}.<pid>.<ts>.tmp`. The watcher reports
+ * those as added/modified, so without this filter a change list can consist
+ * entirely of scratch names — which then drives the recall query class and
+ * pollutes the repository-changes section of the injected context.
+ *
+ * Scoped deliberately: only temp-SUFFIX markers, never a `.` in the name, so
+ * ordinary dotfiles and files merely containing "tmp" are untouched.
+ */
+function isEditorArtifact(file) {
+  const segments = String(file).split('/')
+  const base = segments[segments.length - 1] || ''
+  if (/\.(?:tmp|temp|tmpdir)$/i.test(base)) return true
+  // A real file living inside a temp directory is still scratch.
+  return segments.some((s, i) => i < segments.length - 1 && /\.(?:tmp|temp|tmpdir)$/i.test(s))
+}
+
+/**
  * Record an existing RepositoryWatcher changeset as the CURRENT change signal
  * for its repo root. The latest changeset replaces the previous one — repeated
  * or newer changes never accumulate state, and an obsolete change never
@@ -766,6 +786,7 @@ export function recordRepositoryChange(signalMap, changeset) {
     ...(Array.isArray(changeset.modified) ? changeset.modified : []),
     ...(Array.isArray(changeset.deleted) ? changeset.deleted : []),
   ].filter((f) => typeof f === 'string' && f.length > 0)
+    .filter((f) => !isEditorArtifact(f))
   const changedFiles = [...new Set(flat)].slice(0, MAX_CHANGE_FILES)
   // Never fabricate a change state from an empty changeset.
   if (changedFiles.length === 0) return null
@@ -817,22 +838,35 @@ function inferGenerationQueryClass(query, changedFiles) {
   return 'explicit_query'
 }
 
-export function buildRecallContext({ veyraHome, cwd, query = '', limit = DEFAULT_RECALL_LIMIT, includeReusable = true, goal = null, changedFiles = null, degraded = false, budget = DEFAULT_RECALL_CHARS, _generationQueryClass = null, _emitGenerationEvidence = true, _testThrowBeforeStoreOpen = false, _testThrowAfterStoreOpen = false, _testThrowFrozenError = false, _invocation = null } = {}) {
+/**
+ * Render recall context from ALREADY-RESOLVED stores.
+ *
+ * Stores are injected, never opened here. Opening by path inside this function
+ * was the last place a caller could reach the legacy `projects/<projectId>`
+ * layout without going through the Memory Server, and a pure renderer has no
+ * business deciding which workspace a path belongs to. `createContextProvider`
+ * resolves the room from the workspace registry and passes it in; tests and
+ * eval harnesses pass their own. No store means no recall — the function
+ * refuses rather than guessing a layout.
+ */
+export function buildRecallContext({ projectStore: injectedProjectStore = null, reusableStore: injectedReusableStore = null, workspace: injectedWorkspace = null, cwd, query = '', limit = DEFAULT_RECALL_LIMIT, includeReusable = true, goal = null, changedFiles = null, degraded = false, budget = DEFAULT_RECALL_CHARS, _generationQueryClass = null, _emitGenerationEvidence = true, _testThrowBeforeStoreOpen = false, _testThrowAfterStoreOpen = false, _testThrowFrozenError = false, _invocation = null } = {}) {
   if (limit === 0) return ''
-  const workspace = cwd || process.cwd()
-  const projectId = projectIdFor(workspace)
+  if (!injectedProjectStore) {
+    throw new Error('buildRecallContext requires a projectStore resolved from a workspace room')
+  }
+  const workspace = injectedWorkspace || cwd || process.cwd()
   let projectStore
   let reusableStore
   try {
     if (_testThrowBeforeStoreOpen) throw new Error('test:before_store_open')
-    projectStore = openProjectStore(veyraHome, projectId)
+    projectStore = injectedProjectStore
     if (_testThrowAfterStoreOpen) {
       const e = new Error('test:after_store_open')
       if (_testThrowFrozenError) Object.freeze(e)
       throw e
     }
-    reusableStore = includeReusable ? openReusableStore(veyraHome) : null
-    const records = recall({
+    reusableStore = includeReusable ? injectedReusableStore : null
+    let records = recall({
       projectStore,
       reusableStore,
       query,
@@ -841,6 +875,21 @@ export function buildRecallContext({ veyraHome, cwd, query = '', limit = DEFAULT
       includeReusable,
       changedFiles,
     })
+    // Task 34 / applicability: automatic proactive recall must not inject
+    // zero-signal memories for a non-empty task query (Similarity alone is not
+    // applicability). Retrieval keeps zero-signal demoted recency/pool records
+    // (D1.2/PMA/m11) and veyra_recall applies its own floor; context injection
+    // fail-closes here so unrelated future tasks do not receive ambient
+    // inapplicable memories. Empty-query browse (change-signal-only) and
+    // explicit negative-coverage tail rows (token-overlap checked upstream)
+    // remain eligible to render.
+    const qTrim = String(query || '').trim()
+    if (qTrim) {
+      records = records.filter((r) =>
+        (r.scores?.relevance > 0)
+        || (r.scores?.semantic >= RELEVANCE_SEM_FLOOR)
+        || r.negativeCoverage === true)
+    }
     if (records.length === 0) {
       // GOAL.md Phase 2 — "no known history" must be a distinguishable state,
       // not silence: an agent has to be able to tell apart "known solution /
@@ -914,25 +963,51 @@ export function buildRecallContext({ veyraHome, cwd, query = '', limit = DEFAULT
 export function createContextProvider(runtime) {
   return (assembleContext) => {
     let cwdForError
+    let stores = null
     const invocation = { generationErrorEmitted: false }
     try {
       const agent = assembleContext?.agent
-      const cwd = resolveWorkspace(agent) || runtime.fallbackCwd
+      // Authoritative routing: one room per DSH workspace + Central Memories.
+      // An unresolved/ambiguous workspace fails closed (empty context) rather
+      // than reading another workspace's room.
+      // Fail closed: no Memory Server means no workspace room, and the only
+      // store a bare path could name is the legacy one this architecture no
+      // longer reads. Recalling from it would hand the agent memory from a
+      // layout nothing else writes to any more.
+      const server = runtime.memoryServer
+      if (!server) return ''
+      stores = server.recallStores(agent, { includeReusable: runtime.includeReusable })
+      if (!stores.ok) return ''
+      const cwd = stores?.cwd || resolveWorkspace(agent) || runtime.fallbackCwd
       cwdForError = cwd
       runtime.ensureWatcher?.(cwd)
       const query = queryFromAssemble(assembleContext)
-      const queryClass = query ? (changedFilesFromSignal(runtime, cwd)?.length ? 'change_signal' : 'claimed_prompt') : 'empty'
       // Phase 3 — the existing change signal for THIS workspace only. Fail
-      // closed: no signal / foreign workspace → unchanged context behavior.
+      // closed: no signal / foreign workspace → no change block at all.
       const signal = runtime.changeSignals instanceof Map ? runtime.changeSignals.get(cwd) : null
       const changedFiles = signal?.changedFiles?.length ? signal.changedFiles : null
+      // Task 30 — automatic proactive recall must fail closed when the turn
+      // carries no task-shaped signal. A trivial prompt ("ok"/"continue") or
+      // an absent query with no recovered task intent and no repository change
+      // signal is not evidence that recent memories are applicable; returning
+      // a recency browse would inject unrelated/unsuitable memories before the
+      // agent's real task is known. Change-signal-only turns still proceed
+      // (changed files are the task signal) with an empty text query.
+      const hasTaskSignal = Boolean(query && !isTrivialPrompt(query))
+      const hasTestHook = runtime._testThrowBeforeStoreOpen === true || runtime._testThrowAfterStoreOpen === true || runtime._testThrowFrozenError === true
+      // Task 30 gates ambient automatic recall; test telemetry hooks must still
+      // reach buildRecallContext so generation-evidence error paths remain verifiable.
+      if (!hasTaskSignal && !changedFiles && !hasTestHook) return ''
+      const queryClass = hasTaskSignal ? (changedFiles ? 'change_signal' : 'claimed_prompt') : 'change_signal'
       return buildRecallContext({
-        veyraHome: runtime.veyraHome,
         cwd,
-        query,
+        query: hasTaskSignal ? query : '',
         limit: runtime.recallLimit,
         includeReusable: runtime.includeReusable,
         budget: runtime.recallChars,
+        projectStore: stores.projectStore,
+        reusableStore: stores.reusableStore,
+        workspace: stores.cwd ?? cwd,
         // Phase 2 — degraded Code Intelligence must stay observable in the
         // agent-facing context (reduced evidence, never fabricated symbols).
         degraded: Boolean(runtime.codeEngine?.isDegraded),
@@ -948,9 +1023,8 @@ export function createContextProvider(runtime) {
       // Skip fallback emission when buildRecallContext already emitted for this invocation.
       // Invocation-local state is used (never mutate err) so frozen/non-extensible errors are safe.
       try {
-        if (!invocation.generationErrorEmitted && runtime?.veyraHome && cwdForError) {
-          const projectStore = openProjectStore(runtime.veyraHome, projectIdFor(cwdForError))
-          emitGenerationEvidence(projectStore, {
+        if (!invocation.generationErrorEmitted && stores?.projectStore) {
+          emitGenerationEvidence(stores.projectStore, {
             status: 'generation_error',
             queryClass: 'unknown',
             resultCount: 0,

@@ -39,6 +39,30 @@ const INTERESTING_TOOLS = new Set([
   'veyra_promote',
 ])
 
+// Only these tools can change a file. `read`, `grep`, `glob` and `bash` observe
+// the repository; treating their path arguments as modifications made the
+// distilled record claim files were touched when nothing was written (m00191).
+// The distinction already existed in `buffer.tools` (which records every tool by
+// name), so modification evidence only had to stop reading the wrong stream.
+const MUTATING_TOOLS = new Set(['edit', 'write', 'str_replace_editor'])
+
+/**
+ * Does this tool call reliably imply a file modification?
+ *
+ * Fails closed: a tool that is not known to mutate, and whose arguments carry no
+ * explicit edit/write signal, is treated as non-mutating. `run_code` is the only
+ * ambiguous one — it mutates only when its own description or code says it does,
+ * mirroring the corrective-action rule in understand.mjs so tagging and evidence
+ * cannot disagree about the same call.
+ */
+function mutatesFiles(name, args) {
+  if (MUTATING_TOOLS.has(name)) return true
+  if (name !== 'run_code') return false
+  const description = typeof args?.description === 'string' ? args.description : ''
+  const code = typeof args?.code === 'string' ? args.code : ''
+  return /(?:edit|write)/i.test(description) || /(?:tools\.edit|tools\.write)/.test(code)
+}
+
 export function isNoiseText(text) {
   if (typeof text !== 'string') return true
   const trimmed = text.trim()
@@ -110,7 +134,9 @@ export function observeEvent(buffer, session, event) {
     if (callId && name) buffer.callNames.set(callId, name)
     if (INTERESTING_TOOLS.has(name)) {
       buffer.tools.push({ name, args: summarizeArgs(args) })
-      collectFiles(buffer.files, args)
+      // Modification evidence only. A read/search call keeps its name in
+      // `buffer.tools` — where it belongs — but never reaches `buffer.files`.
+      if (mutatesFiles(name, args)) collectFiles(buffer.files, args)
     }
     return buffer
   }

@@ -10,7 +10,7 @@ registered there or delegated from there.
 | --- | --- | --- |
 | `systemPrompt.section` | `registerPrompt` | Static `GUIDANCE_TEXT` — memory is not repository truth |
 | `systemPrompt.context` | `registerPrompt` | Per-turn automatic recall via `createContextProvider(runtime)` |
-| `ctx.tools.register` | `registerTools` | 16 tools: ten `veyra_*` plus six `cbm_*` from the bridge factory |
+| `ctx.tools.register` | `registerTools` | 17 tools: eleven `veyra_*` plus six `cbm_*` from the bridge factory |
 | `ctx.commands.register` | `registerCommand` | The `/veyra` slash command |
 | `ctx.skills.registerProvider` (fallback `register`) | `registerSkills` | Five bundled skills at rank 600 |
 | `ctx.webServer.register` | `registerWebUi` | `/veyra` HTTP prefix, GET-only |
@@ -37,6 +37,16 @@ It carries the resolved Veyra home, recall limit and character budget, the
 reusable-store switch, the code engine, logging, and feature toggles
 (`observe`, `learn`, `codebaseWatch`). Surfaces receive `runtime` — they do not
 resolve configuration themselves.
+
+It also carries `runtime.memoryServer` (`src/memory-server.mjs`), the one
+authority over which store a surface may open. Tools, commands, the WebUI, the
+watcher, auto-learning and automatic recall all go through `storesFor(...)` /
+`storesForPath(...)` / `recallStores(...)`; none of them open a database
+directly. When the server refuses — no registry, a broken registry, an
+ambiguous path — the surface fails closed rather than falling back to a
+path-keyed store. `createRuntime` runs before `ctx.workspaceRegistry` is
+guaranteed usable, so the server resolves lazily per call and reports
+`health().registryState`.
 
 Accepted `config:` keys (defaults shown) are documented in `plugin.mjs`:
 `home`, `recallLimit`, `includeReusable`, plus feature toggles and

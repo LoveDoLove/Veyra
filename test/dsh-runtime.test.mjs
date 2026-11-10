@@ -28,6 +28,7 @@ import { findDshRoot, loadDshPackage, resolveDshPackage } from './helpers/dsh.mj
 import * as veyra from '../src/plugin.mjs'
 import { buildToolDefinitions } from '../src/tools.mjs'
 import { closeAllStores } from '../src/store.mjs'
+import { fakeRegistry, roomIdFor, roomStore } from './helpers/room.mjs'
 
 const dsh = findDshRoot()
 const skip = dsh ? false : 'no DSH install found (set DSH_INSTALL to run)'
@@ -116,6 +117,11 @@ test('Veyra composes against the real DSH host services', { skip }, async () => 
   if (NativeToolExecutor?.apply || NativeToolExecutor?.default?.apply) ctx.plugin(NativeToolExecutor.default ?? NativeToolExecutor)
   else throw new Error('dsh-tool-executor-native plugin export missing apply()')
   ctx.plugin(SettingsForms)
+  // The Memory Server resolves a workspace room through the host's registry, so
+  // the declared service must be here before the plugin composes. test ws is
+  // the workspace this test's turn-stopping event carries.
+  const registry = fakeRegistry([ws])
+  ctx.provide('workspaceRegistry', registry)
   const fiber = ctx.plugin(veyra, { home: tmpHome, recallLimit: 3 })
 
   const expected = buildToolDefinitions({ veyraHome: tmpHome, fallbackCwd: '/tmp' }).map((d) => d.name).sort()
@@ -211,10 +217,25 @@ test('Veyra composes against the real DSH host services', { skip }, async () => 
   assert.ok(onboardingSkill, 'skills.get("legacy-onboarding") must resolve')
   assert.ok(onboardingSkill.content.includes('Legacy Project Onboarding'))
 
-  // 8. Real event dispatch: agent/turn-stopping must persist only into the
-  // isolated home, never into the operator's live store.
-  ctx.emit('agent/turn-stopping', { agent: { session: { id: 'runtime-test-session' }, cwd: ws } })
-  assert.ok(await until(() => existsSync(join(tmpHome, 'projects'))), 'isolated project store was not created under the temp home')
+  // 8. Real event dispatch: a turn observed on a registered workspace must
+  // persist into that workspace's room, and only into the isolated home —
+  // never into the operator's live store. The observation buffer is keyed by
+  // the live session object, so the same session must feed both events.
+  const session = { id: 'runtime-test-session', header: { cwd: ws } }
+  ctx.emit('session/event', session, { type: 'turn/start', data: { turn: 1 } })
+  ctx.emit('session/event', session, {
+    type: 'user/message',
+    data: { text: 'Remember that the isolated runtime store must stay under the temp home.' },
+  })
+  ctx.emit('agent/turn-stopping', { agent: { session } })
+  // Expected layout is the workspace room (`rooms/<roomId>`), not the retired
+  // path-keyed `projects/<projectId>` layout.
+  const roomId = roomIdFor(ws)
+  assert.ok(
+    await until(() => existsSync(join(tmpHome, 'rooms', roomId, 'memory.db'))),
+    'isolated workspace room was not created under the temp home',
+  )
+  assert.ok(roomStore(tmpHome, ws).list({ limit: 10 }).length >= 1, 'the observed turn must persist into the workspace room')
   assert.deepEqual(snapshot(liveDir), liveBefore, 'live ~/.dsh/veyra must stay untouched')
 
   // 9. Disposal: disposing the plugin context must unregister everything.

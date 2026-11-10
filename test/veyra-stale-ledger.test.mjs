@@ -8,14 +8,10 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-
-import { openProjectStore, openReusableStore, closeAllStores } from '../src/store.mjs'
-import { projectIdFor } from '../src/ids.mjs'
+import { closeAllStores } from '../src/store.mjs'
 import { createToolHarness } from '../src/tools.mjs'
 import { AUTHORITIES, CONFIDENCES, KINDS, SCOPES, VALIDATIONS } from '../src/types.mjs'
+import { centralStore, roomStore, testHome, testRuntime } from './helpers/room.mjs'
 
 let putSeq = 0
 function putRec(store, over = {}) {
@@ -28,7 +24,9 @@ function putRec(store, over = {}) {
     validation: VALIDATIONS.STALE,
     confidence: CONFIDENCES.MEDIUM,
     scope: SCOPES.PROJECT,
-    projectId: 'test',
+    // The room id, not a path-derived project id: memory is addressed by
+    // workspace room and a record must carry the identity of its own room.
+    projectId: store.projectId,
     tags: [],
     relations: [],
     evidence: [],
@@ -38,18 +36,23 @@ function putRec(store, over = {}) {
 }
 
 function runtimeFor(home, cwd) {
-  return { veyraHome: home, fallbackCwd: cwd, recallLimit: 5, includeReusable: true }
+  // The ledger resolves stores through the Memory Server, so the runtime must
+  // carry a real one; a bare path-keyed runtime now fails closed.
+  return testRuntime(home, cwd, { recallLimit: 5, includeReusable: true })
 }
 function execFor(cwd) {
   return { agent: { session: { id: 's-ledger', header: { cwd } }, provider: 'deepseek', model: 'ds-test' } }
 }
 
-test('veyra_stale_ledger: filters stale only, uses same stores as veyra_health, read-only', async () => {
-  const home = mkdtempSync(join(tmpdir(), 'veyra-stale-ledger-'))
-  const cwd = mkdtempSync(join(tmpdir(), 'veyra-stale-ledger-ws-'))
+test('veyra_stale_ledger: filters stale only, uses same stores as veyra_health, read-only', async (t) => {
+  // Memory is addressed by workspace room, so the seed stores are the room for
+  // `cwd` and the Central Memories store — the same two stores the runtime's
+  // own resolution opens for a project-scope read.
+  const home = testHome(t, 'veyra-stale-ledger-')
+  const cwd = testHome(t, 'veyra-stale-ledger-ws-')
   try {
-    const projectStore = openProjectStore(home, projectIdFor(cwd))
-    const reusableStore = openReusableStore(home)
+    const projectStore = roomStore(home, cwd)
+    const reusableStore = centralStore(home)
     const staleA = putRec(projectStore, { validation: VALIDATIONS.STALE, title: 'Stale A unique title' })
     putRec(projectStore, { validation: VALIDATIONS.REVIEWED, title: 'Reviewed B unique title' })
     putRec(projectStore, { validation: VALIDATIONS.UNVERIFIED, title: 'Unverified C unique title' })
@@ -96,16 +99,14 @@ test('veyra_stale_ledger: filters stale only, uses same stores as veyra_health, 
     assert.deepEqual({ project: projectStore.count(), reusable: reusableStore.count() }, beforeCounts)
   } finally {
     closeAllStores()
-    rmSync(home, { recursive: true, force: true })
-    rmSync(cwd, { recursive: true, force: true })
   }
 })
 
-test('veyra_stale_ledger: pagination enumerates all stale without omissions or duplicates', async () => {
-  const home = mkdtempSync(join(tmpdir(), 'veyra-stale-ledger-page-'))
-  const cwd = mkdtempSync(join(tmpdir(), 'veyra-stale-ledger-page-ws-'))
+test('veyra_stale_ledger: pagination enumerates all stale without omissions or duplicates', async (t) => {
+  const home = testHome(t, 'veyra-stale-ledger-page-')
+  const cwd = testHome(t, 'veyra-stale-ledger-page-ws-')
   try {
-    const projectStore = openProjectStore(home, projectIdFor(cwd))
+    const projectStore = roomStore(home, cwd)
     const expected = []
     for (let i = 0; i < 7; i++) expected.push(putRec(projectStore, { validation: VALIDATIONS.STALE, title: `Paged stale ${i} unique` }).id)
     putRec(projectStore, { validation: VALIDATIONS.REVIEWED, title: 'Paged reviewed control' })
@@ -137,16 +138,14 @@ test('veyra_stale_ledger: pagination enumerates all stale without omissions or d
     assert.deepEqual(seen, new Set(expected))
   } finally {
     closeAllStores()
-    rmSync(home, { recursive: true, force: true })
-    rmSync(cwd, { recursive: true, force: true })
   }
 })
 
-test('veyra_stale_ledger: diagnostics mark unavailable/unresolved explicitly without inferring', async () => {
-  const home = mkdtempSync(join(tmpdir(), 'veyra-stale-ledger-diag-'))
-  const cwd = mkdtempSync(join(tmpdir(), 'veyra-stale-ledger-diag-ws-'))
+test('veyra_stale_ledger: diagnostics mark unavailable/unresolved explicitly without inferring', async (t) => {
+  const home = testHome(t, 'veyra-stale-ledger-diag-')
+  const cwd = testHome(t, 'veyra-stale-ledger-diag-ws-')
   try {
-    const projectStore = openProjectStore(home, projectIdFor(cwd))
+    const projectStore = roomStore(home, cwd)
     putRec(projectStore, {
       validation: VALIDATIONS.STALE,
       title: 'Stale with anchors unique diag',
@@ -172,7 +171,5 @@ test('veyra_stale_ledger: diagnostics mark unavailable/unresolved explicitly wit
     }
   } finally {
     closeAllStores()
-    rmSync(home, { recursive: true, force: true })
-    rmSync(cwd, { recursive: true, force: true })
   }
 })

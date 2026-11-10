@@ -140,18 +140,25 @@ test('distillBuffer: title reflects causal extraction, not activity', () => {
 })
 
 test('distillBuffer: tool activity without claim → neutral title', () => {
+  // m00191: `files:` is not passed here on purpose. makeBuffer replays real
+  // events, so a fabricated file list could never reach the buffer, and the old
+  // `files: ['src/store.mjs']` only appeared to work because the `read` call
+  // below was miscounted as a modification. The user line is long enough to
+  // survive the noise filter so the record is built from actual activity.
   const buffer = makeBuffer({
-    user: 'Running tests to verify the change',
+    user: 'Running the test suite to verify the change in the store module.',
     assistant: 'Tests passed.',
     tools: [
       { name: 'bash', args: { command: 'npm test' } },
       { name: 'read', args: { path: 'src/store.mjs' } },
     ],
-    files: ['src/store.mjs'],
   })
   const record = distillBuffer(buffer, { projectId: 'p_test', sessionId: 's1' })
   assert.ok(record)
   assert.equal(record.title, 'Engineering observation')
+  // Reading a file is not changing it: the neutral title above must not have
+  // been propped up by a fabricated "Files touched" line.
+  assert.deepEqual(record.source.files, [], 'a read leaves no modification evidence')
 })
 
 test('distillBuffer: negative outcome with causal claim', () => {

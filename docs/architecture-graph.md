@@ -17,16 +17,16 @@ Veyra is a DSH Cordis plugin (`src/plugin.mjs`), not a standalone web app.
 
 | Layer | Fact |
 | --- | --- |
-| Canonical store | `node:sqlite` + FTS5 under `$DSH_HOME/veyra/` |
-| Identity | `memory.id` (`vey_…`); project id `p_` + sha256(gitRoot\|remote) |
+| Canonical store | `node:sqlite` + FTS5 under `$DSH_HOME/veyra/`: one DB per workspace room (`rooms/<roomId>/memory.db`) plus shared Central Memories (`central/memory.db`). The pre-rooms `projects/<projectId>/memory.db` + `reusable/memory.db` are inert — never read, never migrated |
+| Identity | `memory.id` (`vey_…`); room id = DSH `WorkspaceId` (`w_…`) only. The legacy project id `p_` + sha256(gitRoot\|remote) is no longer a memory identity |
 | Relations | JSON array on the memory row: `{ type, targetId }` |
 | Relation types | `updates \| extends \| derives \| contradicts \| supersedes` |
 | Recall gate | `isRecallEligible`: not forgotten, `status===current`, not invalid/stale, not candidate, not observation, authority derived\|canonical |
 | Search | Hybrid FTS5 + Jaccard + intent + relationship *score* |
 | Graph today | Derived Local Graph (`src/graph.mjs`). Recall expands 1-hop eligible neighbors; `contradicts` still has its own extra |
 | Human surface | `/veyra observatory *` read-only text, plus host HTTP Network Graph at `/veyra` |
-| Agent surface | `systemPrompt.section` + `systemPrompt.context`, tools `remember/recall/inspect/forget/promote/feedback/recurrence/health/code_status/change_impact` (plus 6 `cbm_*` re-exports) |
-| Fail-closed | empty string if recall throws; isolation is per-DB |
+| Agent surface | `systemPrompt.section` + `systemPrompt.context`, tools `remember/recall/inspect/forget/promote/feedback/recurrence/health/code_status/change_impact/stale_ledger` (plus 6 `cbm_*` re-exports) |
+| Fail-closed | empty string if recall throws; isolation is per-room DB; the resolver reports `ambiguous-session`/`ambiguous-path`/`unresolved`/`registry-unreadable`/`no-context` instead of picking a workspace |
 
 There is no Veyra web application and no graph table. DSH Web GUI is the host.
 `needs-review` is not a Veyra validation. Closest values: `unverified` / `reviewed`.
@@ -229,7 +229,7 @@ WebUI (0.1.14) is a host-native Observatory surface over that projection.
 
 DSH already exposes `ctx.webServer.register`. Veyra uses that — the graph
 ships no second app, no graph React bundle, and no D3. (The package does ship
-`client.js`, but only for the Settings section and the sidebar entry; it is
+`client.js`, but only as the Network Graph sidebar tab; it is
 not the graph surface.)
 
 | Route | Role |
@@ -292,8 +292,8 @@ Failure: catch and return `''` (existing `createContextProvider` contract).
 1. When (if ever) should evidence paths become first-class nodes?
 2. Does 1-hop measurably help live DSH tasks? (GOAL §22)
 3. Closed for this stage: host `webServer` is enough. A React `dsh.client`
-   panel is not required for the graph. (The shipped `client.js` serves the
-   Veyra Settings section and the sidebar entry, not the Network Graph.)
+   panel is not required for the graph. (The shipped `client.js` registers the
+   Network Graph as a sidebar tab; it is not the graph surface.)
 
 ---
 

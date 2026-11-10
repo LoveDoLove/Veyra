@@ -1,9 +1,9 @@
 {
   "harness": "eval-v0169-ab",
-  "startedAt": "2026-11-04T12:49:47.504Z",
-  "runDir": "/tmp/veyra-eval-v0169-eMYeS6",
+  "startedAt": "2026-11-06T08:05:50.330Z",
+  "runDir": "/tmp/veyra-eval-v0169-qZ2IfG",
   "fixture": {
-    "dir": "/tmp/veyra-eval-v0169-eMYeS6/fixture-A",
+    "dir": "/tmp/veyra-eval-v0169-qZ2IfG/fixture-A",
     "note": "stockctl v0.2.0, planted double-deduct bug, git-initialized"
   },
   "tasks": [
@@ -15,19 +15,19 @@
       "evidence": [
         "check BEFORE fix: exit=1 out=FAIL stock integrity: expected 9 after one logical deduction, got 8",
         "FAIL stock integrity: expected 9 after one logical deduction, got 8\n",
-        "remember R1 -> {\"id\":\"vey_1a1a69bc099_8d807dd30f84\",\"kind\":\"memory\",\"validation\":\"unverified\",\"gate\":null}",
-        "seeded: R1=vey_1a1a69bc099_8d807dd30f84 R2=rej_062e55ebd9 R3=vey_1a1a69bc0a5_5c97976007c3 R4=vey_1a1a69bc0b2_2f7e9c17467e",
+        "remember R1 -> {\"id\":\"vey_1a1afe4809e_6236a2525aa8\",\"kind\":\"memory\",\"validation\":\"unverified\",\"gate\":null}",
+        "seeded: R1=vey_1a1afe4809e_6236a2525aa8 R2=rej_062e55ebd9 R3=vey_1a1afe480a1_1479856ef086 R4=vey_1a1afe480a3_ec68c017c72d",
         "check AFTER fix: exit=0 out=PASS stock integrity",
-        "fixture test suite: exit=0 "
+        "fixture test suite: exit=1 v24.22.2\n✖ test (22.442448ms)\nℹ tests 1\nℹ suites 0\nℹ pass 0\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 28.104901\n\n✖ failing tests:\n\ntest at test:1:1\n✖ test (22.442448ms)\n  'test failed'"
       ]
     },
     {
       "id": "T1",
       "pass": true,
       "expected": "root-cause record is top-1 in a fresh session",
-      "actual": "rank #1 (id vey_1a1a69bc099_8d807dd30f84)",
+      "actual": "rank #1 (id vey_1a1afe4809e_6236a2525aa8)",
       "evidence": [
-        "top5: [[\"vey_1a1a69bc099_8d807dd30f84\",\"Root cause of stock drift: bus event redelivery wi\"],[\"vey_1a1a69bc0a5_5c97976007c3\",\"stockctl warehouse schema: id, sku, qty, reserved\"],[\"rej_062e55ebd9\",\"An in-process mutex around deduct() does NOT fix t\"]]",
+        "top5: [[\"vey_1a1afe4809e_6236a2525aa8\",\"Root cause of stock drift: bus event redelivery wi\"],[\"vey_1a1afe480a1_1479856ef086\",\"stockctl warehouse schema: id, sku, qty, reserved\"],[\"vey_1a1afe480a3_ec68c017c72d\",\"stockctl CI pins Node 24 to avoid fetch keepalive \"],[\"rej_062e55ebd9\",\"An in-process mutex around deduct() does NOT fix t\"]]",
         "anchor check: old src/warehouse.mjs gone=true; new src/stock/warehouse.mjs exists=true"
       ]
     },
@@ -35,16 +35,16 @@
       "id": "T2",
       "pass": true,
       "expected": "correct record #1; negative approach not #1",
-      "actual": "R1 #1, R2 at 3",
+      "actual": "R1 #1, R2 at 4",
       "evidence": [
-        "top5: [[\"vey_1a1a69bc099_8d807dd30f84\",\"memory\",\"Root cause of stock drift: bus event red\"],[\"vey_1a1a69bc0a5_5c97976007c3\",\"knowledge\",\"stockctl warehouse schema: id, sku, qty,\"],[\"rej_062e55ebd9\",\"negative\",\"An in-process mutex around deduct() does\"]]"
+        "top5: [[\"vey_1a1afe4809e_6236a2525aa8\",\"memory\",\"Root cause of stock drift: bus event red\"],[\"vey_1a1afe480a1_1479856ef086\",\"knowledge\",\"stockctl warehouse schema: id, sku, qty,\"],[\"vey_1a1afe480a3_ec68c017c72d\",\"memory\",\"stockctl CI pins Node 24 to avoid fetch \"],[\"rej_062e55ebd9\",\"negative\",\"An in-process mutex around deduct() does\"]]"
       ]
     },
     {
       "id": "T3",
       "pass": false,
       "expected": "R1 listed as affected with non-trusted category",
-      "actual": "{\"ok\":true,\"repo\":\"/home/lovedolove/projects/Veyra\",\"changedFiles\":[\"src/stock/warehouse.mjs\",\"check/idempotency.mjs\"],\"degraded\":false,\"degradedReason\":null,\"affectedMemories\":[],\"candidatesCreated\":0,\"candidateIds\":[],\"context\":[],\"summary\":{\"trusted\":0,\"reviewRequired\":0,\"stale\":0,\"contradicted\":",
+      "actual": "{\"ok\":true,\"repo\":\"/home/lovedolove/projects/Veyra\",\"changedFiles\":[\"src/stock/warehouse.mjs\",\"check/idempotency.mjs\"],\"renames\":[],\"degraded\":false,\"degradedReason\":null,\"affectedMemories\":[],\"candidatesCreated\":0,\"candidateIds\":[],\"context\":[],\"summary\":{\"trusted\":0,\"reviewRequired\":0,\"stale\":0,\"c",
       "evidence": [
         "change impact: {\"ok\":true,\"degraded\":false,\"affected\":[],\"summary\":{\"trusted\":0,\"reviewRequired\":0,\"stale\":0,\"contradicted\":0,\"insufficientEvidence\":0}}"
       ]
@@ -53,28 +53,28 @@
       "id": "T4",
       "pass": false,
       "expected": "both records visible and unmerged",
-      "actual": "bothVisible=true count=0 ids=[\"vey_1a1a69bc099_8d807dd30f84\",\"vey_1a1a69bc1fb_fe58bfed6e04\",\"vey_1a1a69bc0a5_5c97976007c3\",\"rej_062e55ebd9\"]",
+      "actual": "bothVisible=true count=0 ids=[\"vey_1a1afe4809e_6236a2525aa8\",\"vey_1a1afe48131_2c18d8ec1ddd\",\"vey_1a1afe480a1_1479856ef086\",\"vey_1a1afe480a3_ec68c017c72d\",\"rej_062e55ebd9\"]",
       "evidence": [
-        "remember R5 -> {\"id\":\"vey_1a1a69bc1fb_fe58bfed6e04\",\"gate\":null}",
-        "health contradiction mentions=3; bothVisible=true; store count=0; R1 contradictionBanners=[\"[TOPIC-CONTRADICTION: \\\"Root cause of stock drift: bus event redelivery without idempotency\\\" and \\\"An in-process mutex around deduct() does NOT fix the drift\\\" give conflicting accounts of the same; R1 contradictions=[\"rej_062e55ebd9\"]",
-        "{\"ok\":true,\"created\":true,\"duplicate\":false,\"redacted\":false,\"record\":{\"id\":\"vey_1a1a69bc1fb_fe58bfed6e04\",\"kind\":\"memory\",\"status\":\"current\",\"validation\":\"unverified\",\"authority\":\"derived\",\"confidenc"
+        "remember R5 -> {\"id\":\"vey_1a1afe48131_2c18d8ec1ddd\",\"gate\":null}",
+        "health contradiction mentions=3; bothVisible=true; store count=0; R1 contradictionBanners=[\"[TOPIC-CONTRADICTION: vey_1a1afe4809e_6236a2525aa8 and rej_062e55ebd9 give conflicting accounts of the same topic - verify against the repository]\"]; R1 contradictions=[\"rej_062e55ebd9\"]",
+        "{\"ok\":true,\"created\":true,\"duplicate\":false,\"redacted\":false,\"record\":{\"id\":\"vey_1a1afe48131_2c18d8ec1ddd\",\"kind\":\"memory\",\"status\":\"current\",\"validation\":\"unverified\",\"authority\":\"derived\",\"confidenc"
       ]
     },
     {
       "id": "T5",
       "pass": false,
       "expected": "feedback ladder + recurrence + write-gate ledger all present",
-      "actual": "{\"ladder\":{\"before\":\"unverified/high\",\"after\":\"reviewed/high\",\"feedbackOk\":true,\"record\":true},\"recFind\":[\"{\\\"kind\\\":\\\"recurring-failure\\\",\\\"key\\\":\\\"vey_1a1a69bc20a_490bd81ea038\\\",\\\"count\\\":2,\\\"reco\"],\"gateAccounting\":null}",
+      "actual": "{\"ladder\":{\"before\":\"unverified/high\",\"after\":\"reviewed/high\",\"feedbackOk\":true,\"record\":true},\"recFind\":[\"{\\\"kind\\\":\\\"recurring-failure\\\",\\\"key\\\":\\\"vey_1a1afe48137_ae5dee4da7b5\\\",\\\"count\\\":2,\\\"reco\"],\"gateAccounting\":null}",
       "evidence": [
-        "remember R6 -> {\"id\":\"vey_1a1a69bc20a_490bd81ea038\",\"gate\":null}",
-        "ladder={\"before\":\"unverified/high\",\"after\":\"reviewed/high\",\"feedbackOk\":true,\"record\":true}; R6=vey_1a1a69bc20a_490bd81ea038 fb=[true,true]; recurrence findings=[\"{\\\"kind\\\":\\\"recurring-failure\\\",\\\"key\\\":\\\"vey_1a1a69bc20a_490bd81ea038\\\",\\\"count\\\":2,\\\"reco\"]; writeGate=null"
+        "remember R6 -> {\"id\":\"vey_1a1afe48137_ae5dee4da7b5\",\"gate\":null}",
+        "ladder={\"before\":\"unverified/high\",\"after\":\"reviewed/high\",\"feedbackOk\":true,\"record\":true}; R6=vey_1a1afe48137_ae5dee4da7b5 fb=[true,true]; recurrence findings=[\"{\\\"kind\\\":\\\"recurring-failure\\\",\\\"key\\\":\\\"vey_1a1afe48137_ae5dee4da7b5\\\",\\\"count\\\":2,\\\"reco\"]; writeGate=null"
       ]
     },
     {
       "id": "T6",
       "pass": true,
       "expected": "no empty recall under budget pressure; latency measured",
-      "actual": "p50=0.37ms p95=0.70ms; budgets=[[400,176,0],[800,176,0],[1200,176,0],[2400,176,0],[4800,176,0]]; starve={\"headers\":0,\"chars\":176,\"empty\":false}",
+      "actual": "p50=0.25ms p95=0.33ms; budgets=[[400,176,0],[800,176,0],[1200,176,0],[2400,176,0],[4800,176,0]]; starve={\"headers\":0,\"chars\":176,\"empty\":false}",
       "evidence": [
         "budgets: [{\"budget\":400,\"chars\":176,\"headers\":0,\"truncated\":false,\"tokensApprox\":44},{\"budget\":800,\"chars\":176,\"headers\":0,\"truncated\":false,\"tokensApprox\":44},{\"budget\":1200,\"chars\":176,\"headers\":0,\"truncated\":false,\"tokensApprox\":44},{\"budget\":2400,\"chars\":176,\"headers\":0,\"truncated\":false,\"tokensApprox\":44},{\"budget\":4800,\"chars\":176,\"headers\":0,\"truncated\":false,\"tokensApprox\":44}]",
         "starvation probe: {\"headers\":0,\"chars\":176,\"empty\":false}"
@@ -129,8 +129,8 @@
       }
     ],
     "recallLatencyMs": {
-      "p50": "0.37",
-      "p95": "0.70",
+      "p50": "0.25",
+      "p95": "0.33",
       "n": 50,
       "records": 121
     },
@@ -149,17 +149,17 @@
     {
       "id": "T3",
       "expected": "R1 listed as affected with non-trusted category",
-      "actual": "{\"ok\":true,\"repo\":\"/home/lovedolove/projects/Veyra\",\"changedFiles\":[\"src/stock/warehouse.mjs\",\"check/idempotency.mjs\"],\"degraded\":false,\"degradedReason\":null,\"affectedMemories\":[],\"candidatesCreated\":0,\"candidateIds\":[],\"context\":[],\"summary\":{\"trusted\":0,\"reviewRequired\":0,\"stale\":0,\"contradicted\":0,\"insufficientEvidence\":0}}"
+      "actual": "{\"ok\":true,\"repo\":\"/home/lovedolove/projects/Veyra\",\"changedFiles\":[\"src/stock/warehouse.mjs\",\"check/idempotency.mjs\"],\"renames\":[],\"degraded\":false,\"degradedReason\":null,\"affectedMemories\":[],\"candidatesCreated\":0,\"candidateIds\":[],\"context\":[],\"summary\":{\"trusted\":0,\"reviewRequired\":0,\"stale\":0,\"contradicted\":0,\"insufficientEvidence\":0}}"
     },
     {
       "id": "T4",
       "expected": "both records visible and unmerged",
-      "actual": "bothVisible=true count=0 ids=[\"vey_1a1a69bc099_8d807dd30f84\",\"vey_1a1a69bc1fb_fe58bfed6e04\",\"vey_1a1a69bc0a5_5c97976007c3\",\"rej_062e55ebd9\"]"
+      "actual": "bothVisible=true count=0 ids=[\"vey_1a1afe4809e_6236a2525aa8\",\"vey_1a1afe48131_2c18d8ec1ddd\",\"vey_1a1afe480a1_1479856ef086\",\"vey_1a1afe480a3_ec68c017c72d\",\"rej_062e55ebd9\"]"
     },
     {
       "id": "T5",
       "expected": "feedback ladder + recurrence + write-gate ledger all present",
-      "actual": "{\"ladder\":{\"before\":\"unverified/high\",\"after\":\"reviewed/high\",\"feedbackOk\":true,\"record\":true},\"recFind\":[\"{\\\"kind\\\":\\\"recurring-failure\\\",\\\"key\\\":\\\"vey_1a1a69bc20a_490bd81ea038\\\",\\\"count\\\":2,\\\"reco\"],\"gateAccounting\":null}"
+      "actual": "{\"ladder\":{\"before\":\"unverified/high\",\"after\":\"reviewed/high\",\"feedbackOk\":true,\"record\":true},\"recFind\":[\"{\\\"kind\\\":\\\"recurring-failure\\\",\\\"key\\\":\\\"vey_1a1afe48137_ae5dee4da7b5\\\",\\\"count\\\":2,\\\"reco\"],\"gateAccounting\":null}"
     }
   ],
   "tokenCost": {
@@ -182,5 +182,5 @@
     }
   },
   "nextSlice": null,
-  "finishedAt": "2026-11-04T12:49:49.109Z"
+  "finishedAt": "2026-11-06T08:05:50.903Z"
 }

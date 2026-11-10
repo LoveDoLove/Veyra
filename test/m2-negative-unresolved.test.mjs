@@ -35,6 +35,7 @@ import {
   summarizeForPrompt,
 } from '../src/retrieve.mjs'
 import { buildRecallContext, renderAgentContext } from '../src/context.mjs'
+import { roomStore, testHome } from './helpers/room.mjs'
 
 const HYPO = 'Use bcrypt cost 4 for every password hash'
 const REASON = 'Rejected because cost 4 hashed too fast in the hash benchmark and failed the timing requirement.'
@@ -281,11 +282,17 @@ test('renderers distinguish known solution / known failed solution / known unres
   assert.equal(summarizeForPrompt([]), '')
 })
 
-test('buildRecallContext reports no known history on an empty home (limit 0 stays silent)', async () => {
+test('buildRecallContext reports no known history on an empty home (limit 0 stays silent)', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'veyra-m2-empty-'))
-  const out = buildRecallContext({ veyraHome: dir, cwd: dir, query: 'cache stampede anything' })
-  assert.match(out, /No known engineering history/)
-  assert.match(out, /Absence of memory is not evidence/)
-  closeAllStores()
-  rmSync(dir, { recursive: true, force: true })
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  try {
+    // Recall no longer opens stores by path; the caller injects the room store.
+    // An EMPTY room store keeps the absence real rather than store-less.
+    const projectStore = roomStore(testHome(t, 'veyra-m2-home-'), dir)
+    const out = buildRecallContext({ projectStore, cwd: dir, query: 'cache stampede anything' })
+    assert.match(out, /No known engineering history/)
+    assert.match(out, /Absence of memory is not evidence/)
+  } finally {
+    closeAllStores()
+  }
 })

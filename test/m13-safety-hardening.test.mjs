@@ -19,8 +19,8 @@ import { tmpdir } from 'node:os'
 import { mkdtempSync, readFileSync, writeFileSync, rmSync, cpSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { openEphemeralStore, openProjectStore, closeAllStores } from '../src/store.mjs'
-import { projectIdFor } from '../src/ids.mjs'
+import { openEphemeralStore, closeAllStores } from '../src/store.mjs'
+import { roomIdFor, roomStore, testRuntime } from './helpers/room.mjs'
 import { isLifecycleEligible, isRecallEligible, AUTHORITIES } from '../src/types.mjs'
 import { memoryHealth, renderHealth } from '../src/health.mjs'
 import { injectionSignals, injectionWarning } from '../src/redact.mjs'
@@ -244,7 +244,9 @@ test('§25 quick_check gate refuses corrupted store at open', () => {
 
 test('§25 veyra_remember tool repair param surfaces error as result, not throw', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'veyra-tool-'))
-  const runtime = { veyraHome: dir, fallbackCwd: process.cwd() }
+  // A tool call resolves memory through the Memory Server; the workspace room
+  // for this cwd is where the record lands, so the corruption is applied there.
+  const runtime = testRuntime(dir, process.cwd())
   const harness = createToolHarness(runtime)
 
   try {
@@ -252,9 +254,11 @@ test('§25 veyra_remember tool repair param surfaces error as result, not throw'
     const created = await harness.call('veyra_remember', { title: 'Will break', body: 'original' })
     assert.equal(created.ok, true)
     const id = created.record.id
+    // The record is addressed by workspace room, not by path-derived project id.
+    assert.equal(created.record.projectId, roomIdFor(process.cwd()), 'record lands in the cwd workspace room')
 
     // Corrupt it directly in its SQLite store on disk
-    const store = openProjectStore(dir, projectIdFor(process.cwd()))
+    const store = roomStore(dir, process.cwd())
     store.db.prepare('UPDATE memory SET tags = ? WHERE id = ?').run('[1, 2, "oops', id)
 
     // Tool call WITHOUT repair → returns {ok:false, error:...}

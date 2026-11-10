@@ -113,23 +113,55 @@ export function strengthenMemory(neighbor, candidate, { workspace = null } = {})
   // a test reach `verified` / `promotion-candidate` — the exact state a human
   // trusts when deciding a canonical promotion. Anchoring to the enum removes
   // the forgery without narrowing any genuine signal.
-  const hasTestEvidence = mergedEvidence.some((e) => {
+  // B1: `test-failed` vetoes only the item it is attached to for positive
+  // evidence detection (a passing item in the same merge still counts).
+  const hasPositiveTestEvidence = mergedEvidence.some((e) => {
     const text = typeof e === 'string' ? e : `${e?.path || ''} ${e?.note || ''}`
     return /(^|[^a-z0-9-])(test-passed|tests-touched)([^a-z0-9-]|$)/i.test(text)
       && !/(^|[^a-z0-9-])test-failed([^a-z0-9-]|$)/i.test(text)
   })
 
+  const existingCausal = neighbor.source?.causal
+  const candidateCausal = candidate.source?.causal
+  let mergedCausal = existingCausal || null
+  if (existingCausal || candidateCausal) {
+    const outcomes = [existingCausal?.verifiedOutcome, candidateCausal?.verifiedOutcome].filter(Boolean)
+    // Task 32: failure history is not overwritten by a later duplicate's
+    // passed outcome. strengthenMemory merges observations across turns and
+    // does not have Task 16's same-turn ordered corrective-action evidence,
+    // so a failed verifiedOutcome must remain failed rather than becoming a
+    // misleading successful solution.
+    const mergedOutcome = outcomes.includes('test-failed')
+      ? 'test-failed'
+      : (candidateCausal?.verifiedOutcome || existingCausal?.verifiedOutcome || null)
+    mergedCausal = {
+      symptom: existingCausal?.symptom || candidateCausal?.symptom || null,
+      rootCause: existingCausal?.rootCause || candidateCausal?.rootCause || null,
+      remedy: existingCausal?.remedy || candidateCausal?.remedy || null,
+      verifiedOutcome: mergedOutcome,
+    }
+  }
+
+  const failedOutcome = mergedCausal?.verifiedOutcome === 'test-failed'
+    || existingCausal?.verifiedOutcome === 'test-failed'
+    || candidateCausal?.verifiedOutcome === 'test-failed'
+
   // Validation tier progression:
   // 1 observation: UNVERIFIED (baseline)
   // 2+ observations or passing test evidence: REVIEWED
   // 3+ observations with test evidence: VERIFIED
+  // A failed outcome must never be represented as verified success by
+  // duplicate strengthening (Observation/failed attempt ≠ successful solution).
   let validation = neighbor.validation
-  if (obsCount >= 3 && hasTestEvidence) {
+  if (obsCount >= 3 && hasPositiveTestEvidence && !failedOutcome) {
     validation = VALIDATIONS.VERIFIED
-  } else if (obsCount >= 2 || hasTestEvidence) {
+  } else if (obsCount >= 2 || hasPositiveTestEvidence) {
     if (validation === VALIDATIONS.UNVERIFIED || validation === VALIDATIONS.STALE) {
       validation = VALIDATIONS.REVIEWED
     }
+  }
+  if (failedOutcome && validation === VALIDATIONS.VERIFIED) {
+    validation = VALIDATIONS.REVIEWED
   }
   // Narrative-only neighbors never escalate past UNVERIFIED via strengthening
   // alone — repeated process narration is not accumulated engineering knowledge.
@@ -149,18 +181,9 @@ export function strengthenMemory(neighbor, candidate, { workspace = null } = {})
   const tags = [...(neighbor.tags || [])]
   if (validation === VALIDATIONS.VERIFIED && !tags.includes('promotion-candidate')) {
     tags.push('promotion-candidate')
-  }
-
-  const existingCausal = neighbor.source?.causal
-  const candidateCausal = candidate.source?.causal
-  let mergedCausal = existingCausal || null
-  if (existingCausal || candidateCausal) {
-    mergedCausal = {
-      symptom: existingCausal?.symptom || candidateCausal?.symptom || null,
-      rootCause: existingCausal?.rootCause || candidateCausal?.rootCause || null,
-      remedy: existingCausal?.remedy || candidateCausal?.remedy || null,
-      verifiedOutcome: candidateCausal?.verifiedOutcome || existingCausal?.verifiedOutcome || null,
-    }
+  } else if (validation !== VALIDATIONS.VERIFIED) {
+    const i = tags.indexOf('promotion-candidate')
+    if (i >= 0) tags.splice(i, 1)
   }
 
   return {

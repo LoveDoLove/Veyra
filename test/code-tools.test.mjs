@@ -1,20 +1,17 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { buildToolDefinitions, toRawOutputSchema } from '../src/tools.mjs'
 import { CodeIntelligenceEngine } from '@lovedolove/dsh-codebase-memory-mcp'
-import { openProjectStore, closeAllStores } from '../src/store.mjs'
-import { projectIdFor } from '../src/ids.mjs'
+import { closeAllStores } from '../src/store.mjs'
 import { AUTHORITIES, CONFIDENCES, KINDS, VALIDATIONS } from '../src/types.mjs'
+import { agentFor, roomIdFor, roomStore, testHome, testRuntime } from './helpers/room.mjs'
 
-test('buildToolDefinitions includes all 7 code intelligence tools with valid schemas', () => {
-  const runtime = {
-    veyraHome: '/tmp/test-home',
-    fallbackCwd: process.cwd(),
+test('buildToolDefinitions includes all 7 code intelligence tools with valid schemas', (t) => {
+  const runtime = testRuntime(testHome(t, 'veyra-tools-home-'), process.cwd(), {
     codeEngine: new CodeIntelligenceEngine({ exePath: '/nonexistent/bin' }),
-  }
+  })
   const tools = buildToolDefinitions(runtime)
   const toolNames = tools.map((t) => t.name)
 
@@ -39,12 +36,10 @@ test('buildToolDefinitions includes all 7 code intelligence tools with valid sch
   }
 })
 
-test('code intelligence tools return graceful degraded status when engine is offline', async () => {
-  const runtime = {
-    veyraHome: '/tmp/test-home',
-    fallbackCwd: process.cwd(),
+test('code intelligence tools return graceful degraded status when engine is offline', async (t) => {
+  const runtime = testRuntime(testHome(t, 'veyra-tools-home-'), process.cwd(), {
     codeEngine: new CodeIntelligenceEngine({ exePath: '/nonexistent/bin' }),
-  }
+  })
   const tools = new Map(buildToolDefinitions(runtime).map((t) => [t.name, t]))
 
   const projectsTool = tools.get('cbm_projects')
@@ -80,14 +75,19 @@ test('code intelligence tools return graceful degraded status when engine is off
   assert.equal(searchCodeRes.degraded, true)
 })
 
-test('veyra_code_status inspects memory freshness against repository workspace', async () => {
-  const tmpHome = mkdtempSync(join(tmpdir(), 'veyra-status-home-'))
-  const tmpRepo = mkdtempSync(join(tmpdir(), 'veyra-status-repo-'))
+test('veyra_code_status inspects memory freshness against repository workspace', async (t) => {
+  // `args.repo` is resolved as a workspace, so the repo must be a REGISTERED
+  // workspace and its memories must live in that workspace's room.
+  const tmpHome = testHome(t, 'veyra-status-home-')
+  const tmpRepo = testHome(t, 'veyra-status-repo-')
 
   try {
     writeFileSync(join(tmpRepo, 'index.js'), 'export function hello() { return "world"; }\n')
-    const projectId = projectIdFor(tmpRepo)
-    const store = openProjectStore(tmpHome, projectId)
+    const projectId = roomIdFor(tmpRepo)
+    const store = roomStore(tmpHome, tmpRepo)
+    // The seed store must be the very room the runtime resolves for tmpRepo;
+    // a mismatch would make every seeded record silently invisible.
+    assert.equal(store.projectId, projectId)
 
     store.put({
       id: 'mem_fresh_1',
@@ -117,14 +117,12 @@ test('veyra_code_status inspects memory freshness against repository workspace',
       ],
     })
 
-    const runtime = {
-      veyraHome: tmpHome,
-      fallbackCwd: tmpRepo,
+    const runtime = testRuntime(tmpHome, tmpRepo, {
       codeEngine: new CodeIntelligenceEngine({ exePath: '/nonexistent/bin' }),
-    }
+    })
     const tools = new Map(buildToolDefinitions(runtime).map((t) => [t.name, t]))
     const statusTool = tools.get('veyra_code_status')
-    const result = await statusTool.execute({ repo: tmpRepo }, { agent: { session: { workspace: tmpRepo } } })
+    const result = await statusTool.execute({ repo: tmpRepo }, { agent: agentFor(tmpRepo) })
 
     assert.equal(result.ok, true)
     assert.equal(result.freshMemories, 1)
@@ -136,23 +134,22 @@ test('veyra_code_status inspects memory freshness against repository workspace',
     assert.match(rendered[0].text, /1 invalid/)
   } finally {
     closeAllStores()
-    rmSync(tmpHome, { recursive: true, force: true })
     rmSync(tmpRepo, { recursive: true, force: true })
   }
 })
 
-test('veyra_code_status message is never null when engine returns no message field', async () => {
-  const tmpHome = mkdtempSync(join(tmpdir(), 'veyra-status-nullmsg-'))
-  const tmpRepo = mkdtempSync(join(tmpdir(), 'veyra-status-nullmsg-repo-'))
+test('veyra_code_status message is never null when engine returns no message field', async (t) => {
+  const tmpHome = testHome(t, 'veyra-status-nullmsg-')
+  const tmpRepo = testHome(t, 'veyra-status-nullmsg-repo-')
   try {
     // Simulate NOT_INDEXED path: engine returns object with no `message` field
     const engine = new CodeIntelligenceEngine({ exePath: '/nonexistent/bin' })
     engine.getStatus = async () => ({ status: 'not_indexed', degraded: false, ok: false })
 
-    const runtime = { veyraHome: tmpHome, fallbackCwd: tmpRepo, codeEngine: engine }
+    const runtime = testRuntime(tmpHome, tmpRepo, { codeEngine: engine })
     const tools = new Map(buildToolDefinitions(runtime).map((t) => [t.name, t]))
     const statusTool = tools.get('veyra_code_status')
-    const result = await statusTool.execute({ repo: tmpRepo }, {})
+    const result = await statusTool.execute({ repo: tmpRepo }, { agent: agentFor(tmpRepo) })
 
     assert.equal(result.ok, true)
     // DSH validates the JSON-serialised output against the schema. null serialises as null
@@ -164,27 +161,26 @@ test('veyra_code_status message is never null when engine returns no message fie
     }
   } finally {
     closeAllStores()
-    rmSync(tmpHome, { recursive: true, force: true })
     rmSync(tmpRepo, { recursive: true, force: true })
   }
 })
 
-test('veyra_code_status raw output is lossless JSON when engine has no message field', async () => {
+test('veyra_code_status raw output is lossless JSON when engine has no message field', async (t) => {
   // Regression: execute() used `message: status?.message || undefined`, creating an own
   // key with value `undefined` on the live not_indexed path. DSH snapshots the RAW value
   // (dsh-util-values snapshotJsonValue) before render/JSON round-trip, rejects it, and
   // fails with: tool "veyra_code_status" returned invalid output: value is not lossless JSON
-  const tmpHome = mkdtempSync(join(tmpdir(), 'veyra-status-lossless-'))
-  const tmpRepo = mkdtempSync(join(tmpdir(), 'veyra-status-lossless-repo-'))
+  const tmpHome = testHome(t, 'veyra-status-lossless-')
+  const tmpRepo = testHome(t, 'veyra-status-lossless-repo-')
   try {
     const engine = new CodeIntelligenceEngine({ exePath: '/nonexistent/bin' })
     // Actual getStatus() payload for a non-degraded, unindexed repo — no `message` key.
     engine.getStatus = async () => ({ status: 'not_indexed', degraded: false, lastIndexedAt: null, filesCount: 0 })
 
-    const runtime = { veyraHome: tmpHome, fallbackCwd: tmpRepo, codeEngine: engine }
+    const runtime = testRuntime(tmpHome, tmpRepo, { codeEngine: engine })
     const tools = new Map(buildToolDefinitions(runtime).map((t) => [t.name, t]))
     const statusTool = tools.get('veyra_code_status')
-    const raw = await statusTool.execute({ repo: tmpRepo }, {})
+    const raw = await statusTool.execute({ repo: tmpRepo }, { agent: agentFor(tmpRepo) })
 
     // The exact offending type: own enumerable key holding `undefined`.
     assert.equal(Object.hasOwn(raw, 'message'), false, 'message key must be absent, not undefined')
@@ -193,7 +189,7 @@ test('veyra_code_status raw output is lossless JSON when engine has no message f
 
     // Degraded path still carries its string message.
     engine.getStatus = async () => ({ status: 'degraded', degraded: true, message: 'Code intelligence binary unavailable; running in degraded mode' })
-    const degraded = await statusTool.execute({ repo: tmpRepo }, {})
+    const degraded = await statusTool.execute({ repo: tmpRepo }, { agent: agentFor(tmpRepo) })
     assert.equal(degraded.message, 'Code intelligence binary unavailable; running in degraded mode')
     assert.deepEqual(JSON.parse(JSON.stringify(degraded)), degraded, 'degraded raw value must be lossless JSON')
 
@@ -202,19 +198,18 @@ test('veyra_code_status raw output is lossless JSON when engine has no message f
     assert.ok(statusTool.output.render({}, degraded)[0].text.includes('degraded'))
   } finally {
     closeAllStores()
-    rmSync(tmpHome, { recursive: true, force: true })
     rmSync(tmpRepo, { recursive: true, force: true })
   }
 })
 
-test('cbm_projects render uses value.raw text, not value.projects array', async () => {
-  const tmpHome = mkdtempSync(join(tmpdir(), 'veyra-cbm-projects-'))
+test('cbm_projects render uses value.raw text, not value.projects array', async (t) => {
+  const tmpHome = testHome(t, 'veyra-cbm-projects-')
   try {
     // Simulate upstream MCP returning project-list text in raw field
     const engine = new CodeIntelligenceEngine({ exePath: '/nonexistent/bin' })
     engine.listProjects = async () => ({ ok: true, raw: 'projects:\n  - home-user-myrepo\n  - home-user-another' })
 
-    const runtime = { veyraHome: tmpHome, fallbackCwd: process.cwd(), codeEngine: engine }
+    const runtime = testRuntime(tmpHome, process.cwd(), { codeEngine: engine })
     const tools = new Map(buildToolDefinitions(runtime).map((t) => [t.name, t]))
     const projectsTool = tools.get('cbm_projects')
     const result = await projectsTool.execute({ reason: 'test' }, {})
@@ -226,22 +221,21 @@ test('cbm_projects render uses value.raw text, not value.projects array', async 
     assert.match(rendered[0].text, /home-user-another/)
   } finally {
     closeAllStores()
-    rmSync(tmpHome, { recursive: true, force: true })
   }
 })
 
-test('cbm_arch render uses value.overview, not value.raw', async () => {
-  const tmpHome = mkdtempSync(join(tmpdir(), 'veyra-cbm-arch-'))
-  const tmpRepo = mkdtempSync(join(tmpdir(), 'veyra-cbm-arch-repo-'))
+test('cbm_arch render uses value.overview, not value.raw', async (t) => {
+  const tmpHome = testHome(t, 'veyra-cbm-arch-')
+  const tmpRepo = testHome(t, 'veyra-cbm-arch-repo-')
   try {
     // Simulate engine returning overview field (the real engine behavior)
     const engine = new CodeIntelligenceEngine({ exePath: '/nonexistent/bin' })
     engine.getArchitecture = async () => ({ ok: true, overview: 'Key components:\n- src/main.js: entry point\n- src/lib/: shared utilities' })
 
-    const runtime = { veyraHome: tmpHome, fallbackCwd: tmpRepo, codeEngine: engine }
+    const runtime = testRuntime(tmpHome, tmpRepo, { codeEngine: engine })
     const tools = new Map(buildToolDefinitions(runtime).map((t) => [t.name, t]))
     const archTool = tools.get('cbm_arch')
-    const result = await archTool.execute({ repo: tmpRepo }, {})
+    const result = await archTool.execute({ repo: tmpRepo }, { agent: agentFor(tmpRepo) })
 
     assert.equal(result.ok, true)
     assert.ok(result.overview)
@@ -250,7 +244,6 @@ test('cbm_arch render uses value.overview, not value.raw', async () => {
     assert.match(rendered[0].text, /src\/main\.js/)
   } finally {
     closeAllStores()
-    rmSync(tmpHome, { recursive: true, force: true })
     rmSync(tmpRepo, { recursive: true, force: true })
   }
 })

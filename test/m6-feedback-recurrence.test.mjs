@@ -22,9 +22,9 @@ import {
   recordFeedback,
   recurrenceCandidate,
 } from '../src/feedback.mjs'
-import { openEphemeralStore, openProjectStore, closeAllStores } from '../src/store.mjs'
-import { projectIdFor } from '../src/ids.mjs'
+import { openEphemeralStore, closeAllStores } from '../src/store.mjs'
 import { buildToolDefinitions } from '../src/tools.mjs'
+import { roomIdFor, roomStore, testRuntime } from './helpers/room.mjs'
 import { AUTHORITIES, CONFIDENCES, KINDS, RELATIONS, SCOPES, VALIDATIONS } from '../src/types.mjs'
 
 function putRec(store, over = {}, opts = {}) {
@@ -383,12 +383,14 @@ test('§20: pure detection never touches the store (no hidden writes)', () => {
 test('tools: veyra_feedback executes §19 end-to-end and renders reliability change', () => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-m6-'))
   try {
-    const defs = buildToolDefinitions({ veyraHome: home, fallbackCwd: home })
+    // Memory is addressed by workspace room: the runtime and the seed share it.
+    const defs = buildToolDefinitions(testRuntime(home, home))
     const def = defs.find((d) => d.name === 'veyra_feedback')
     assert.ok(def, 'veyra_feedback tool defined')
     const exec = { agent: { session: { id: 's1', header: { cwd: home } }, provider: 'deepseek', model: 'ds-test' } }
-    const store = openProjectStore(home, projectIdFor(home))
+    const store = roomStore(home, home)
     const rec = putRec(store, {
+      projectId: roomIdFor(home),
       validation: VALIDATIONS.VERIFIED,
       confidence: CONFIDENCES.HIGH,
       source: { observations: 4 },
@@ -423,15 +425,16 @@ test('tools: veyra_feedback executes §19 end-to-end and renders reliability cha
 test('tools: veyra_recurrence scans read-only by default, candidates only on autoCandidate', () => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-m6b-'))
   try {
-    const defs = buildToolDefinitions({ veyraHome: home, fallbackCwd: home })
+    const defs = buildToolDefinitions(testRuntime(home, home))
     const def = defs.find((d) => d.name === 'veyra_recurrence')
     assert.ok(def, 'veyra_recurrence tool defined')
     const exec = { agent: { session: { id: 's1', header: { cwd: home } }, provider: 'deepseek', model: 'ds-test' } }
-    const store = openProjectStore(home, projectIdFor(home))
+    const store = roomStore(home, home)
+    const roomId = roomIdFor(home)
     const causal = { rootCause: 'dependency issue in writer pool', remedy: 'pin sqlite3 and serialize writes' }
-    putRec(store, { title: 'dep incident 1', body: 'busy timeout incident one pinned dep resolves', source: { causal } })
-    putRec(store, { title: 'dep incident 2', body: 'busy timeout incident two pinned dep resolves', source: { causal } })
-    putRec(store, { title: 'dep incident 3', body: 'busy timeout incident three pinned dep resolves', source: { causal: { ...causal, verifiedOutcome: 'tests green after pin' } } })
+    putRec(store, { title: 'dep incident 1', body: 'busy timeout incident one pinned dep resolves', projectId: roomId, source: { causal } })
+    putRec(store, { title: 'dep incident 2', body: 'busy timeout incident two pinned dep resolves', projectId: roomId, source: { causal } })
+    putRec(store, { title: 'dep incident 3', body: 'busy timeout incident three pinned dep resolves', projectId: roomId, source: { causal: { ...causal, verifiedOutcome: 'tests green after pin' } } })
     const seeded = store.count()
 
     // Read-only default: findings, no writes.
@@ -463,7 +466,7 @@ test('tools: veyra_recurrence scans read-only by default, candidates only on aut
 
     // Empty store → friendly empty render.
     const emptyHome = mkdtempSync(join(tmpdir(), 'veyra-m6c-'))
-    const emptyDef = buildToolDefinitions({ veyraHome: emptyHome, fallbackCwd: emptyHome }).find((d) => d.name === 'veyra_recurrence')
+    const emptyDef = buildToolDefinitions(testRuntime(emptyHome, emptyHome)).find((d) => d.name === 'veyra_recurrence')
     const emptyExec = { agent: { session: { id: 's2', header: { cwd: emptyHome } }, provider: 'deepseek', model: 'ds-test' } }
     const emptyValue = emptyDef.execute({ threshold: 3 }, emptyExec)
     assert.deepEqual(emptyValue.findings, [])

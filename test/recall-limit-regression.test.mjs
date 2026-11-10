@@ -30,16 +30,19 @@ import { join } from 'node:path'
 import { findDshRoot, loadDshPackage } from './helpers/dsh.mjs'
 import * as veyra from '../src/plugin.mjs'
 import { buildToolDefinitions } from '../src/tools.mjs'
-import { openProjectStore, closeAllStores } from '../src/store.mjs'
+import { closeAllStores } from '../src/store.mjs'
 import { recall } from '../src/retrieve.mjs'
-import { newRecordId, projectIdFor } from '../src/ids.mjs'
+import { newRecordId } from '../src/ids.mjs'
+import { fakeRegistry, roomStore } from './helpers/room.mjs'
 
 const dsh = findDshRoot()
 const skip = dsh ? false : 'no DSH install found (set DSH_INSTALL to run)'
 const REPO = process.cwd()
 
 function seedRecallEligibleRecords(home, count) {
-  const store = openProjectStore(home, projectIdFor(REPO))
+  // Records live in the workspace room for REPO, the same room the composed
+  // Memory Server resolves through the registry below.
+  const store = roomStore(home, REPO)
   // Seven DISTINCT facts: near-duplicate suppression (containment >= 0.5,
   // retrieve.mjs) would otherwise collapse near-identical claims and mask
   // the limit being tested. See the Phase 4 root-cause test below.
@@ -98,6 +101,10 @@ async function composeVeyra(home, profileDir, config) {
   ctx.plugin(ToolRuntime)
   if (nativeExec?.apply || nativeExec?.default?.apply) ctx.plugin(nativeExec.default ?? nativeExec)
   ctx.plugin(SettingsForms)
+  // The plugin builds its Memory Server from this ctx, and the server resolves
+  // a workspace room through the host's registry. Declaring the service before
+  // the plugin composes is what makes recall reach the seeded room at all.
+  ctx.provide('workspaceRegistry', fakeRegistry([REPO]))
   const fiber = ctx.plugin(veyra, {
     home,
     codebaseWatch: false,
@@ -117,8 +124,18 @@ async function composeVeyra(home, profileDir, config) {
 }
 
 async function recalledCount(ctx) {
+  // Task 30/34: automatic proactive recall fails closed without a task-shaped
+  // signal and (Task 34) does not inject zero-signal memories for a non-empty
+  // task query (Similarity alone is not applicability). Use a substantive query
+  // carrying signal for every seeded fact so this test exercises the recallLimit
+  // contract — not applicability suppression — under production gating.
   const assembly = await ctx.systemPrompt.assemble({
-    agent: { session: { header: { cwd: REPO } } },
+    agent: {
+      session: {
+        header: { cwd: REPO },
+        deriveMessages: () => [{ role: 'user', content: 'sqlite fts wal watcher recall candidate redaction secret store cache debounce limit debugging task', source: { kind: 'user' } }],
+      },
+    },
   })
   const entry = assembly.contexts.find((c) => c.name === 'veyra:recall')
   const text = entry?.text ?? ''
@@ -173,7 +190,9 @@ test('configured recallLimit reaches the runtime (boot 0/3/10 + settings remount
 test('Phase 4 observation: limit 10 over 7 records with 2 near-dup pairs recalls 5 (dedup, not a lost limit)', () => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-recall-dedup-'))
   try {
-    const store = openProjectStore(home, projectIdFor(REPO))
+    // Records live in the workspace room for REPO — the same room the composed
+    // Memory Server resolves through the registry.
+    const store = roomStore(home, REPO)
     // The exact Phase 4 seed set as it landed in ONE store once the
     // home-agnostic cache key put the main and degraded homes together.
     const seeds = [

@@ -2,16 +2,23 @@
 
 ## Layout
 
-- `npm test` runs `node --test test/*.test.mjs` — 75 test files.
+- `npm test` runs `node --test test/*.test.mjs` — 106 test files.
 - `test/helpers/dsh.mjs` locates an installed DSH for real-runtime tests. It is
   not a test file and is not run directly.
+- `test/helpers/room.mjs` builds the workspace-room fixtures: `testRuntime`,
+  `testRuntimeWithStores`, `roomStore`, `centralStore`, `agentFor`,
+  `fakeRegistry`, `roomIdFor`. Tests drive the real resolver, router and Memory
+  Server through a fake registry, so a test cannot pass against a store the
+  production path would never open. It is test-only; nothing in `src/` imports
+  it.
 - `test/eval-v0164-ab.mjs` and `test/phase4-validate.mjs` are **manual harnesses**
   and are not part of `npm test`.
 
-Current baseline on Node 24: **825 tests, 819 pass, 0 fail, 6 skipped.** The
-skips are environment-gated (no discoverable DSH install, or
-`@deepseek-ai/cordis` not resolvable). Report exact counts from your own run;
-never quote a number you did not observe.
+Current baseline on Node 24: **1044 tests, 1044 pass, 0 fail, 0 skipped.** Some
+tests are environment-gated (no discoverable DSH install, or
+`@deepseek-ai/cordis` not resolvable) and report as skipped where the gate does
+not open, so a run can legitimately show fewer tests. Report exact counts from
+your own run; never quote a number you did not observe.
 
 ## Running
 
@@ -39,6 +46,9 @@ that passes locally must also be valid on Node 22.
 | Lifecycle and forgetting | `m10-forgetting-protection.test.mjs`, `m5-maintenance.test.mjs` |
 | Health, consolidation, feedback | `m7-memory-health.test.mjs`, `m12-consolidation.test.mjs`, `m6-feedback-recurrence.test.mjs` |
 | Isolation and security | `isolation-security-benchmark.test.mjs`, `redact.test.mjs`, `m13-safety-hardening.test.mjs` |
+| Workspace rooms and the registry | `memory-rooms.test.mjs`, `memory-rooms-dsh-registry.test.mjs`, `memory-server-safety.test.mjs` |
+| Governed promotion refusals | `promotion-refusals.test.mjs` |
+| Memory Server end to end | `memory-server-dsh.test.mjs` |
 | Code Intelligence glue | `code-linking.test.mjs`, `code-retrieval.test.mjs`, `code-tools.test.mjs`, `code-lifecycle.test.mjs` |
 | Host seams | `plugin.test.mjs`, `settings.test.mjs`, `skills.test.mjs`, `webui.test.mjs`, `compatibility.test.mjs`, `dsh-runtime.test.mjs` |
 | Packaging | `runtime-deps-check.test.mjs` |

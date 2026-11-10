@@ -23,9 +23,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { memoryHealth, renderHealth } from '../src/health.mjs'
-import { openEphemeralStore, openProjectStore, closeAllStores } from '../src/store.mjs'
-import { projectIdFor } from '../src/ids.mjs'
+import { openEphemeralStore, closeAllStores } from '../src/store.mjs'
 import { buildToolDefinitions } from '../src/tools.mjs'
+import { testHome, testRuntime, testRuntimeWithStores } from './helpers/room.mjs'
 import { handleVeyraCommand } from '../src/commands.mjs'
 import { AUTHORITIES, CONFIDENCES, KINDS, RELATIONS, SCOPES, VALIDATIONS } from '../src/types.mjs'
 
@@ -234,14 +234,15 @@ test('§21: memoryHealth is pure — records byte-identical after the scan', () 
 
 // ============================================================ /veyra health command
 
-test('/veyra health: success report, categories + findings, store untouched', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'veyra-m7-cmd-'))
+test('/veyra health: success report, categories + findings, store untouched', (t) => {
   const cwd = mkdtempSync(join(tmpdir(), 'veyra-m7-ws-'))
+  t.after(() => rmSync(cwd, { recursive: true, force: true }))
   try {
-    const runtime = { veyraHome: dir, fallbackCwd: cwd, recallLimit: 5, includeReusable: true }
-    const store = openProjectStore(dir, projectIdFor(cwd))
-    putRec(store, { validation: VALIDATIONS.STALE })
-    putRec(store, { kind: KINDS.UNRESOLVED })
+    // Memory is addressed by workspace room: seed the room the runtime will
+    // resolve, and label the records with that room id.
+    const { runtime, store, roomId } = testRuntimeWithStores(t, cwd, { recallLimit: 5, includeReusable: true })
+    putRec(store, { projectId: roomId, validation: VALIDATIONS.STALE })
+    putRec(store, { projectId: roomId, kind: KINDS.UNRESOLVED })
     const before = JSON.parse(JSON.stringify(store.list({ limit: 50 })))
 
     const res = handleVeyraCommand(runtime, { text: 'health', agent: { session: { header: { cwd } } } })
@@ -258,53 +259,51 @@ test('/veyra health: success report, categories + findings, store untouched', ()
     assert.match(th.text, /threshold 4\)/)
   } finally {
     closeAllStores()
-    rmSync(dir, { recursive: true, force: true })
-    rmSync(cwd, { recursive: true, force: true })
   }
 })
 
-test('/veyra health on an empty workspace renders the clean-report line', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'veyra-m7-empty-'))
+test('/veyra health on an empty workspace renders the clean-report line', (t) => {
   const cwd = mkdtempSync(join(tmpdir(), 'veyra-m7-ews-'))
+  t.after(() => rmSync(cwd, { recursive: true, force: true }))
   try {
-    const runtime = { veyraHome: dir, fallbackCwd: cwd, recallLimit: 5, includeReusable: true }
+    const runtime = testRuntime(testHome(t, 'veyra-m7-empty-'), cwd, { recallLimit: 5, includeReusable: true })
     const res = handleVeyraCommand(runtime, { text: 'health', agent: { session: { header: { cwd } } } })
     assert.equal(res.kind, 'success')
     assert.match(res.text, /0 active record\(s\) scanned/)
     assert.match(res.text, /No memory-quality problems found/)
   } finally {
     closeAllStores()
-    rmSync(dir, { recursive: true, force: true })
-    rmSync(cwd, { recursive: true, force: true })
   }
 })
 
-test('/veyra help lists the health verb', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'veyra-m7-help-'))
+test('/veyra help lists the health verb', (t) => {
+  const cwd = mkdtempSync(join(tmpdir(), 'veyra-m7-help-'))
+  t.after(() => rmSync(cwd, { recursive: true, force: true }))
   try {
-    const runtime = { veyraHome: dir, fallbackCwd: dir, recallLimit: 5, includeReusable: true }
-    const res = handleVeyraCommand(runtime, { text: 'help', agent: { session: { header: { cwd: dir } } } })
+    const runtime = testRuntime(testHome(t, 'veyra-m7-empty-'), cwd, { recallLimit: 5, includeReusable: true })
+    const res = handleVeyraCommand(runtime, { text: 'help', agent: { session: { header: { cwd } } } })
     assert.equal(res.kind, 'success')
     assert.match(res.text, /\/veyra health \[threshold\]/)
   } finally {
     closeAllStores()
-    rmSync(dir, { recursive: true, force: true })
   }
 })
 
 // ============================================================ veyra_health tool
 
-test('tools: veyra_health executes §21 end-to-end, renders, and never writes', () => {
-  const home = mkdtempSync(join(tmpdir(), 'veyra-m7-tool-'))
+test('tools: veyra_health executes §21 end-to-end, renders, and never writes', (t) => {
+  const cwd = mkdtempSync(join(tmpdir(), 'veyra-m7-tool-'))
+  t.after(() => rmSync(cwd, { recursive: true, force: true }))
   try {
-    const defs = buildToolDefinitions({ veyraHome: home, fallbackCwd: home })
+    // Seed the room the tool resolves, labelled with that room id.
+    const { runtime, store, roomId } = testRuntimeWithStores(t, cwd)
+    const defs = buildToolDefinitions(runtime)
     const def = defs.find((d) => d.name === 'veyra_health')
     assert.ok(def, 'veyra_health tool defined')
 
-    const exec = { agent: { session: { id: 's1', header: { cwd: home } }, provider: 'deepseek', model: 'ds-test' } }
-    const store = openProjectStore(home, projectIdFor(home))
-    const stale = putRec(store, { validation: VALIDATIONS.STALE })
-    const failing = putRec(store, { source: { feedback: { failures: 4, successes: 2, lastOutcome: 'failure' } } })
+    const exec = { agent: { session: { id: 's1', header: { cwd } }, provider: 'deepseek', model: 'ds-test' } }
+    const stale = putRec(store, { projectId: roomId, validation: VALIDATIONS.STALE })
+    const failing = putRec(store, { projectId: roomId, source: { feedback: { failures: 4, successes: 2, lastOutcome: 'failure' } } })
     const before = JSON.parse(JSON.stringify(store.list({ limit: 50 })))
 
     const report = def.execute({ failureThreshold: 3 }, exec)
@@ -326,14 +325,15 @@ test('tools: veyra_health executes §21 end-to-end, renders, and never writes', 
     assert.equal(store.count(), before.length, 'no records created or dropped')
   } finally {
     closeAllStores()
-    rmSync(home, { recursive: true, force: true })
   }
 })
 
-test('tools: veyra_health on an empty store renders the clean report', () => {
+test('tools: veyra_health on an empty store renders the clean report', (t) => {
   const emptyHome = mkdtempSync(join(tmpdir(), 'veyra-m7-etool-'))
+  t.after(() => rmSync(emptyHome, { recursive: true, force: true }))
   try {
-    const def = buildToolDefinitions({ veyraHome: emptyHome, fallbackCwd: emptyHome }).find((d) => d.name === 'veyra_health')
+    const runtime = testRuntime(testHome(t, 'veyra-m7-etool-'), emptyHome)
+    const def = buildToolDefinitions(runtime).find((d) => d.name === 'veyra_health')
     const exec = { agent: { session: { id: 's2', header: { cwd: emptyHome } }, provider: 'deepseek', model: 'ds-test' } }
     const report = def.execute({}, exec)
     assert.equal(report.ok, true)
@@ -343,7 +343,6 @@ test('tools: veyra_health on an empty store renders the clean report', () => {
     assert.match(rendered, /No memory-quality problems found/)
   } finally {
     closeAllStores()
-    rmSync(emptyHome, { recursive: true, force: true })
   }
 })
 

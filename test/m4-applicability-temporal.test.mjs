@@ -32,6 +32,7 @@ import { KINDS } from '../src/types.mjs'
 import { openEphemeralStore, closeAllStores } from '../src/store.mjs'
 import { remember } from '../src/learn.mjs'
 import { buildToolDefinitions } from '../src/tools.mjs'
+import { testRuntime } from './helpers/room.mjs'
 import { CodeIntelligenceEngine } from '@lovedolove/dsh-codebase-memory-mcp'
 import { rankRecords, temporalBounds, temporalState, contextCompatibility } from '../src/retrieve.mjs'
 
@@ -182,7 +183,7 @@ test('§13: a sole expired record stays fully retrievable (no eligible alternati
   assert.equal(r[0].scores.fusion, r[0].scores.composite) // single flat pool → rrf null → fusion ≡ composite
 })
 
-test('§13: not_yet_effective is never demoted (scheduled knowledge stays recallable)', () => {
+test('§13/Task 31: not_yet_effective is rank-limited below a currently applicable alternative (scheduled knowledge stays recallable, not current truth)', () => {
   const query = 'rollback strategy documented and verified'
   const body = 'Rollback strategy documented and verified on the old API.'
   const twins = [
@@ -191,7 +192,14 @@ test('§13: not_yet_effective is never demoted (scheduled knowledge stays recall
   ]
   const r = rankRecords(twins, { query })
   assert.equal(r.length, 2)
-  assert.ok(r.every((x) => x.scores.rank_limited === undefined), 'future-valid knowledge must not be eligibility-capped')
+  const scheduled = r.find((x) => x.id === 'scheduled')
+  const plain = r.find((x) => x.id === 'plain')
+  assert.ok(plain, 'current applicable record remains recallable')
+  assert.ok(scheduled, 'not_yet_effective record remains recallable (not removed)')
+  assert.equal(scheduled.scores.temporal_validity, 0, 'not_yet_effective is not currently temporally applicable')
+  assert.equal(scheduled.scores.rank_limited, true, 'future-valid knowledge must not outrank a current applicable alternative')
+  assert.equal(plain.scores.rank_limited, undefined)
+  assert.ok(plain.scores.fusion > scheduled.scores.fusion, 'current alternative ranks above not_yet_effective on query-driven recall')
   assert.equal(temporalState({ source: { temporal: { validFrom: FUTURE } } }), 'not_yet_effective')
 })
 
@@ -222,7 +230,8 @@ test('no-query browse: eligibility guard inactive, legacy order untouched', () =
 test('§11: record views expose temporal + context; remember schema documents them', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-m4-'))
   t.after(() => { closeAllStores(); rmSync(home, { recursive: true, force: true }) })
-  const runtime = { veyraHome: home, fallbackCwd: process.cwd(), codeEngine: new CodeIntelligenceEngine({ exePath: '/nonexistent/bin' }) }
+  // Tools resolve memory through the Memory Server's workspace room.
+  const runtime = testRuntime(home, process.cwd(), { codeEngine: new CodeIntelligenceEngine({ exePath: '/nonexistent/bin' }) })
   const defs = buildToolDefinitions(runtime)
   const tools = new Map(defs.map((x) => [x.name, x]))
   assert.equal(tools.size, 17, 'tool surface stays frozen (veyra_stale_ledger added)')

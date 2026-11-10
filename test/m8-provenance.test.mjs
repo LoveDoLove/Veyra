@@ -37,6 +37,7 @@ import { newBuffer, observeEvent, candidateFromBuffer } from '../src/observe.mjs
 import { maybeLearn, strengthenMemory } from '../src/learn.mjs'
 import { sweepStale, evolveAgainst } from '../src/evolve.mjs'
 import { buildToolDefinitions } from '../src/tools.mjs'
+import { testRuntime } from './helpers/room.mjs'
 
 // ---------------------------------------------------------------- fixtures
 
@@ -200,7 +201,7 @@ test('M8: origins are canonically ordered, frozen vocabulary, never "mixed"', ()
 test('M8: deliberate veyra_remember records carry §15 attribution but never capture origins', async () => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-m8-'))
   try {
-    const defs = buildToolDefinitions({ veyraHome: home, fallbackCwd: home })
+    const defs = buildToolDefinitions(testRuntime(home, home))
     const rememberDef = defs.find((d) => d.name === 'veyra_remember')
     assert.ok(rememberDef, 'veyra_remember tool definition exists')
     const res = await rememberDef.execute(

@@ -40,8 +40,8 @@ function loadValidateJsonSchemaValue() {
 import { handleVeyraCommand } from '../src/commands.mjs'
 import { GUIDANCE_TEXT, buildRecallContext, createContextProvider } from '../src/context.mjs'
 import { AUTHORITIES } from '../src/types.mjs'
-import { projectIdFor } from '../src/ids.mjs'
 import { closeAllStores } from '../src/store.mjs'
+import { centralStore, roomIdFor, roomStore, testRuntime } from './helpers/room.mjs'
 
 function mockCtx() {
   const tools = []
@@ -229,7 +229,7 @@ test('apply recallLimit 0 disables automatic context and leaves tools working', 
   const ctx = mockCtx()
   apply(ctx, { home: dir, recallLimit: 0 })
   await new Promise((r) => setTimeout(r, 50))
-  const runtime = { veyraHome: dir, fallbackCwd: cwd, recallLimit: 0, includeReusable: true }
+  const runtime = testRuntime(dir, cwd, { recallLimit: 0, includeReusable: true })
   const harness = createToolHarness(runtime)
   const remembered = await harness.call('veyra_remember', {
     title: 'SQLite WAL must stay on for Veyra stores',
@@ -395,7 +395,7 @@ test('Veyra Agent Policy covers availability, autonomous loop, and preserved inv
 test('tools remember → persist → recall across a fresh harness (session A/B)', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'veyra-loop-'))
   const cwd = process.cwd()
-  const runtime = { veyraHome: dir, fallbackCwd: cwd, recallLimit: 5, includeReusable: true }
+  const runtime = testRuntime(dir, cwd, { recallLimit: 5, includeReusable: true })
   const a = createToolHarness(runtime)
   const remembered = await a.call('veyra_remember', {
     title: 'Veyra stores memory outside the repo',
@@ -416,7 +416,8 @@ test('tools remember → persist → recall across a fresh harness (session A/B)
   assert.ok(recalled.disclaimer.includes('not repository truth'))
 
   const ambient = buildRecallContext({
-    veyraHome: dir,
+    projectStore: roomStore(dir, cwd),
+    reusableStore: centralStore(dir),
     cwd,
     query: 'where does veyra persist memory',
   })
@@ -424,7 +425,8 @@ test('tools remember → persist → recall across a fresh harness (session A/B)
   assert.ok(ambient.includes('not repository truth'))
 
   assert.equal(buildRecallContext({
-    veyraHome: dir,
+    projectStore: roomStore(dir, cwd),
+    reusableStore: centralStore(dir),
     cwd,
     query: 'where does veyra persist memory',
     limit: 0,
@@ -445,7 +447,8 @@ test('tools remember → persist → recall across a fresh harness (session A/B)
     text: 'status',
     agent: { session: { header: { cwd } } },
   })
-  assert.ok(status.text.includes(projectIdFor(cwd)))
+  // Identity changed: status now prints the workspace room id, not a path-derived project id.
+  assert.ok(status.text.includes(roomIdFor(cwd)))
   assert.ok(status.text.includes('project memories:'))
 
   closeAllStores()
@@ -454,7 +457,12 @@ test('tools remember → persist → recall across a fresh harness (session A/B)
 
 test('project isolation: memories from another project id do not leak', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'veyra-iso-'))
-  const runtime = { veyraHome: dir, fallbackCwd: '/tmp/project-one', recallLimit: 5, includeReusable: true }
+  // Both cwds must be registered workspaces so this proves room isolation, not a 409.
+  const runtime = testRuntime(dir, '/tmp/project-one', {
+    paths: ['/tmp/project-one', '/tmp/project-two'],
+    recallLimit: 5,
+    includeReusable: true,
+  })
   const harness = createToolHarness(runtime)
   await harness.call('veyra_remember', {
     title: 'Only project one knows this secret architecture',
@@ -473,7 +481,7 @@ test('tool failure payloads strictly satisfy output schema validation (no null o
   const validate = loadValidateJsonSchemaValue()
   if (!validate) return
   const dir = mkdtempSync(join(tmpdir(), 'veyra-schema-fail-'))
-  const runtime = { veyraHome: dir, fallbackCwd: '/tmp/proj', recallLimit: 5, includeReusable: true }
+  const runtime = testRuntime(dir, '/tmp/proj', { recallLimit: 5, includeReusable: true })
   const defs = Object.fromEntries(buildToolDefinitions(runtime).map((d) => [d.name, d]))
   const harness = createToolHarness(runtime)
 
@@ -504,7 +512,7 @@ test('records without source.context omit context from tool output (no null sche
   const validate = loadValidateJsonSchemaValue()
   if (!validate) return
   const dir = mkdtempSync(join(tmpdir(), 'veyra-no-context-'))
-  const runtime = { veyraHome: dir, fallbackCwd: '/tmp/proj', recallLimit: 5, includeReusable: true }
+  const runtime = testRuntime(dir, '/tmp/proj', { recallLimit: 5, includeReusable: true })
   const defs = Object.fromEntries(buildToolDefinitions(runtime).map((d) => [d.name, d]))
   const harness = createToolHarness(runtime)
   const exec = { agent: { session: { header: { cwd: '/tmp/proj' } } } }
@@ -600,7 +608,7 @@ function assertLossless(value) {
 
 test('remember/inspect/promote/forget payloads are lossless JSON and forget is scoped', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'veyra-json-safe-'))
-  const runtime = { veyraHome: dir, fallbackCwd: '/tmp/proj', recallLimit: 5, includeReusable: true }
+  const runtime = testRuntime(dir, '/tmp/proj', { recallLimit: 5, includeReusable: true })
   const harness = createToolHarness(runtime)
   const exec = { agent: { session: { header: { cwd: '/tmp/proj' } } } }
   const remembered = await harness.call('veyra_remember', {
@@ -665,7 +673,7 @@ test('remember/inspect/promote/forget payloads are lossless JSON and forget is s
 test('DSH rawInput observatory remainder reaches existing overview and search branches', () => {
   const dir = mkdtempSync(join(tmpdir(), 'veyra-rawinput-'))
   const cwd = join(dir, 'workspace')
-  const runtime = { veyraHome: dir, fallbackCwd: cwd, recallLimit: 5, includeReusable: true }
+  const runtime = testRuntime(dir, cwd, { recallLimit: 5, includeReusable: true })
   const invocation = { agent: { session: { header: { cwd } } } }
 
   const overview = handleVeyraCommand(runtime, { ...invocation, rawInput: 'observatory overview' })
@@ -690,7 +698,7 @@ test('/veyra help banner reports the installed package version', () => {
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
   const dir = mkdtempSync(join(tmpdir(), 'veyra-version-'))
   const cwd = join(dir, 'workspace')
-  const runtime = { veyraHome: dir, fallbackCwd: cwd, recallLimit: 5, includeReusable: true }
+  const runtime = testRuntime(dir, cwd, { recallLimit: 5, includeReusable: true })
 
   const help = handleVeyraCommand(runtime, {
     rawInput: 'help',

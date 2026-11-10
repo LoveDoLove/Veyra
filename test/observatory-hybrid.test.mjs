@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { AUTHORITIES, CONFIDENCES, KINDS, RELATIONS, SCOPES, VALIDATIONS } from '../src/types.mjs'
-import { openEphemeralStore } from '../src/store.mjs'
+import { closeAllStores, openEphemeralStore } from '../src/store.mjs'
 import {
   evidenceStrength,
   hybridRetrieve,
@@ -23,6 +23,10 @@ import {
 } from '../src/observatory.mjs'
 import { handleVeyraCommand } from '../src/commands.mjs'
 import { buildToolDefinitions, createToolHarness } from '../src/tools.mjs'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { testRuntime } from './helpers/room.mjs'
 
 test('hybrid search: transparent dimensional score breakdown and ranking', () => {
   const store = openEphemeralStore()
@@ -361,13 +365,10 @@ test('knowledge observatory: overview, record deep inspection, causality, relati
 })
 
 test('tools veyra_recall kind parameter and inspect causal views', async () => {
-  const store = openEphemeralStore()
-  const runtime = {
-    veyraHome: '/tmp/veyra-tool-test-' + Date.now(),
-    fallbackCwd: process.cwd(),
-    recallLimit: 5,
-    includeReusable: true,
-  }
+  const home = mkdtempSync(join(tmpdir(), 'veyra-tool-test-'))
+  // The tool surface resolves a workspace room through the Memory Server; the
+  // harness writes with no exec.agent, so the registered path is the fallback.
+  const runtime = testRuntime(home, process.cwd())
   const harness = createToolHarness(runtime)
 
   // Store engineering memory
@@ -405,4 +406,8 @@ test('tools veyra_recall kind parameter and inspect causal views', async () => {
   assert.ok('source' in inspected.record)
   assert.ok('relations' in inspected.record)
   assert.ok('evidence' in inspected.record)
+
+  runtime.memoryServer?.dispose?.()
+  closeAllStores()
+  rmSync(home, { recursive: true, force: true })
 })

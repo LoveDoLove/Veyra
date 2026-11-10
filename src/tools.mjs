@@ -30,8 +30,9 @@
  */
 
 import { AUTHORITIES, CONFIDENCES, KINDS, SCOPES, VALIDATIONS, VALID_AUTHORITIES, VALID_CONFIDENCES, VALID_KINDS, VALID_SCOPES } from './types.mjs'
-import { projectIdFor, provenanceDimensions, resolveWorkspace } from './ids.mjs'
-import { openProjectStore, openReusableStore } from './store.mjs'
+import { provenanceDimensions, resolveWorkspace } from './ids.mjs'
+
+import { MEMORY_OPERATIONS } from './memory-router.mjs'
 import { RELEVANCE_SEM_FLOOR, inspect, recall, summarizeForPrompt, temporalState } from './retrieve.mjs'
 import { tokenOverlap } from './text.mjs'
 import { provenanceChain } from './context.mjs'
@@ -118,13 +119,72 @@ function textBlocks(text) {
   return [{ type: 'text', text }]
 }
 
-function storesFor(runtime, exec, scope) {
-  const cwd = resolveWorkspace(exec?.agent) || runtime.fallbackCwd
-  const projectId = projectIdFor(cwd)
-  const projectStore = openProjectStore(runtime.veyraHome, projectId)
-  const reusableStore = openReusableStore(runtime.veyraHome)
-  const store = scope === SCOPES.REUSABLE ? reusableStore : projectStore
-  return { cwd, projectId, projectStore, reusableStore, store }
+/**
+ * Resolve the stores a tool call may touch, or throw.
+ *
+ * Fail closed in both directions. Without a Memory Server there is no
+ * workspace binding, and the only store a path could name is the legacy one
+ * this architecture no longer reads or writes. With a server, a refusal
+ * (`workspace-unresolved`, `workspace-registry-unavailable`, …) is equally
+ * fatal to the call: a tool that cannot name its room must not guess.
+ */
+function requireStores(server, resolved) {
+  if (!server) {
+    const err = new Error('Veyra memory unavailable: memory-server-unavailable')
+    err.code = 'VEYRA_MEMORY_UNAVAILABLE'
+    throw err
+  }
+  if (!resolved.ok) {
+    const err = new Error(`Veyra memory unavailable: ${resolved.reason}`)
+    err.code = 'VEYRA_MEMORY_UNAVAILABLE'
+    throw err
+  }
+  return resolved
+}
+
+function storesFor(runtime, exec, scope, operation = MEMORY_OPERATIONS.WRITE_MANUAL) {
+  const server = runtime.memoryServer
+  if (!server) requireStores(null, null)
+  // The router decides which stores the operation may touch. Manual tools
+  // default to write access; read-only tools pass their own operation so the
+  // decision stays honest.
+  const stores = requireStores(server, server.storesFor(exec?.agent, operation))
+  const store = scope === SCOPES.REUSABLE ? stores.reusableStore : stores.projectStore
+  return {
+    cwd: stores.cwd,
+    projectId: stores.projectId,
+    projectStore: stores.projectStore,
+    reusableStore: stores.reusableStore,
+    store,
+    binding: stores.binding,
+  }
+}
+
+/**
+ * Stores for an explicit repository path rather than the caller's own agent.
+ *
+ * `veyra_code_status` and `veyra_stale_ledger` take an `args.repo`, so they
+ * must resolve THAT path to its own workspace room instead of borrowing the
+ * caller's. Resolving by path keeps the promise the room model makes: the
+ * store belongs to the workspace that owns the directory, and a directory no
+ * workspace owns yields nothing rather than someone else's memory.
+ */
+function storesForRepository(runtime, repoPath, operation = MEMORY_OPERATIONS.INSPECT) {
+  const server = runtime.memoryServer
+  // Guard before dereferencing: `requireStores(server, server.storesForPath(…))`
+  // evaluates its arguments first, so a missing server would raise a raw
+  // TypeError instead of the clean `VEYRA_MEMORY_UNAVAILABLE` refusal every
+  // other tool path produces.
+  if (!server) requireStores(null, null)
+  const stores = requireStores(server, server.storesForPath(repoPath, operation))
+  return {
+    cwd: stores.cwd,
+    projectId: stores.projectId,
+    projectStore: stores.projectStore,
+    reusableStore: stores.reusableStore,
+    store: stores.projectStore,
+    binding: stores.binding,
+  }
 }
 
 function jsonSafe(value) {
@@ -346,7 +406,7 @@ export function buildToolDefinitions(runtime) {
         ),
       },
       execute(args, exec) {
-        const { projectStore, reusableStore } = storesFor(runtime, exec, SCOPES.PROJECT)
+        const { projectStore, reusableStore } = storesFor(runtime, exec, SCOPES.PROJECT, MEMORY_OPERATIONS.RECALL_MANUAL)
         const limit = Math.max(1, Math.min(Number(args.limit) || 5, 20))
         const includeReusable = args.include_reusable !== false
         // Phase 10 — goal is caller-supplied routing context only.
@@ -438,7 +498,7 @@ export function buildToolDefinitions(runtime) {
         },
       },
       execute(args, exec) {
-        const { projectStore, reusableStore } = storesFor(runtime, exec, SCOPES.PROJECT)
+        const { projectStore, reusableStore } = storesFor(runtime, exec, SCOPES.PROJECT, MEMORY_OPERATIONS.INSPECT)
         const record = inspect({ projectStore, reusableStore, id: args.id })
         const payload = { ok: Boolean(record) }
         if (record) {
@@ -494,7 +554,9 @@ export function buildToolDefinitions(runtime) {
       description:
         'Change a record\'s standing. Promoting a candidate to derived marks it as useful learned '
         + 'memory. Promoting to canonical requires explicit=true and should only happen when the '
-        + 'user asked to treat the item as project truth. Veyra never auto-promotes to canonical.',
+        + 'user asked to treat the item as project truth. Veyra never auto-promotes to canonical. '
+        + 'Set central=true to publish a workspace record into the shared Central Memories through '
+        + 'the governed promotion path (evidence required, candidates refused, no silent overwrite).',
       parameters: {
         id: { type: 'string', required: true, description: 'Record id to promote.' },
         to: { type: 'string', enum: [...VALID_AUTHORITIES], description: 'derived (default) or canonical.' },
@@ -502,6 +564,11 @@ export function buildToolDefinitions(runtime) {
           type: 'boolean',
           description: 'Required true when promoting to canonical. Confirms a user-requested promotion.',
         },
+        central: {
+          type: 'boolean',
+          description: 'Publish this workspace record into Central Memories instead of only raising its local authority.',
+        },
+        reason: { type: 'string', description: 'Short reason recorded in the promotion ledger.' },
       },
       output: {
         schema: {
@@ -511,17 +578,42 @@ export function buildToolDefinitions(runtime) {
             ok: { type: 'boolean' },
             error: { type: 'string' },
             record: RECORD_SCHEMA,
+            central: { type: 'boolean' },
+            action: { type: 'string' },
+            centralId: { type: 'string' },
+            authority: { type: 'string' },
           },
         },
         render: (_args, value) => textBlocks(
           value.ok
-            ? `Promoted ${value.record?.id} to ${value.record?.authority}.`
+            ? (value.central
+              ? `Central promotion ${value.action} (${value.centralId}) at ${value.authority}.`
+              : `Promoted ${value.record?.id} to ${value.record?.authority}.`)
             : `Promote failed: ${value.error || 'unknown'}`,
         ),
       },
       execute(args, exec) {
         const to = args.to === AUTHORITIES.CANONICAL ? AUTHORITIES.CANONICAL : AUTHORITIES.DERIVED
         const explicit = args.explicit === true
+        if (args.central === true) {
+          const server = runtime.memoryServer
+          if (!server) return { ok: false, error: 'central memories unavailable' }
+          const result = server.promote({
+            agent: exec?.agent,
+            id: args.id,
+            to,
+            explicit,
+            reason: typeof args.reason === 'string' ? args.reason : '',
+          })
+          if (!result.ok) return { ok: false, error: result.reason }
+          return {
+            ok: true,
+            central: true,
+            action: result.action,
+            centralId: result.centralId,
+            authority: result.authority,
+          }
+        }
         const { projectStore, reusableStore } = storesFor(runtime, exec, SCOPES.PROJECT)
         const existing = inspect({ projectStore, reusableStore, id: args.id })
         if (!existing) return { ok: false, error: 'not found' }
@@ -693,7 +785,7 @@ export function buildToolDefinitions(runtime) {
         render: (_args, value) => textBlocks(renderHealth(value)),
       },
       execute(args, exec) {
-        const { cwd, projectStore, reusableStore } = storesFor(runtime, exec, SCOPES.PROJECT)
+        const { cwd, projectStore, reusableStore } = storesFor(runtime, exec, SCOPES.PROJECT, MEMORY_OPERATIONS.HEALTH)
         const failureThreshold = Math.max(2, Math.min(50, Number(args.failureThreshold) || 2))
         const byId = new Map()
         for (const r of [...projectStore.list({ limit: 1000 }), ...reusableStore.list({ limit: 1000 })]) {
@@ -747,8 +839,7 @@ export function buildToolDefinitions(runtime) {
         const engine = runtime.codeEngine || new CodeIntelligenceEngine()
         const status = await engine.getStatus(targetRepo)
 
-        const projectId = projectIdFor(targetRepo)
-        const projectStore = openProjectStore(runtime.veyraHome, projectId)
+        const projectStore = storesForRepository(runtime, targetRepo).projectStore
         const memories = projectStore ? projectStore.list({ limit: 500 }) : []
         let freshCount = 0
         let staleCount = 0
@@ -911,8 +1002,7 @@ export function buildToolDefinitions(runtime) {
         const cwd = resolveWorkspace(exec?.agent) || runtime.fallbackCwd
         const targetRepo = args.repo || cwd
         const engine = runtime.codeEngine || new CodeIntelligenceEngine()
-        const projectId = projectIdFor(targetRepo)
-        const projectStore = openProjectStore(runtime.veyraHome, projectId)
+        const projectStore = storesForRepository(runtime, targetRepo).projectStore
         const memories = projectStore ? projectStore.list({ limit: 500, includeForgotten: false }) : []
 
         const changedFiles = args.changedFiles && args.changedFiles.length > 0
@@ -1124,7 +1214,7 @@ export function buildToolDefinitions(runtime) {
       },
       execute: async (args = {}, exec) => {
         // Strictly read-only. Uses the same store resolution as veyra_health.
-        const { projectStore, reusableStore, cwd } = storesFor(runtime, exec, args.scope || SCOPES.PROJECT)
+        const { projectStore, reusableStore, cwd } = storesFor(runtime, exec, args.scope || SCOPES.PROJECT, MEMORY_OPERATIONS.HEALTH)
         const all = args.scope === SCOPES.REUSABLE
           ? reusableStore.list({ limit: 1000 })
           : [...projectStore.list({ limit: 1000 }), ...reusableStore.list({ limit: 1000 })]

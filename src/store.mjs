@@ -36,6 +36,7 @@ import {
   VALID_VALIDATIONS,
 } from './types.mjs'
 import { contentHash, newRecordId, projectDbPath, reusableDbPath } from './ids.mjs'
+import { centralDbPath, roomDbPath } from './rooms.mjs'
 import { scrub } from './redact.mjs'
 import { tokenize } from './text.mjs'
 import { closeAllWatchers } from '@lovedolove/dsh-codebase-memory-mcp'
@@ -781,6 +782,38 @@ export function openReusableStore(veyraHome) {
   let store = storeCache.get(key)
   if (!store) {
     store = new MemoryStore(reusableDbPath(veyraHome), {
+      scope: SCOPES.REUSABLE,
+      projectId: 'reusable',
+    })
+    storeCache.set(key, store)
+  }
+  return store
+}
+
+/**
+ * Open the private store of one Memory Room. The room id is derived from the
+ * DSH WorkspaceId, so the cache key is the room path (which already carries
+ * the Veyra home).
+ */
+export function openRoomStore(veyraHome, roomId) {
+  const key = `room:${roomDbPath(veyraHome, roomId)}`
+  let store = storeCache.get(key)
+  if (!store) {
+    store = new MemoryStore(roomDbPath(veyraHome, roomId), {
+      scope: SCOPES.PROJECT,
+      projectId: roomId,
+    })
+    storeCache.set(key, store)
+  }
+  return store
+}
+
+/** Open the single shared Central Memories store. */
+export function openCentralStore(veyraHome) {
+  const key = `central:${centralDbPath(veyraHome)}`
+  let store = storeCache.get(key)
+  if (!store) {
+    store = new MemoryStore(centralDbPath(veyraHome), {
       scope: SCOPES.REUSABLE,
       projectId: 'reusable',
     })

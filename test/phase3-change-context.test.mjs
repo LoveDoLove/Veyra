@@ -22,8 +22,9 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
-import { openProjectStore, closeAllStores } from '../src/store.mjs'
-import { projectIdFor, newRecordId } from '../src/ids.mjs'
+import { closeAllStores } from '../src/store.mjs'
+import { newRecordId } from '../src/ids.mjs'
+import { fakeRegistry, roomStore, testRuntime } from './helpers/room.mjs'
 import { AUTHORITIES, KINDS, RELATIONS, STATUSES, VALIDATIONS } from '../src/types.mjs'
 import { TRUST_CATEGORIES } from '../src/trust.mjs'
 import {
@@ -71,7 +72,7 @@ function record(overrides = {}) {
 }
 
 function putRecord(home, repo, overrides = {}) {
-  const store = openProjectStore(home, projectIdFor(repo))
+  const store = roomStore(home, repo)
   const written = store.put(record(overrides))
   assert.equal(written.created, true)
   return written.record
@@ -84,16 +85,16 @@ function putRecord(home, repo, overrides = {}) {
  * plugin-lifecycle test below.
  */
 function fakeRuntime(home, cwd, opts = {}) {
-  return {
-    veyraHome: home,
-    fallbackCwd: cwd,
+  // testRuntime supplies the Memory Server the context provider now requires;
+  // the registered path makes `cwd` resolve to its workspace room.
+  return testRuntime(home, cwd, {
     recallLimit: 5,
     includeReusable: true,
     codeEngine: opts.codeEngine || { isDegraded: false },
     changeSignals: opts.changeSignals || new Map(),
     ensureWatcher: () => {},
     log: noopLog,
-  }
+  })
 }
 
 function callProvider(runtime, cwd, queryText = null) {
@@ -123,7 +124,7 @@ function blockFor(text, title) {
 
 /** Canonical-safety snapshot: every row, minus the recall bookkeeping stamp. */
 function storeSnapshot(home, repo) {
-  const store = openProjectStore(home, projectIdFor(repo))
+  const store = roomStore(home, repo)
   return JSON.stringify(
     store.list({ limit: 500 }).map(({ lastRecalledAt, last_recalled_at, ...rest }) => rest),
   )
@@ -149,6 +150,9 @@ test('plugin lifecycle: RepositoryWatcher change event reaches ambient context',
   const providers = []
   const listeners = {}
   const ctx = {
+    // The plugin builds its Memory Server from ctx; the repo must be a
+    // registered workspace so its room resolves for recall.
+    workspaceRegistry: fakeRegistry([repo]),
     tools: { register: (def) => tools.push(def) },
     commands: { register: (def) => commands.push(def) },
     skills: {
@@ -262,6 +266,40 @@ test('recordRepositoryChange dedupes, replaces, and refuses empty signals', () =
   assert.deepEqual(signals.get(repo).changedFiles, ['src/b.js'])
 })
 
+test('recordRepositoryChange drops editor scratch files from the change signal', () => {
+  // Found by driving a real agent (m00188): DSH's editor writes a temp sibling
+  // next to the file it rewrites, so a change list could consist of scratch
+  // names only — and an all-scratch changeset must not become a change signal.
+  const signals = new Map()
+  const repo = '/repo/scratch'
+
+  const mixed = recordRepositoryChange(signals, {
+    repoRoot: repo,
+    modified: [
+      'src/migrate.mjs',
+      'src/migrate.mjs.tmp',
+      'src/.migrate.mjs.440731.dcc2df6e-43ad-481d-9417-b1c9db309a18.tmpdir',
+      'src/.migrate.mjs.tmp/migrate.mjs',
+    ],
+    added: ['src/new.mjs'],
+  })
+  assert.deepEqual(mixed.changedFiles, ['src/new.mjs', 'src/migrate.mjs'])
+
+  // Real names that merely LOOK similar survive untouched.
+  const names = recordRepositoryChange(new Map(), {
+    repoRoot: repo,
+    modified: ['.gitignore', 'src/template.mjs', 'src/tmpfile.mjs', 'src/attempt.mjs'],
+  })
+  assert.deepEqual(names.changedFiles, ['.gitignore', 'src/template.mjs', 'src/tmpfile.mjs', 'src/attempt.mjs'])
+
+  // An all-scratch changeset is not a change: no signal is fabricated, and any
+  // previous signal for the repo stays intact.
+  signals.clear()
+  recordRepositoryChange(signals, { repoRoot: repo, modified: ['src/keep.mjs'] })
+  assert.equal(recordRepositoryChange(signals, { repoRoot: repo, modified: ['src/keep.mjs.tmp'] }), null)
+  assert.deepEqual(signals.get(repo).changedFiles, ['src/keep.mjs'], 'the stale signal was not replaced by scratch')
+})
+
 // ── 3. Ambient context uses the existing trust classification ───────────────
 
 test('ambient context classifies affected and unaffected knowledge via classifyRecordTrust', (t) => {
@@ -297,7 +335,7 @@ test('ambient context classifies affected and unaffected knowledge via classifyR
 
 // ── 4. No change signal → original context behavior ─────────────────────────
 
-test('no change signal keeps context behavior unchanged', (t) => {
+test('no change signal keeps proactive recall task-shaped (Task 30: fail closed without signal, unchanged with signal)', (t) => {
   const home = makeHome(t)
   const repo = makeRepo(t, { 'src/a.js': 'export const a = 1\n' })
   putRecord(home, repo, {
@@ -306,17 +344,25 @@ test('no change signal keeps context behavior unchanged', (t) => {
     evidence: [{ path: 'src/a.js' }],
   })
 
-  const viaProvider = callProvider(fakeRuntime(home, repo), repo)
+  // Task 30: no change signal AND no task-shaped query => automatic provider
+  // must fail closed (no recency browse / no unrelated injection).
+  assert.equal(callProvider(fakeRuntime(home, repo), repo), '')
+
+  // With a substantive task-shaped query and no change signal, proactive
+  // recall behavior remains unchanged (no fabricated change block).
+  const query = 'Stable knowledge without change signal src/a.js'
+  const viaProvider = callProvider(fakeRuntime(home, repo), repo, query)
   const viaDirect = buildRecallContext({
-    veyraHome: home,
+    projectStore: roomStore(home, repo),
     cwd: repo,
-    query: '',
+    query,
     limit: 5,
     includeReusable: true,
     degraded: false,
   })
-  assert.equal(viaProvider, viaDirect, 'provider output identical to pre-Phase-3 context')
+  assert.equal(viaProvider, viaDirect, 'provider with task-shaped query matches direct recall (no change signal)')
   assert.ok(!viaProvider.includes('Repository changes detected:'))
+  assert.match(viaProvider, /Stable knowledge without change signal/)
 })
 
 // ── 5. Repeated changes: idempotent, latest supersedes ──────────────────────
@@ -351,13 +397,15 @@ test('change signal fails closed across workspaces', (t) => {
   recordRepositoryChange(changeSignals, { repoRoot: '/some/other/repo', modified: ['other.js'] })
   recordRepositoryChange(changeSignals, { repoRoot: join(repo, 'sub'), modified: ['sub.js'] })
 
-  const out = callProvider(fakeRuntime(home, repo, { changeSignals }), repo)
+  // Task 30: provider requires a task-shaped signal for automatic recall;
+  // foreign change signals must not leak and must not become a task signal.
+  const out = callProvider(fakeRuntime(home, repo, { changeSignals }), repo, 'Knowledge in this workspace')
   assert.ok(!out.includes('Repository changes detected:'), 'foreign signal never leaks into this workspace')
-  assert.ok(out.includes('Knowledge in this workspace'), 'recall itself unaffected')
+  assert.ok(out.includes('Knowledge in this workspace'), 'recall itself unaffected when task-shaped query present')
 
-  // Unknown workspace: no signal → no change block (fail closed).
+  // Unknown workspace: no signal, no task signal → fail closed (no injection).
   const unknown = callProvider(fakeRuntime(home, repo, { changeSignals }), '/nowhere/else')
-  assert.ok(!unknown.includes('Repository changes detected:'))
+  assert.equal(unknown, '')
 })
 
 // ── 7. Degraded Code Intelligence stays safe ────────────────────────────────

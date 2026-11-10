@@ -10,9 +10,8 @@
 
 import { resolve } from 'node:path'
 import { GRAPH_LIMITS, localGraph, overviewGraph } from './graph.mjs'
-import { projectIdFor } from './ids.mjs'
 import { observatoryRecord, observatorySearch } from './observatory.mjs'
-import { openProjectStore, openReusableStore } from './store.mjs'
+import { MEMORY_OPERATIONS } from './memory-router.mjs'
 import { isRecallEligible } from './types.mjs'
 
 export const WEBUI_PATH = '/veyra'
@@ -40,20 +39,53 @@ export function clampUiHops(hops) {
   return Math.max(0, Math.min(Math.trunc(n), GRAPH_LIMITS.maxHops))
 }
 
-export function cwdFromRequest(req, runtime) {
+export const WORKSPACE_CONTEXT_UNAVAILABLE = 'WORKSPACE_CONTEXT_UNAVAILABLE'
+
+export function workspaceUnavailable(message = 'Workspace context unavailable. Open the Network Graph from an active workspace session.') {
+  return {
+    ok: false,
+    error: message,
+    code: WORKSPACE_CONTEXT_UNAVAILABLE,
+    view: 'unavailable',
+    center: null,
+    nodes: [],
+    edges: [],
+    unresolved: [],
+  }
+}
+
+export function cwdFromRequest(req, runtime, { allowFallback = false } = {}) {
   const url = new URL(req.url || '/', 'http://127.0.0.1')
   const raw = url.searchParams.get('cwd')
   if (typeof raw === 'string' && raw.trim()) return resolve(raw.trim())
-  return runtime?.fallbackCwd || process.cwd()
+  // Task 36: never silently use plugin startup cwd for workspace-scoped graph
+  // data when authoritative workspace context should be provided by the client.
+  // fallback is retained only for explicit legacy/internal callers that opt in.
+  if (allowFallback) return runtime?.fallbackCwd || process.cwd()
+  return null
 }
 
 function openStores(runtime, cwd) {
-  const projectId = projectIdFor(cwd)
+  // The graph is a projection of one workspace's room plus Central Memories.
+  // Without a room there is nothing to project, so refuse rather than open a
+  // path-keyed store the clean-break architecture never writes again.
+  const server = runtime.memoryServer
+  if (!server) {
+    const err = new Error('Veyra memory unavailable: memory-server-unavailable')
+    err.code = 'VEYRA_WORKSPACE_UNAVAILABLE'
+    throw err
+  }
+  const stores = server.storesForPath(cwd, MEMORY_OPERATIONS.RECALL_MANUAL)
+  if (!stores.ok) {
+    const err = new Error(`Veyra memory unavailable: ${stores.reason}`)
+    err.code = 'VEYRA_WORKSPACE_UNAVAILABLE'
+    throw err
+  }
   return {
-    cwd,
-    projectId,
-    projectStore: openProjectStore(runtime.veyraHome, projectId),
-    reusableStore: openReusableStore(runtime.veyraHome),
+    cwd: stores.cwd,
+    projectId: stores.projectId,
+    projectStore: stores.projectStore,
+    reusableStore: stores.reusableStore,
   }
 }
 
@@ -199,8 +231,23 @@ export function handleVeyraHttp(runtime, req, res) {
       return
     }
 
+    // Task 36: sessionId is never used for workspace/data selection. Authoritative
+    // workspace context must be provided explicitly as cwd by the client (resolved
+    // from DSH workspaces API). Missing cwd fails closed — never fallback to
+    // runtime.fallbackCwd/process startup cwd for graph data.
     const cwd = cwdFromRequest(req, runtime)
-    const { projectStore, reusableStore, projectId } = openStores(runtime, cwd)
+    if (!cwd) {
+      sendJson(res, 409, workspaceUnavailable())
+      return
+    }
+    let stores
+    try {
+      stores = openStores(runtime, cwd)
+    } catch {
+      sendJson(res, 409, workspaceUnavailable())
+      return
+    }
+    const { projectStore, reusableStore, projectId } = stores
     const id = (url.searchParams.get('id') || '').trim()
     const hops = clampUiHops(url.searchParams.get('hops'))
     const trustedOnly = url.searchParams.get('trustedOnly') === '1'
@@ -582,7 +629,22 @@ function circ(x,y,r){ const e=document.createElementNS('http://www.w3.org/2000/s
 function rect(x,y,w,h){ const e=document.createElementNS('http://www.w3.org/2000/svg','rect'); e.setAttribute('x',x); e.setAttribute('y',y); e.setAttribute('width',w); e.setAttribute('height',h); return e }
 function diamond(x,y,s){ const e=document.createElementNS('http://www.w3.org/2000/svg','polygon'); e.setAttribute('points', x+','+(y-s)+' '+(x+s)+','+y+' '+x+','+(y+s)+' '+(x-s)+','+y); return e }
 
+function unavailablePanel(msg, title){
+  const el = $('panel')
+  el.innerHTML = '<h2></h2><p class="meta" id="un-msg"></p><p class="meta">Network Graph requires authoritative workspace context (cwd) from the active DSH workspace. It never falls back to the plugin startup directory and never uses sessionId as workspace proof.</p>'
+  el.querySelector('h2').textContent = title || 'Workspace context unavailable'
+  el.querySelector('#un-msg').textContent = msg || 'Open the Network Graph from an active workspace session.'
+}
 function showError(msg, clear){
+  if (msg && typeof msg === 'object') {
+    if (msg.code === 'WORKSPACE_CONTEXT_UNAVAILABLE') {
+      drawMessage('Workspace context unavailable.')
+      setStatus('Unavailable · workspace context required')
+      unavailablePanel(msg.error)
+      return
+    }
+    msg = msg.error || msg.message || JSON.stringify(msg)
+  }
   if (clear !== false) drawMessage('Graph unavailable.')
   setStatus('Error · ' + msg)
   const el = $('panel')
@@ -595,8 +657,8 @@ function showError(msg, clear){
     return b
   }
   const box = el.querySelector('#err-actions')
-  if (state.lastLoad) box.appendChild(mk('Retry', () => state.lastLoad()))
-  box.appendChild(mk('Workspace overview', loadOverview))
+  if (state.lastLoad && cwd) box.appendChild(mk('Retry', () => state.lastLoad()))
+  if (cwd) box.appendChild(mk('Workspace overview', loadOverview))
 }
 function renderOverviewPanel(data, empty){
   const el = $('panel')

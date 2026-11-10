@@ -46,9 +46,15 @@ never auto-recalled. Only `derived` and `canonical` records are recall-eligible.
 (`assertAuthorityTransition` refuses it otherwise). Never write a path that
 promotes authority implicitly.
 
-**Project isolation is a hard boundary.** Storage lives under
+**Workspace isolation is a hard boundary.** Storage lives under
 `$DSH_HOME/veyra/` (or `$VEYRA_HOME`), never inside the user's repository, and
-records are partitioned per project id derived from workspace + git remote.
+records are partitioned into rooms keyed by DSH `WorkspaceId` (`src/rooms.mjs`)
+— never by filesystem path. Two workspaces on one repository are two rooms.
+There is no path-keyed fallback: a host without a usable workspace registry
+fails closed with `workspace-registry-unavailable` (never declared) or
+`workspace-registry-not-ready` (declared but broken), and the pre-rooms
+`projects/<projectId>` and `reusable/` databases are never read, written,
+migrated, merged, or deleted.
 
 **Fail closed.** Corrupt records, unknown enum values, and unavailable services
 must degrade or refuse — never silently become authoritative. Observation and

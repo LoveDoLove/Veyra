@@ -18,18 +18,19 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createToolHarness } from '../src/tools.mjs'
-import { openProjectStore } from '../src/store.mjs'
-import { projectIdFor, newRecordId } from '../src/ids.mjs'
+import { newRecordId } from '../src/ids.mjs'
+import { roomIdFor, roomStore, testRuntime as roomRuntime } from './helpers/room.mjs'
 import { AUTHORITIES, KINDS, STATUSES, VALIDATIONS, SCOPES, CONFIDENCES } from '../src/types.mjs'
 import { FRESHNESS_STATUS } from '@lovedolove/dsh-codebase-memory-mcp'
 import { findAffectedMemories, buildStaleReviewCandidate, checkRecordFreshness } from '../src/code/linking.mjs'
 
-const testRuntime = (home, cwd, opts = {}) => ({
-  veyraHome: home,
-  fallbackCwd: cwd,
-  codeEngine: opts.codeEngine || { isDegraded: true },
-  log: { debug: () => {}, warn: () => {}, info: () => {} },
-})
+// The runtime must carry a Memory Server: memory is addressed by workspace
+// room, so a path-keyed store is no longer reachable from a tool call.
+const testRuntime = (home, cwd, opts = {}) =>
+  roomRuntime(home, cwd, {
+    codeEngine: opts.codeEngine || { isDegraded: true },
+    log: { debug: () => {}, warn: () => {}, info: () => {} },
+  })
 
 function makeRepo(t, files) {
   const tmp = mkdtempSync(join(tmpdir(), 'veyra-change-test-'))
@@ -53,8 +54,8 @@ test('unrelated code change does not affect unrelated knowledge', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-change-home-'))
   t.after(() => rmSync(home, { recursive: true, force: true }))
 
-  const projectId = projectIdFor(repo)
-  const store = openProjectStore(home, projectId)
+  const projectId = roomIdFor(repo)
+  const store = roomStore(home, repo)
 
   // Store a memory anchored to auth.js only
   store.put({
@@ -93,8 +94,8 @@ test('relevant code change identifies potentially affected knowledge', async (t)
   const home = mkdtempSync(join(tmpdir(), 'veyra-change-home-'))
   t.after(() => rmSync(home, { recursive: true, force: true }))
 
-  const projectId = projectIdFor(repo)
-  const store = openProjectStore(home, projectId)
+  const projectId = roomIdFor(repo)
+  const store = roomStore(home, repo)
 
   const memId = newRecordId()
   const before = { ...{} }
@@ -137,8 +138,8 @@ test('stale knowledge is not silently rewritten', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-change-home-'))
   t.after(() => rmSync(home, { recursive: true, force: true }))
 
-  const projectId = projectIdFor(repo)
-  const store = openProjectStore(home, projectId)
+  const projectId = roomIdFor(repo)
+  const store = roomStore(home, repo)
 
   const memId = newRecordId()
   store.put({
@@ -184,8 +185,8 @@ test('candidate updates do not become canonical automatically', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-change-home-'))
   t.after(() => rmSync(home, { recursive: true, force: true }))
 
-  const projectId = projectIdFor(repo)
-  const store = openProjectStore(home, projectId)
+  const projectId = roomIdFor(repo)
+  const store = roomStore(home, repo)
 
   const memId = newRecordId()
   // Use DERIVED authority since CANONICAL requires explicit promotion
@@ -240,10 +241,10 @@ test('project isolation remains intact', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-change-home-'))
   t.after(() => rmSync(home, { recursive: true, force: true }))
 
-  const projectIdA = projectIdFor(repoA)
-  const projectIdB = projectIdFor(repoB)
-  const storeA = openProjectStore(home, projectIdA)
-  const storeB = openProjectStore(home, projectIdB)
+  const projectIdA = roomIdFor(repoA)
+  const projectIdB = roomIdFor(repoB)
+  const storeA = roomStore(home, repoA)
+  const storeB = roomStore(home, repoB)
 
   const memA = newRecordId()
   storeA.put({
@@ -287,8 +288,8 @@ test('degraded code intelligence degrades safely', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-change-home-'))
   t.after(() => rmSync(home, { recursive: true, force: true }))
 
-  const projectId = projectIdFor(repo)
-  const store = openProjectStore(home, projectId)
+  const projectId = roomIdFor(repo)
+  const store = roomStore(home, repo)
   store.put({
     id: newRecordId(),
     kind: KINDS.MEMORY,
@@ -328,8 +329,8 @@ test('repeated processing does not create duplicate state', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-change-home-'))
   t.after(() => rmSync(home, { recursive: true, force: true }))
 
-  const projectId = projectIdFor(repo)
-  const store = openProjectStore(home, projectId)
+  const projectId = roomIdFor(repo)
+  const store = roomStore(home, repo)
 
   const memId = newRecordId()
   store.put({
@@ -386,8 +387,8 @@ test('existing validation and authority rules remain enforced', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-change-home-'))
   t.after(() => rmSync(home, { recursive: true, force: true }))
 
-  const projectId = projectIdFor(repo)
-  const store = openProjectStore(home, projectId)
+  const projectId = roomIdFor(repo)
+  const store = roomStore(home, repo)
 
   const memId = newRecordId()
   // Use DERIVED (CANONICAL requires explicit promotion via veyra_promote)
@@ -638,8 +639,8 @@ test('D3.2 Phase 1: veyra_change_impact accepts explicit renames and preserves s
   const repo = makeRepo(t, {
     'src/stock/warehouse.mjs': 'export const deduct = () => 1\n',
   })
-  const projectId = projectIdFor(repo)
-  const store = openProjectStore(home, projectId)
+  const projectId = roomIdFor(repo)
+  const store = roomStore(home, repo)
   const id = newRecordId()
   store.put({
     id,
@@ -687,8 +688,8 @@ test('D3.2 Phase 1: in-place changes preserve D3.1 behavior via veyra_change_imp
   const repo = makeRepo(t, {
     'src/warehouse.mjs': 'export const deduct = () => 1\n',
   })
-  const projectId = projectIdFor(repo)
-  const store = openProjectStore(home, projectId)
+  const projectId = roomIdFor(repo)
+  const store = roomStore(home, repo)
   store.put({
     id: 'd31',
     kind: KINDS.MEMORY,

@@ -2,7 +2,7 @@
 
 > **Veyra — 程式編寫代理的工程智能**
 
-Veyra 是 [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness)（DSH）的插件，為程式編寫代理提供**可靠、持久、可感知變更的工程記憶**——有證據支撐、依專案隔離、並對照目前的儲存庫——外加一個選用的結構化代碼智慧層：雙腦（Dual-Brain）架構。
+Veyra 是 [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness)（DSH）的插件，為程式編寫代理提供**工程智能（Engineering Intelligence）**：它從代理實際做過的工作中學習有用的工程經驗、記住可靠的部分、主動召回相關記憶，並讓代理把它們套用到下一個任務——有證據支撐、依 DSH 工作區隔離、並對照目前的儲存庫。選用的結構化代碼智慧層回答「程式碼現在是什麼樣子」；Veyra 記憶回答「我們當初是怎麼辛苦學到這些的」——外加雙腦（Dual-Brain）架構。
 
 [![npm](https://img.shields.io/npm/v/@lovedolove/veyra)](https://www.npmjs.com/package/@lovedolove/veyra)
 [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/LoveDoLove/Veyra/blob/main/LICENSE)
@@ -23,18 +23,29 @@ Veyra 運作兩層互補的機制，各自回答不同的問題：
 
 **這不是同一回事。** 一條寫著「登入函式已重構改用 JWT」的 Veyra 記憶是工程教訓；今天 `login()` 的呼叫圖是結構性事實。當被參考的檔案變更時，代碼智慧可將該記憶標記為*可能過期*——它從不靜默覆寫 Veyra 記憶。
 
+記憶本身由一個明確的 **Memory Server**（記憶伺服器）持有。每個 Cordis 插件生命週期恰好一個實例，沒有 daemon、timer 或背景排程；它擁有 Workspace 解析器、治理路由器、每個 DSH 工作區一個私有 **記憶房（Memory Room）**，以及一個共享的 **中央記憶（Central）** 存放區。
+
+| 層 | 存放內容 | 位置 |
+| --- | --- | --- |
+| **記憶房** | 在單一 DSH 工作區內工作時學到的一切 | `$DSH_HOME/veyra/rooms/<roomId>/` |
+| **中央記憶** | 被明確提升出記憶房、可跨工作區重用的知識 | `$DSH_HOME/veyra/central/` |
+
+**記憶房的身分是 DSH `WorkspaceId`，不是路徑。** 同一個儲存庫開啟的兩個工作區就是兩個記憶房，記憶彼此隔離；身分無法解析的工作區會直接失敗（fail closed），而不是猜測。中央是唯一的跨工作區存放區，而**提升是進入它的唯一途徑**——沒有任何學習路徑或自動程序會寫入其中。
+
 ---
 
 ## Veyra 能做什麼
 
 - **持久的工程記憶。** 每筆記錄都帶有證據錨點、驗證狀態（`unverified → reviewed → verified`）、權威層級（`candidate → derived → canonical`）與因果面向。你的儲存庫保持權威地位；Veyra 絕不寫入其中。
+- **自動學習。** 每個回合結束時，觀察到的活動會經過一個治理化的學習閘門（learning gate），由它決定這筆觀察是否足以成為 `derived` 記憶。只有真正改變了檔案的動作才算修改證據——`read`、`grep`、`glob` 只被記為活動；而且一道失敗的測試輸出永遠不會被標記為 `verified`。
+- **自動召回。** 在之後的回合中，相關的 `derived` 與 `canonical` 記錄會自行注入代理上下文，並明確標示為 `not repository truth`。觀察與候選記錄絕不會被自動召回。
 - **混合搜尋。** 單一查詢、多個訊號：FTS5 BM25 ＋符號／路徑加權、token 級語意重疊、意圖親和度（why / how / what-changed）與關係圖凝聚力——並附透明的分數拆解。`goal` 參數可引導排序朝向你正在進行的工作（是方向，而非權威）。
 - **代碼智慧。** 當 `codebase-memory-mcp` 已安裝時，七個代理工具提供結構化呼叫圖追蹤、AST 級符號搜尋、檔案／元件架構摘要與以代碼為依據的搜尋。未安裝時，Veyra 記憶照常運作、不受中斷。
 - **記憶新鮮度與信任。** 代碼智慧監控變更過的檔案，把證據錨點指向已修改或已刪除代碼的記憶標記為過期，並對過期記錄套用檢索懲罰。讀取時，每筆被召回的記錄都會被分類為 `trusted / review_required / stale / contradicted / insufficient_evidence`，並附理由與建議動作——只是投影；絕不寫入，也不改變記錄的權威或驗證。
 - **變更智能。** 儲存庫變更會自動進入代理上下文——變更摘要置於召回區塊之首，並標註其信任影響——而 `veyra_change_impact` 可針對一組明確的變更檔案做分析：受影響的記憶、受影響的證據錨點、選用覆核候選、與各類別摘要計數。候選絕不會被自動提升為 canonical。
 - **健康與維護。** `veyra_health` 與 `/veyra health` 以唯讀方式回報記憶健康發現；隨附的 `memory-maintenance` 技能僅在明確要求時套用生命週期動作（keep / supersede / invalidate / forget / tombstone / revalidate / defer），並附安全上限與前後對照報告。
 - **人工介面。** `/veyra` 斜線指令、唯讀的知識觀測台（Knowledge Observatory），以及 DSH Web 中 `/veyra` 的可互動網路圖（Network Graph）。
-- **一個執行時 npm 相依。** `@lovedolove/dsh-codebase-memory-mcp`——獨立的 Codebase Memory 橋接套件——驅動外部原生 daemon。其餘全部為純 ESM、無執行時相依；套件約 198 kB（打包後）。
+- **一個執行時 npm 相依。** `@lovedolove/dsh-codebase-memory-mcp`——獨立的 Codebase Memory 橋接套件——驅動外部原生 daemon。其餘全部為純 ESM、無執行時相依；套件約 263 kB（打包後）。
 
 ---
 
@@ -72,14 +83,14 @@ dsh plugin --profile web add @lovedolove/veyra
 ## 快速入門
 
 1. **在 DSH 中做真實工作。** Veyra 會自動觀察會話事件。
-2. **回合結束時**，Veyra 把該回合濃縮成一條候選（candidate）記憶。持久的教訓會成為*衍生*（derived）記憶，並與相鄰記憶建立連結。
+2. **回合結束時**，Veyra 把該回合發生的事濃縮成一條*觀察*（observation），並執行治理化的學習閘門。帶有持久工程線索、且有證據支撐的回合會成為*衍生*（derived）記憶；沒有留下持久內容的回合則維持觀察狀態，或被丟棄。
 3. **查看已儲存內容：**
 
    ```
    /veyra recent
    ```
 
-4. **把內容取回。** 在同一專案的稍後會話中，自動召回會將最相關的記錄注入該回合——每筆都標有 `not repository truth`。也可以明確搜尋：
+4. **把內容取回。** 在同一工作區的稍後會話中，自動召回會將最相關的記錄注入該回合——每筆都標有 `not repository truth`。也可以明確搜尋：
 
    ```
    /veyra recall sqlite wal
@@ -102,9 +113,10 @@ dsh plugin --profile web add @lovedolove/veyra
 ## 記憶如何運作
 
 1. Veyra 觀察會話活動，不觸碰你的檔案。
-2. 回合結束時：Veyra 將該回合濃縮為一條候選——檔案、符號、測試結果、主張訊號，與結構化因果面向。持久且有實據的教訓成為*衍生*記憶，並連結到相鄰記憶（延伸、更新，或被矛盾）。近似重複不會被複製；重複的觀察與已驗證的結果會強化既有記錄，而非新增記錄。
+2. 回合結束時：Veyra 將該回合濃縮為一條*觀察*（observation）——檔案、符號、測試結果、主張訊號，與結構化因果面向——再由治理化的學習閘門決定它是否夠格進入記憶。閘門讀的是文字，不是格式：同一道指令無論以散文、`- ` 項目符號、`1.` 編號清單，或 `- [ ]` 任務項目抵達，都會被判定為相同，勾選方塊永遠不是繞過閘門的手段。持久且有實據的教訓成為*衍生*記憶，並連結到相鄰記憶（延伸、更新，或被矛盾）。近似重複不會被複製；重複的觀察與已驗證的結果會強化既有記錄，而非新增記錄。只有真正能改變檔案的動作才算修改證據——`read`、`grep`、`glob` 只被記為活動，只在文字中被提到的路徑永遠不會成為修改證據。
 3. 自動召回在每個回合開始時，把最相關的 top-N 記錄注入代理的 system-prompt 上下文，並附明確的 `not repository truth` 標示。
 4. 隨著同一教訓在跨會話與測試結果中反覆被確認，驗證狀態會推進（`unverified → reviewed → verified`）。**沒有明確的人為指示，任何記錄都不會成為 `canonical`。**
+5. **記憶住在記憶房裡，不在你的倉庫裡。** 記憶房以 DSH 工作區身分為鍵，所以你的程式碼旁不會寫入任何東西，而同一儲存庫上的兩個工作區永遠看不到彼此的記憶。提升進中央記憶是另一個獨立的顯式動作。
 
 ---
 
@@ -177,8 +189,8 @@ curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/i
 | 記憶健康 | `veyra_health` / `/veyra health` 的發現（唯讀），加上僅在明確要求時套用生命週期動作的 `memory-maintenance` 技能。 |
 | 知識觀測台 | 唯讀文字儀表板：總覽、搜尋訊號、記錄檢視、因果、關係、矛盾，與併整建議。 |
 | 網路圖 | DSH web 伺服器提供的主機原生 SVG 頁面 `/veyra`（總覽＋1-hop 本地圖）；JSON 於 `/veyra/graph`、`/veyra/record`、`/veyra/search`。 |
-| 設定 | DSH 設定對話框（Veyra 區塊）中的 `Recall limit` 與 `Include reusable`；變更自下一回合生效，無需重啟。 |
-| 專案隔離 | 記憶以 workspace 路徑＋git remote 為鍵。兩個互不相關的資料夾絕不會共用記憶；`scope: 'reusable'` 為選用。 |
+| 設定 | Veyra 以內建預設值自動運作，沒有專屬的設定介面。進階 YAML 覆寫：`recallLimit` 預設 `5`（`0` 只停用自動召回上下文；手動召回、`/veyra`、觀測台與已存記憶不受影響），`includeReusable` 預設 `true`（專案隔離維持不變）。變更自下一回合／重新掛載生效，無需重啟。 |
+| 工作區隔離 | 記憶被分割為**記憶房（rooms）**，每個 DSH 工作區（`WorkspaceId`）一個，所以同一儲存庫上開啟的兩個工作區永不共用記憶。沒有以路徑為鍵的退路：工作區註冊表不可用時，記憶即為不可用，呼叫直接失敗（fail closed）。`scope: 'reusable'` 為選用。 |
 | 機密洗滌 | 任何內容在儲存前，機密先被洗滌。 |
 
 ---
@@ -196,7 +208,7 @@ curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/i
 | `/veyra observatory local <id>` | 某筆記錄周圍的 1-hop 本地圖 |
 | `/veyra observatory contradictions` | 並列檢視目前衝突的主張 |
 | `/veyra observatory consolidation` | 併整候選——唯讀，絕不修改記錄 |
-| `/veyra recall [query]` | 對專案（＋可重用）記憶做混合搜尋 |
+| `/veyra recall [query]` | 對工作區（＋中央）記憶做混合搜尋 |
 | `/veyra recent` | 近期記錄，含候選 |
 | `/veyra inspect <id>` | 讀取一筆記錄，附深層來源與因果面向 |
 | `/veyra forget <id>` | 軟遺忘 |
@@ -248,16 +260,16 @@ curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/i
 | 項目 | 權威層級 | 會自動召回？ |
 | --- | --- | --- |
 | 自動捕獲的觀察 | `candidate` | 否 |
-| 記住／學到的教訓 | `derived` | 是 |
+| 經學習閘門通過的教訓 | `derived` | 是 |
 | 顯式提升的真理 | `canonical` | 是 |
 
-canonical 絕不被自動賦予。儲存庫檔案保持權威——Veyra 絕不寫入你的倉庫。相似不等於同一：重疊的記憶是建立連結，而非合併。機密會被洗滌。專案互相隔離；可重用記憶為選用。
+canonical 絕不被自動賦予。儲存庫檔案保持權威——Veyra 絕不寫入你的倉庫。相似不等於同一：重疊的記憶是建立連結，而非合併。機密會被洗滌。記憶以 DSH 工作區記憶房隔離，跨入中央記憶只會經由顯式提升發生。
 
 ---
 
 ## 設定
 
-DSH 設定在專屬的 **Veyra** 區塊下提供 **Recall limit** 與 **Include reusable**。儲存後自下一回合生效，無需重啟。
+DSH 設定不再提供專屬的 **Veyra** 區塊——Veyra 以內建預設值自動運作，不需要任何設定。設定結構仍接受 `recallLimit` 與 `includeReusable`，所以 profile 中既有的值會繼續生效，但這兩個值與其他設定一樣在 profile 的 `cordis.patch.yml` 中編輯。
 
 `recallLimit: 0` 只停用自動召回上下文——工具、`/veyra`、觀測台與已存記憶全都照常可用。
 
@@ -267,12 +279,12 @@ DSH 設定在專屬的 **Veyra** 區塊下提供 **Recall limit** 與 **Include 
 - id: veyra
   name: '@lovedolove/veyra'
   config:
-    recallLimit: 5       # 0 = 無自動召回上下文（也可在設定中調整）
-    includeReusable: true
+    recallLimit: 5       # 0 = 無自動召回上下文
+    includeReusable: true # 召回時納入中央記憶
     observe: true        # 捕獲會話活動
     learn: true          # 提升持久觀察
     codebaseWatch: true  # 監視倉庫檔案變更，標記過期記憶
-    home: "~/.dsh/veyra" # 儲存根目錄（僅 yaml）
+    home: "~/.dsh/veyra" # 儲存根目錄
 ```
 
 `observe` / `learn` / `home` / `codebaseWatch` 僅能經 yaml 設定。`VEYRA_HOME` 環境變數可覆寫儲存根目錄。
@@ -283,10 +295,15 @@ DSH 設定在專屬的 **Veyra** 區塊下提供 **Recall limit** 與 **Include 
 
 ```
   DSH host — Cordis plugin (src/plugin.mjs)
-  session events ──► observe ──► candidate ──► learn ──► derived memory
-                                                      │
+  session events ──► observe ──► observation ──► learning gate ──► derived memory
+                                                                         │
+                                                       promotion (explicit only)
+                                                                         ▼
+                                                                Central Memories
+
   ┌──────────────────────────────────────────────────────────────────────────┐
-  │  SQLite store  ~/.dsh/veyra/  (node:sqlite + FTS5, one DB per project)  │
+  │  Memory Server  ~/.dsh/veyra/  (node:sqlite + FTS5)                      │
+  │  rooms/<roomId>/memory.db   ·   central/memory.db                        │
   └──────────────────────────────────────────────────────────────────────────┘
         projections (read-only)
   ┌───────────────┬────────────────┬─────────────────┬────────────────────────┐
@@ -323,7 +340,7 @@ DSH 設定在專屬的 **Veyra** 區塊下提供 **Recall limit** 與 **Include 
 
 **「Plugin … is incompatible with dsh …」** 套件的相容範圍是 `>=0.1.2-rc.1 <0.3.0-0`。更新 DSH，或按 DSH 印出的精確版本豁免接受風險。
 
-**自動召回上下文為空。** 檢查：(1) `recallLimit` 不是 `0`——設定 → Veyra；(2) 你期待的記錄是否仍是 `candidate`（候選絕不自動召回）；(3) 你處於同一專案——執行 `/veyra` 確認 workspace 路徑與專案 id。
+**自動召回上下文為空。** 檢查：(1) profile 設定中的 `recallLimit` 不是 `0`；(2) 你期待的記錄是否仍是 `candidate`（候選絕不自動召回）；(3) 你處於同一工作區——執行 `/veyra` 確認解析出的記憶房 id。
 
 **代碼智慧顯示「降級」。** `codebase-memory-mcp` 二進位不在 PATH 上，且 `CBM_EXE` 未設定。用上面的 curl 指令安裝，或設定 `CBM_EXE=/path/to/binary`。所有 Veyra 記憶工具照常運作。
 
@@ -331,7 +348,7 @@ DSH 設定在專屬的 **Veyra** 區塊下提供 **Recall limit** 與 **Include 
 
 **網路圖頁面看起來是空的。** 要嘛 workspace 還沒有任何記錄（`/veyra recent`），要嘛頁面解析到的是另一個 workspace——`/veyra` 會印出它使用的 workspace 路徑。
 
-**資料在哪 / 如何重置。** `$DSH_HOME/veyra/`（預設 `~/.dsh/veyra/`），若設定則為 `$VEYRA_HOME`。刪掉某專案的 store 即可重新開始；你的儲存庫中沒有儲存任何東西。
+**資料在哪 / 如何重置。** `$DSH_HOME/veyra/`（預設 `~/.dsh/veyra/`），若設定則為 `$VEYRA_HOME`。刪掉某個工作區的記憶房（`rooms/<roomId>/`）即可讓該工作區重新開始——你的儲存庫中沒有儲存任何東西，而 0.2.0 之前的 `projects/` 與 `reusable/` 目錄會被原樣保留、不被讀取。
 
 **某處寫錯了記憶。** `/veyra forget <id>` 軟遺忘（仍可檢視、退出召回）。除非你執行 `/veyra promote <id> canonical`，否則任何記錄都不會成為 `canonical`。
 
@@ -344,7 +361,8 @@ npm test               # node --test test/*.test.mjs  (806 tests, 800 pass, 6 sk
 npm run pack:check     # npm pack --dry-run — 即將發布的內容
 ```
 
-CI 在每次 push 與 pull request 時，對 Node 22 與 24 兩者皆執行。發布是自動的：每次 push 到 `main` 都會發布到 npm（若版本已存在則先做 patch 遞增），除非 commit 訊息包含 `[skip publish]`。每個發布版本都會產生對應的 GitHub Release，標籤為 `vX.Y.Z`。
+CI 在每次 push 與 pull request 時，對 Node 22 與 24 兩者皆執行（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）。
+npm 發布由 [`.github/workflows/publish-npm.yml`](.github/workflows/publish-npm.yml) 處理：它在推送 `v*.*.*` 標籤或手動 `workflow_dispatch`（可帶 `version` 輸入）時執行。該工作流程會驗證發布版本／標籤、確認該版本尚未存在於 npm、執行 `npm ci`、`npm run build`（若有）、`npm test`、驗證執行時相依，然後發布到 npm，並在需要時建立對應的 GitHub Release（`vX.Y.Z`）。
 
 ---
 
@@ -352,16 +370,16 @@ CI 在每次 push 與 pull request 時，對 Node 22 與 24 兩者皆執行。�
 
 | | |
 | --- | --- |
-| 目前版本 | `0.1.66` |
+| 目前版本 | `0.2.0` |
 | Node | `>=22.5.0 <25.0.0` |
 | DSH | `>=0.1.2-rc.1 <0.3.0-0` |
-| 驗證於 | DSH `0.1.7-rc.2`（插件啟動、工具、`/veyra` ＋ `/veyra/graph`）；DSH `0.2.0-rc.1`（真實相容閘＋組合成 host-service 執行期）；DSH `0.2.0-rc.2`（組合成 host-service 執行期＋對照已宣告範圍的真實 `ToolRuntime` 工具輸出驗證）；CI 於 Node 22 與 24 |
-| Profiles | 依 profile 安裝（`web`、`tui`、…）；設定區與網路圖需要 web 表面 |
-| 儲存 | `node:sqlite` ＋ FTS5，每個專案一個 DB，位於 Veyra home 下 |
+| 驗證於 | DSH `0.1.7-rc.2`（插件啟動、工具、`/veyra` ＋ `/veyra/graph`）；DSH `0.2.0-rc.1`（真實相容閘＋組合成 host-service 執行期）；DSH `0.2.0-rc.2`（組合成 host-service 執行期＋對照已宣告範圍的真實 `ToolRuntime` 工具輸出驗證）；DSH `0.2.2-rc.1`（工具執行器與 settings/prompt 效果處理的測試／執行期組裝相容修正；見 CHANGELOG）；CI 於 Node 22 與 24 |
+| Profiles | 依 profile 安裝（`web`、`tui`、…）；網路圖需要 web 表面 |
+| 儲存 | `node:sqlite` ＋ FTS5；每個工作區記憶房一個 DB，位於 `$DSH_HOME/veyra/rooms/<roomId>/`，另有一個共享的 `central/memory.db`。0.2.0 之前的 per-project DB 原樣留在磁碟上、不被讀取 |
 | 代碼智慧 | 橋接以執行時相依 `@lovedolove/dsh-codebase-memory-mcp` 宣告；外部 `codebase-memory-mcp` 原生 daemon 為選用——daemon 缺席時代碼智慧降級，記憶層不受影響（二進位：MIT、DeusData；橋接：MIT、LoveDoLove） |
 | 授權 | MIT |
 
-Veyra 處於 1.0 之前的 `0.1.x` 線——已發布的內容見 [CHANGELOG](https://github.com/LoveDoLove/Veyra/blob/main/CHANGELOG.md)。API 與指令表面仍可能在次版之間變動。
+Veyra 處於 1.0 之前的 `0.2.x` 線——已發布的內容見 [CHANGELOG](https://github.com/LoveDoLove/Veyra/blob/main/CHANGELOG.md)。API 與指令表面仍可能在次版之間變動。
 
 ---
 

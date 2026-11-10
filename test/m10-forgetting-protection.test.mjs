@@ -24,8 +24,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { openEphemeralStore, openProjectStore, closeAllStores } from '../src/store.mjs'
-import { projectIdFor } from '../src/ids.mjs'
+import { openEphemeralStore, closeAllStores } from '../src/store.mjs'
+import { testRuntimeWithStores } from './helpers/room.mjs'
 import {
   forget, invalidate, protect, protectionOf, supersede, tombstone, unprotect,
 } from '../src/lifecycle.mjs'
@@ -337,12 +337,13 @@ test('§22: provenanceChain surfaces lifecycle reasoning without duplicating rel
 
 // ============================================================ /veyra commands
 
-test('/veyra: forget/invalidate/supersede/tombstone/protect/unprotect verbs end-to-end', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'veyra-m10-cmd-'))
+test('/veyra: forget/invalidate/supersede/tombstone/protect/unprotect verbs end-to-end', (t) => {
   const cwd = mkdtempSync(join(tmpdir(), 'veyra-m10-ws-'))
+  t.after(() => rmSync(cwd, { recursive: true, force: true }))
   try {
-    const runtime = { veyraHome: dir, fallbackCwd: cwd, recallLimit: 5, includeReusable: true }
-    const store = openProjectStore(dir, projectIdFor(cwd))
+    // Commands resolve a workspace room; the seed store is that same room so
+    // the verbs see the fixture records.
+    const { runtime, store, roomId } = testRuntimeWithStores(t, cwd, { recallLimit: 5, includeReusable: true })
     const run = (text) => handleVeyraCommand(runtime, {
       text, agent: { session: { header: { cwd } } },
     })
@@ -353,7 +354,7 @@ test('/veyra: forget/invalidate/supersede/tombstone/protect/unprotect verbs end-
       assert.match(help.text, new RegExp(`/veyra ${verb}`), `help lists /veyra ${verb}`)
     }
 
-    const rec = putRec(store, { projectId: projectIdFor(cwd) })
+    const rec = putRec(store, { projectId: roomId })
     assert.match(run(`protect ${rec.id} load-bearing`).text, /Protected/)
     const denied = run(`forget ${rec.id}`)
     assert.equal(denied.kind, 'error')
@@ -365,15 +366,15 @@ test('/veyra: forget/invalidate/supersede/tombstone/protect/unprotect verbs end-
     assert.equal(after.forgotten, true)
     assert.equal(after.source.lifecycle.at(-1).why, 'superseded by config')
 
-    const inv = putRec(store, { projectId: projectIdFor(cwd) })
+    const inv = putRec(store, { projectId: roomId })
     const invRes = run(`invalidate ${inv.id} because tests lie`)
     assert.equal(invRes.kind, 'success')
     const invAfter = store.get(inv.id)
     assert.equal(invAfter.validation, VALIDATIONS.INVALID)
     assert.equal(invAfter.source.lifecycle.at(-1).why, 'because tests lie')
 
-    const from = putRec(store, { projectId: projectIdFor(cwd) })
-    const to = putRec(store, { projectId: projectIdFor(cwd) })
+    const from = putRec(store, { projectId: roomId })
+    const to = putRec(store, { projectId: roomId })
     const badSup = run('supersede')
     assert.equal(badSup.kind, 'error')
     assert.match(badSup.text, /usage: \/veyra supersede/)
@@ -382,7 +383,7 @@ test('/veyra: forget/invalidate/supersede/tombstone/protect/unprotect verbs end-
     assert.match(supRes.text, new RegExp(`Superseded ${from.id} by ${to.id}`))
     assert.equal(store.get(from.id).status, STATUSES.SUPERSEDED)
 
-    const ts = putRec(store, { projectId: projectIdFor(cwd) })
+    const ts = putRec(store, { projectId: roomId })
     assert.match(run(`tombstone ${ts.id} old practice`).text, /Tombstoned/)
     assert.equal(store.get(ts.id).status, STATUSES.HISTORICAL)
 
@@ -394,23 +395,22 @@ test('/veyra: forget/invalidate/supersede/tombstone/protect/unprotect verbs end-
     assert.equal(run('tombstone vey_missing').kind, 'error')
   } finally {
     closeAllStores()
-    rmSync(dir, { recursive: true, force: true })
-    rmSync(cwd, { recursive: true, force: true })
   }
 })
 
 // ============================================================ veyra_forget tool
 
-test('tools: veyra_forget carries reason/override through and renders the guard', () => {
+test('tools: veyra_forget carries reason/override through and renders the guard', (t) => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-m10-tool-'))
+  t.after(() => rmSync(home, { recursive: true, force: true }))
   try {
-    const defs = buildToolDefinitions({ veyraHome: home, fallbackCwd: home })
+    const { runtime, store, roomId } = testRuntimeWithStores(t, home)
+    const defs = buildToolDefinitions(runtime)
     const def = defs.find((d) => d.name === 'veyra_forget')
     assert.ok(def, 'veyra_forget tool defined')
 
     const exec = { agent: { session: { id: 's1', header: { cwd: home } }, provider: 'deepseek', model: 'ds-test' } }
-    const store = openProjectStore(home, projectIdFor(home))
-    const rec = putRec(store, { projectId: projectIdFor(home) })
+    const rec = putRec(store, { projectId: roomId })
 
     // Schema surface: reason + override are declared parameters (flat DSL).
     const props = def.parameters?.properties ?? def.parameters ?? {}
@@ -426,7 +426,7 @@ test('tools: veyra_forget carries reason/override through and renders the guard'
     assert.equal(after.source.lifecycle.at(-1).why, 'stale duplicate of config doc')
 
     // Protected record: refused with the guard text, rendered by output.render.
-    const guard = putRec(store, { projectId: projectIdFor(home) })
+    const guard = putRec(store, { projectId: roomId })
     protect(store, guard.id, { reason: 'onboarding invariant' })
     const denied = def.execute({ id: guard.id, reason: 'cleanup' }, exec)
     assert.equal(denied.ok, false)
@@ -450,7 +450,6 @@ test('tools: veyra_forget carries reason/override through and renders the guard'
     assert.match(missingText, /not found/i)
   } finally {
     closeAllStores()
-    rmSync(home, { recursive: true, force: true })
   }
 })
 

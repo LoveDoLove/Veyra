@@ -753,12 +753,17 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
         relationship: Number(rel.toFixed(3)),
         causal: Number(causal.toFixed(3)),
         polarity_compatible: compatible,
-        // Phase 4 §12/§13 — sort-only channels, composite untouched:
+        // Phase 4 §12/§13 / Task 31 — sort-only channels, composite untouched:
         // unknown context / absent window are neutral (1), so pools
         // without applicability or validity signal stay flat and the
-        // channels drop out of the RRF for that pool.
+        // channels drop out of the RRF for that pool. A known temporal
+        // window that is not current for this task (expired OR
+        // not_yet_effective) is inapplicable now — Similarity ≠
+        // Applicability / future scheduled knowledge is not current truth.
+        // Records remain fully recallable; the eligibility guard below is
+        // sort-only and inactive when no eligible current alternative exists.
         applicability: contextCompatibility(rec),
-        temporal_validity: temporalState(rec) === 'expired' ? 0 : 1,
+        temporal_validity: temporalState(rec) === 'current' ? 1 : 0,
         goal_affinity: Number(goalHit.toFixed(3)),
         anchor_affinity: Number(anchorHit.toFixed(3)),
         authority: Number(authorityTier(rec).toFixed(3)),
@@ -807,16 +812,17 @@ export function rankRecords(records, { weights = {}, preferProject = true, inten
     }
   }
 
-  // Phase 4 §12/§13 — applicability and temporal validity guards, same
-  // sort-only discipline: `composite` and the dimensional breakdown stay
-  // verbatim, only `fusion` is held below the best fully-eligible
-  // alternative. An expired or context-incompatible record remains fully
-  // recallable (historical knowledge stays available) but cannot outrank
-  // the best valid, applicable one on text similarity alone — Similarity
-  // ≠ Applicability, historical ≠ current truth. Sequential with the
-  // polarity cap above (each step only lowers, so the result is the min
-  // of all applicable ceilings). Inactive when no eligible alternative
-  // exists (nothing to protect) and, like fusion itself, query-only: an
+  // Phase 4 §12/§13 / Task 31 — applicability and temporal validity guards,
+  // same sort-only discipline: `composite` and the dimensional breakdown
+  // stay verbatim, only `fusion` is held below the best fully-eligible
+  // alternative. An expired, not-yet-effective (scheduled/future), or
+  // context-incompatible record remains fully recallable (historical or
+  // scheduled knowledge stays available) but cannot outrank the best valid,
+  // currently applicable one on text similarity alone — Similarity ≠
+  // Applicability, future/historical ≠ current truth. Sequential with the
+  // polarity cap above (each step only lowers, so the result is the min of
+  // all applicable ceilings). Inactive when no eligible alternative exists
+  // (nothing to protect) and, like fusion itself, query-only: an
   // empty-query pool is a browse where availability wins.
   if (hasQuery) {
     const eligible = scored.filter((r) => r.scores.applicability === 1 && r.scores.temporal_validity === 1)

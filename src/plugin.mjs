@@ -19,6 +19,8 @@ import { Config, normalizeRecallLimit } from './config.mjs'
 import { closeAllStores } from './store.mjs'
 import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
+import { createMemoryServer } from './memory-server.mjs'
+import { MEMORY_OPERATIONS } from './memory-router.mjs'
 import { DEFAULT_RECALL_CHARS, GUIDANCE_TEXT, createContextProvider, rememberClaimedPrompt, rememberCompactedCheckpoint, recordRepositoryChange } from './context.mjs'
 import { candidateFromBuffer, newBuffer, observeEvent } from './observe.mjs'
 import { maybeLearn, provenanceAllowsLearning, reviewCandidate, strengthenMemory } from './learn.mjs'
@@ -163,6 +165,11 @@ export function apply(ctx, config = {}) {
 
   const runtime = createRuntime(ctx, { ...DEFAULT_CONFIG, ...config })
 
+  // The Memory Server is created once per plugin lifecycle and owns workspace
+  // resolution, room routing, migration, and promotion for every consumer
+  // (tools, commands, WebUI, automatic recall, automatic learning).
+  runtime.memoryServer = createMemoryServer({ ctx, runtime, config: { ...DEFAULT_CONFIG, ...config } })
+
   // Eagerly start codebase-memory-mcp daemon on plugin load unless running inside unit tests
   const isTest =
     process.env.NODE_ENV === 'test' ||
@@ -190,8 +197,15 @@ export function apply(ctx, config = {}) {
             const changedFiles = events.map((e) => e.relativePath)
             runtime.log?.debug?.(`[veyra] code changes in ${cwd}: ${changedFiles.join(', ')}`)
             await runtime.codeEngine.indexRepository(cwd, { mode: 'incremental' }).catch(() => {})
-            const projectId = projectIdFor(cwd)
-            const projectStore = openProjectStore(runtime.veyraHome, projectId)
+            // A watcher batch updates memories for the workspace that owns
+            // this directory. No server, or a refused resolution, means there
+            // is no room to update — return rather than invent a path-keyed
+            // store for data the clean-break architecture will never read.
+            const server = runtime.memoryServer
+            if (!server) return
+            const stores = server.storesForPath(cwd, MEMORY_OPERATIONS.UPDATE)
+            if (!stores.ok) return
+            const projectStore = stores.projectStore
             const memories = projectStore.list({ limit: 500 })
             const affected = findAffectedMemories(cwd, changedFiles, memories)
             for (const item of affected) {
@@ -353,10 +367,19 @@ export function apply(ctx, config = {}) {
         if (!session) return
         const buffer = buffers.get(session)
         if (!buffer) return
-        const cwd = resolveWorkspace(agent) || runtime.fallbackCwd
+        let cwd = resolveWorkspace(agent) || runtime.fallbackCwd
+        const server = runtime.memoryServer
+        // Fail closed: without a server, or when the workspace cannot be
+        // resolved, there is no room to learn into. Writing to a path-keyed
+        // store instead would place this turn's memory somewhere the clean-break
+        // architecture never reads again.
+        if (!server) return
+        const stores = server.storesFor(agent, MEMORY_OPERATIONS.LEARN_AUTO)
+        if (!stores.ok) return
+        cwd = stores.cwd || cwd
+        const projectId = stores.projectId
+        const projectStore = stores.projectStore
         ensureWatcher(cwd)
-        const projectId = projectIdFor(cwd)
-        const projectStore = openProjectStore(runtime.veyraHome, projectId)
         const candidate = candidateFromBuffer(buffer, {
           projectId,
           sessionId: session.id,
@@ -442,6 +465,7 @@ export function apply(ctx, config = {}) {
     }
     watchers.clear()
     try { runtime.codeEngine?.dispose() } catch {}
+    try { runtime.memoryServer?.dispose() } catch {}
     closeAllStores()
   }
 

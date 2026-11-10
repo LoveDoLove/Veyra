@@ -19,17 +19,17 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { createToolHarness } from '../src/tools.mjs'
-import { closeAllStores, openProjectStore } from '../src/store.mjs'
+import { closeAllStores } from '../src/store.mjs'
+import { agentFor, roomStore, testHome, testRuntime } from './helpers/room.mjs'
 
-function setup() {
-  const home = mkdtempSync(join(tmpdir(), 'veyra-toolfloor-'))
-  const cwd = mkdtempSync(join(tmpdir(), 'veyra-toolfloor-ws-'))
-  const h = createToolHarness({ veyraHome: home, fallbackCwd: cwd })
-  const E = { agent: { session: { id: 'toolfloor-' + Math.random().toString(36).slice(2), header: { cwd } } } }
+function setup(t) {
+  // Tools fail closed without a Memory Server, so the harness runs a real one
+  // whose registry holds exactly this test's workspace.
+  const home = testHome(t, 'veyra-toolfloor-')
+  const cwd = testHome(t, 'veyra-toolfloor-ws-')
+  const h = createToolHarness(testRuntime(home, cwd))
+  const E = { agent: agentFor(cwd, 'toolfloor-' + Math.random().toString(36).slice(2)) }
   return {
     home,
     cwd,
@@ -38,14 +38,12 @@ function setup() {
     recall: (args) => h.call('veyra_recall', args, E),
     cleanup: () => {
       closeAllStores()
-      rmSync(home, { recursive: true, force: true })
-      rmSync(cwd, { recursive: true, force: true })
     },
   }
 }
 
-test('a zero-overlap query returns nothing even when a body contains "and"', async () => {
-  const t = setup()
+test('a zero-overlap query returns nothing even when a body contains "and"', async (tc) => {
+  const t = setup(tc)
   try {
     const a = (await t.remember({
       kind: 'memory',
@@ -64,8 +62,8 @@ test('a zero-overlap query returns nothing even when a body contains "and"', asy
   }
 })
 
-test('a partial match keeps every candidate, with the matching record first', async () => {
-  const t = setup()
+test('a partial match keeps every candidate, with the matching record first', async (tc) => {
+  const t = setup(tc)
   try {
     const a = (await t.remember({
       kind: 'memory',
@@ -89,8 +87,8 @@ test('a partial match keeps every candidate, with the matching record first', as
   }
 })
 
-test('an empty query keeps the recency pool', async () => {
-  const t = setup()
+test('an empty query keeps the recency pool', async (tc) => {
+  const t = setup(tc)
   try {
     const a = (await t.remember({ kind: 'memory', title: 'First note', body: 'Alpha body text.' })).record
     const b = (await t.remember({ kind: 'memory', title: 'Second note', body: 'Beta body text.' })).record
@@ -102,8 +100,8 @@ test('an empty query keeps the recency pool', async () => {
   }
 })
 
-test('a contradiction pair stays visible when the query matches both sides', async () => {
-  const t = setup()
+test('a contradiction pair stays visible when the query matches both sides', async (tc) => {
+  const t = setup(tc)
   try {
     const a = (await t.remember({
       kind: 'memory',
@@ -126,8 +124,8 @@ test('a contradiction pair stays visible when the query matches both sides', asy
   }
 })
 
-test('negative coverage survives the tool floor', async () => {
-  const t = setup()
+test('negative coverage survives the tool floor', async (tc) => {
+  const t = setup(tc)
   try {
     const neg = (await t.remember({
       kind: 'negative',
@@ -144,8 +142,8 @@ test('negative coverage survives the tool floor', async () => {
   }
 })
 
-test('records hidden by the floor are not touched', async () => {
-  const t = setup()
+test('records hidden by the floor are not touched', async (tc) => {
+  const t = setup(tc)
   try {
     const a = (await t.remember({
       kind: 'memory',
@@ -158,7 +156,9 @@ test('records hidden by the floor are not touched', async () => {
       title: 'Kubernetes ingress routing uses TLS termination',
       body: 'Ingress terminates TLS at the edge.',
     })).record
-    const store = openProjectStore(t.home, a.projectId)
+    // Records live in the workspace room, so the assertion reads that room
+    // rather than a path-keyed store.
+    const store = roomStore(t.home, t.cwd)
 
     const empty = await t.recall({ query: 'quantum entanglement decoherence' })
     assert.equal(empty.count, 0)

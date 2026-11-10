@@ -6,8 +6,8 @@ import { expandEligibleNeighbors, localGraph, overviewGraph, projectNode, GRAPH_
 import { hybridRetrieve, summarizeForPrompt } from '../src/retrieve.mjs'
 import { observatoryLocalGraph } from '../src/observatory.mjs'
 import { handleVeyraCommand } from '../src/commands.mjs'
-import { closeAllStores, openProjectStore } from '../src/store.mjs'
-import { projectIdFor } from '../src/ids.mjs'
+import { closeAllStores } from '../src/store.mjs'
+import { agentFor, roomIdFor, roomStore, testRuntime } from './helpers/room.mjs'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -134,10 +134,10 @@ test('overviewGraph projects visible rows, stored edges, and unresolved targets 
   const dir = mkdtempSync(join(tmpdir(), 'veyra-ov-'))
   const cwdA = join(dir, 'proj-a')
   const cwdB = join(dir, 'proj-b')
-  const aId = projectIdFor(cwdA)
-  const bId = projectIdFor(cwdB)
-  const storeA = openProjectStore(dir, aId)
-  const storeB = openProjectStore(dir, bId)
+  const aId = roomIdFor(cwdA)
+  const bId = roomIdFor(cwdB)
+  const storeA = roomStore(dir, cwdA)
+  const storeB = roomStore(dir, cwdB)
   const { root, child, candidate } = seedLinked(storeA, aId)
   storeB.put({
     title: 'B only',
@@ -270,10 +270,14 @@ test('observatory local graph is read-only text and slash graph <id> uses it', (
 
   const dir = mkdtempSync(join(tmpdir(), 'veyra-graph-cmd-'))
   const cwd = join(dir, 'workspace')
-  const runtime = { veyraHome: dir, fallbackCwd: cwd, recallLimit: 5, includeReusable: true }
-  const invocation = { agent: { session: { header: { cwd } } } }
+  // A runtime with a Memory Server: without one every command refuses, and this
+  // test would then pass on the wrong error.
+  const runtime = testRuntime(dir, cwd)
+  const invocation = { agent: agentFor(cwd) }
   const missing = handleVeyraCommand(runtime, { ...invocation, rawInput: 'observatory local' })
   assert.equal(missing.kind, 'error')
+  // Still the usage error, not the memory-unavailable refusal: the room resolved.
+  assert.ok(missing.text.includes('observatory local'))
   closeAllStores()
   rmSync(dir, { recursive: true, force: true })
   store.close()
@@ -282,10 +286,12 @@ test('observatory local graph is read-only text and slash graph <id> uses it', (
 test('slash search → record → local graph stays inside handleVeyraCommand', () => {
   const dir = mkdtempSync(join(tmpdir(), 'veyra-graph-slash-'))
   const cwd = join(dir, 'workspace')
-  const runtime = { veyraHome: dir, fallbackCwd: cwd, recallLimit: 5, includeReusable: true }
-  const invocation = { agent: { session: { header: { cwd } } } }
-  const projectId = projectIdFor(cwd)
-  const store = openProjectStore(dir, projectId)
+  const runtime = testRuntime(dir, cwd)
+  const invocation = { agent: agentFor(cwd) }
+  // Seed the room the runtime resolves, not a path-derived project id: the
+  // command path must read the same room a workspace id keys.
+  const projectId = roomIdFor(cwd)
+  const store = roomStore(dir, cwd)
   const { root, child } = seedLinked(store, projectId)
 
   const search = handleVeyraCommand(runtime, { ...invocation, rawInput: 'observatory search FTS5 triggers WAL' })

@@ -7,8 +7,8 @@
 
 import { readFileSync } from 'node:fs'
 import { AUTHORITIES, KINDS, VALIDATIONS } from './types.mjs'
-import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
-import { openProjectStore, openReusableStore } from './store.mjs'
+import { resolveVeyraHome } from './ids.mjs'
+import { MEMORY_OPERATIONS } from './memory-router.mjs'
 import { recall } from './retrieve.mjs'
 import { promote, readWriteGateLedger } from './learn.mjs'
 import { forget as lifecycleForget, invalidate, protect, supersede, tombstone, unprotect } from './lifecycle.mjs'
@@ -81,12 +81,31 @@ function helpText() {
 
 export function handleVeyraCommand(runtime, invocation) {
   const raw = String(invocation?.rawInput || invocation?.text || invocation?.input || invocation?.args || '').trim()
-  const cwd = resolveWorkspace(invocation?.agent) || runtime.fallbackCwd
-  const projectId = projectIdFor(cwd)
-  const projectStore = openProjectStore(runtime.veyraHome, projectId)
-  const reusableStore = openReusableStore(runtime.veyraHome)
   const [verb, ...rest] = raw.split(/\s+/)
   const arg = rest.join(' ').trim()
+  const server = runtime.memoryServer
+
+  let cwd
+  let projectId
+  let projectStore
+  let reusableStore
+  // Every verb needs a workspace room, so resolution happens up front, once,
+  // and its refusal is the command's answer. There is no host-wide escape
+  // hatch: without a room there is no memory to report on or act against, and
+  // the legacy layout this architecture used to fall back to is no longer read.
+  {
+    if (!server) {
+      return { kind: 'error', text: 'Veyra memory unavailable: memory-server-unavailable' }
+    }
+    const stores = server.storesFor(invocation?.agent, MEMORY_OPERATIONS.WRITE_MANUAL)
+    if (!stores.ok) {
+      return { kind: 'error', text: `Veyra memory unavailable: ${stores.reason}` }
+    }
+    cwd = stores.cwd
+    projectId = stores.projectId
+    projectStore = stores.projectStore
+    reusableStore = stores.reusableStore
+  }
 
   /** Resolve which store holds a lifecycle-target record (project first). */
   const storeForId = (id) => {
@@ -117,6 +136,7 @@ export function handleVeyraCommand(runtime, invocation) {
       ].join('\n'),
     }
   }
+
 
   if (verb === 'health') {
     // §21 automated maintenance findings — read-only, never mutates records.

@@ -19,19 +19,13 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createToolHarness } from '../src/tools.mjs'
-import { openProjectStore } from '../src/store.mjs'
-import { projectIdFor, newRecordId } from '../src/ids.mjs'
+import { newRecordId } from '../src/ids.mjs'
 import { AUTHORITIES, KINDS, STATUSES, VALIDATIONS } from '../src/types.mjs'
 import { classifyRecordTrust, TRUST_CATEGORIES, TRUST_ACTIONS } from '../src/trust.mjs'
 import { composeAgentContext, renderAgentContext, buildRecallContext } from '../src/context.mjs'
 import { annotateContradictions } from '../src/evolve.mjs'
-
-const testRuntime = (home, cwd, opts = {}) => ({
-  veyraHome: home,
-  fallbackCwd: cwd,
-  codeEngine: opts.codeEngine || { isDegraded: true },
-  log: { debug: () => {}, warn: () => {}, info: () => {} },
-})
+import { closeAllStores } from '../src/store.mjs'
+import { roomIdFor, roomStore, testRuntime } from './helpers/room.mjs'
 
 function makeRepo(t, files) {
   const tmp = mkdtempSync(join(tmpdir(), 'veyra-trust-test-'))
@@ -46,7 +40,15 @@ function makeRepo(t, files) {
 
 function makeHome(t) {
   const home = mkdtempSync(join(tmpdir(), 'veyra-trust-home-'))
-  t.after(() => rmSync(home, { recursive: true, force: true }))
+  t.after(() => {
+    // Close every store before deleting its home. An unclosed store stays in
+    // the module-level `storeCache` under a path that no longer exists, so a
+    // later test that happens to open the same path would be handed the stale
+    // handle instead of a fresh one. These tests run in one process, which is
+    // exactly the scope that cache spans.
+    closeAllStores()
+    rmSync(home, { recursive: true, force: true })
+  })
   return home
 }
 
@@ -226,8 +228,8 @@ test('change impact classifies fresh unrelated knowledge as trusted next to affe
     'src/util.js': 'export function parse() { return 1; }\n',
   })
   const home = makeHome(t)
-  const projectId = projectIdFor(repo)
-  const store = openProjectStore(home, projectId)
+  const projectId = roomIdFor(repo)
+  const store = roomStore(home, repo)
 
   const affectedId = newRecordId()
   store.put(record({
@@ -275,8 +277,8 @@ test('change impact classifies fresh unrelated knowledge as trusted next to affe
 test('stale knowledge is reported stale, not silently rewritten', async (t) => {
   const repo = makeRepo(t, { 'src/a.js': 'export const a = 2\n' })
   const home = makeHome(t)
-  const projectId = projectIdFor(repo)
-  const store = openProjectStore(home, projectId)
+  const projectId = roomIdFor(repo)
+  const store = roomStore(home, repo)
 
   const memId = newRecordId()
   store.put(record({
@@ -305,8 +307,8 @@ test('stale knowledge is reported stale, not silently rewritten', async (t) => {
 test('contradictions stay visible through change processing', async (t) => {
   const repo = makeRepo(t, { 'src/a.js': 'export const a = 1\n' })
   const home = makeHome(t)
-  const projectId = projectIdFor(repo)
-  const store = openProjectStore(home, projectId)
+  const projectId = roomIdFor(repo)
+  const store = roomStore(home, repo)
 
   const idA = newRecordId()
   const idB = newRecordId()
@@ -348,8 +350,8 @@ test('contradictions stay visible through change processing', async (t) => {
 test('change processing never turns candidates canonical', async (t) => {
   const repo = makeRepo(t, { 'src/a.js': 'export const a = 1\n' })
   const home = makeHome(t)
-  const projectId = projectIdFor(repo)
-  const store = openProjectStore(home, projectId)
+  const projectId = roomIdFor(repo)
+  const store = roomStore(home, repo)
 
   const memId = newRecordId()
   store.put(record({
@@ -385,17 +387,20 @@ test('project isolation: another project\'s knowledge is never classified into t
   const otherRepo = makeRepo(t, { 'src/a.js': 'export const a = 1\n' })
   const home = makeHome(t)
 
-  const projectId = projectIdFor(repo)
-  const otherId = projectIdFor(otherRepo)
+  // Identity now comes from the workspace registry: two distinct registered workspaces are
+  // two rooms, so this still proves no cross-room classification.
+  const projectId = roomIdFor(repo)
+  const otherId = roomIdFor(otherRepo)
+  assert.notEqual(projectId, otherId, 'distinct workspaces must be distinct rooms')
 
-  const mine = openProjectStore(home, projectId)
-  const other = openProjectStore(home, otherId)
+  const mine = roomStore(home, repo)
+  const other = roomStore(home, otherRepo)
   const mineId = newRecordId()
   mine.put(record({ id: mineId, title: 'Mine', evidence: [{ path: 'src/a.js' }], scope: 'project', projectId }))
   const foreignId = newRecordId()
   other.put(record({ id: foreignId, title: 'FOREIGN', evidence: [{ path: 'src/a.js' }], scope: 'project', projectId: otherId }))
 
-  const harness = createToolHarness(testRuntime(home, repo))
+  const harness = createToolHarness(testRuntime(home, repo, { paths: [repo, otherRepo] }))
   const result = await harness.call('veyra_change_impact', { repo })
   const ids = result.context.map((c) => c.memoryId)
   assert.ok(ids.includes(mineId))
@@ -405,8 +410,8 @@ test('project isolation: another project\'s knowledge is never classified into t
 test('degraded Code Intelligence yields a safe, observable degraded result', async (t) => {
   const repo = makeRepo(t, { 'src/a.js': 'export const a = 1\n' })
   const home = makeHome(t)
-  const projectId = projectIdFor(repo)
-  const store = openProjectStore(home, projectId)
+  const projectId = roomIdFor(repo)
+  const store = roomStore(home, repo)
   store.put(record({
     id: newRecordId(),
     title: 'Anchored fact',
@@ -441,8 +446,8 @@ test('degraded Code Intelligence yields a safe, observable degraded result', asy
 test('repeated processing is idempotent: same classification, no duplicate state', async (t) => {
   const repo = makeRepo(t, { 'src/a.js': 'export const a = 1\n' })
   const home = makeHome(t)
-  const projectId = projectIdFor(repo)
-  const store = openProjectStore(home, projectId)
+  const projectId = roomIdFor(repo)
+  const store = roomStore(home, repo)
   store.put(record({
     id: newRecordId(),
     title: 'Anchored fact',
@@ -495,8 +500,8 @@ test('repeated processing is idempotent: same classification, no duplicate state
 test('ambient recall context carries trust lines end-to-end', async (t) => {
   const repo = makeRepo(t, { 'src/a.js': 'export const a = 1\n' })
   const home = makeHome(t)
-  const projectId = projectIdFor(repo)
-  const store = openProjectStore(home, projectId)
+  const projectId = roomIdFor(repo)
+  const store = roomStore(home, repo)
   store.put(record({
     id: newRecordId(),
     title: 'Trusted ambient knowledge about veyra persist memory',
@@ -507,7 +512,7 @@ test('ambient recall context carries trust lines end-to-end', async (t) => {
   }))
 
   const text = buildRecallContext({
-    veyraHome: home,
+    projectStore: store,
     cwd: repo,
     query: 'where does veyra persist memory records',
   })

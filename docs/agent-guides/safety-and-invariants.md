@@ -71,16 +71,44 @@ never *authority*. Keep those ladders separate.
 - An unavailable service (settings, webServer, tools, skills, commands) degrades
   that feature and leaves the rest working.
 
-## 5. Project isolation
+## 5. Workspace isolation
 
-- Project id is derived from resolved workspace + git remote, so checkouts of the
-  same remote share memory and unrelated folders never collide.
-- Project and reusable stores are separate databases. Cross-project exposure only
-  happens through the reusable store, and only when `includeReusable` is on.
-- Storage lives under `$DSH_HOME/veyra/` (or `$VEYRA_HOME`), **never** inside the
-  user's repository.
+- **A room is a DSH WorkspaceId, not a path** (`src/rooms.mjs`). Two workspaces
+  opened on the same repository are two rooms and cannot see each other's
+  memory. The legacy project id (resolved path + git remote) could not
+  distinguish those two workspaces, which is precisely why it was replaced —
+  and why the clean break migrates nothing rather than guessing an owner.
+- **The pre-rooms layout is inert.** `projects/<projectId>/memory.db` and
+  `reusable/memory.db` are never read, written, migrated, merged, or deleted.
+  They stay on disk, byte-identical. No tool, command, watcher, prompt
+  assembly, or learning path may open them, and no migration ledger exists to
+  make an import look legitimate later.
+- The resolver never guesses (`src/workspace-resolver.mjs`). Session id, then
+  exact path, then containment, then fail. A registry has three states —
+  `available`, `absent`, `unavailable` — and **none of them enables a legacy
+  store**: `absent` fails closed with `workspace-registry-unavailable` (no
+  workspace id means no room), and a declared-but-unusable registry, or one
+  whose `list()` throws because the Host is still initialising, fails closed
+  with `workspace-registry-not-ready`. A fault is never reported as permanent
+  absence. Containment may only narrow the candidate set: when several
+  registered roots contain the cwd, the deepest canonical root wins, so a
+  nested workspace never maps to its parent, and equal-depth candidates stay
+  `ambiguous-path`. Anything else fails closed with `ambiguous-session`,
+  `ambiguous-path`, `unresolved`, `registry-unreadable` or `no-context`, and
+  the caller degrades instead of picking a workspace.
+- `RESOLUTION_MODES` has one member. `resolver.mode()` returns `registry`
+  unconditionally; a second answer would claim a storage model no resolution
+  can reach. The three-state diagnostic lives in `resolver.state()` and
+  `health().registryState`.
+- Central Memories is the only cross-room store, and promotion is the only way
+  in (`src/promotion.mjs`). `candidate` is never promotable, `canonical`
+  requires `explicit: true`, and evidence or `validation: verified` is required.
+  A content-hash match links the existing record rather than duplicating it.
+- Room state lives under `$DSH_HOME/veyra/rooms/`, Central Memories under
+  `$DSH_HOME/veyra/central/` (or `$VEYRA_HOME`), **never** inside the user's
+  repository.
 - HTTP and command surfaces resolve the workspace from the request/runtime; a
-  payload must never mix stores from different projects.
+  payload must never mix stores from different rooms.
 
 ## 6. Redaction before persistence
 

@@ -22,8 +22,8 @@ import {
   createContextProvider,
   taskIntentCache,
 } from '../src/context.mjs'
-import { openProjectStore, closeAllStores } from '../src/store.mjs'
-import { projectIdFor } from '../src/ids.mjs'
+import { closeAllStores } from '../src/store.mjs'
+import { roomIdFor, roomStore, testRuntime } from './helpers/room.mjs'
 import { AUTHORITIES, VALIDATIONS, STATUSES } from '../src/types.mjs'
 
 test('1. extractCheckpointTaskIntent extracts structured sections correctly', () => {
@@ -195,7 +195,7 @@ test('8. compaction/end event with error does not update taskIntentCache', () =>
   const priorIntent = 'Existing verified intent'
   taskIntentCache.set(session, {
     intent: priorIntent,
-    projectId: projectIdFor('/workspace/project'),
+    projectId: roomIdFor('/workspace/project'),
     updatedAt: Date.now()
   })
 
@@ -214,10 +214,10 @@ test('8. compaction/end event with error does not update taskIntentCache', () =>
 test('9. full context provider recalls engineering memory after compaction', async () => {
   const home = mkdtempSync(join(tmpdir(), 'veyra-compaction-test-'))
   const workspace = join(home, 'myproject')
-  const projectId = projectIdFor(workspace)
+  const projectId = roomIdFor(workspace)
 
-  // Seed project store with durable engineering memory
-  const store = openProjectStore(home, projectId)
+  // Seed the workspace room with durable engineering memory
+  const store = roomStore(home, workspace)
   store.put({
     id: 'vey_wal_recovery',
     title: 'SQLite WAL checkpoint crash recovery',
@@ -229,11 +229,8 @@ test('9. full context provider recalls engineering memory after compaction', asy
     status: STATUSES.ACTIVE,
   })
 
-  // Create plugin context provider
-  const provider = createContextProvider({
-    veyraHome: home,
-    fallbackCwd: workspace,
-  })
+  // Create plugin context provider bound to the same workspace room
+  const provider = createContextProvider(testRuntime(home, workspace))
 
   // Simulated session after compaction
   const session = {
