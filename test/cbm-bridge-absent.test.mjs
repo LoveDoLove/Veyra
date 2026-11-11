@@ -181,3 +181,13 @@ test('guidance appends the Code Intelligence block when the engine is available'
 
   dispose?.()
 })
+
+// The skill lives on both sides of this decoupling: Veyra bundled its own copy
+// while CBM's plugin ships the same skill name, so two providers claimed it. The
+// deletion is what removes the collision, and nothing else in the suite pins the
+// absence — a future re-add would silently reintroduce the duplicate.
+test('Veyra no longer bundles a codebase-memory skill', async () => {
+  const { BUNDLED_SKILL_DEFINITIONS } = await import('../src/skills.mjs')
+  assert.equal(BUNDLED_SKILL_DEFINITIONS.some((s) => s.name === 'codebase-memory'), false)
+  assert.equal(BUNDLED_SKILL_DEFINITIONS.length, 4)
+})
