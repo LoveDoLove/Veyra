@@ -1,3 +1,14 @@
+## [0.2.1] - 2026-11-11
+
+### Fixed
+
+- **Network Graph sidebar tab now resolves its own workspace.** The tab is registered into a session-scoped keyed seat (`sidebar.right.pane.tab`), so DSH hands each tab instance its own `sessionId` through the session slot binding. `client.js` previously ignored that prop and looked up a controller-wide "active session" instead — an API the workspace controller does not expose — so every tab, including a background one, resolved the same workspace cwd or none at all. Each tab now maps its own `sessionId` through `workspaces.list` (`WorkspaceView.sessionIds` → `WorkspaceView.path`) and puts that path in the iframe URL.
+- **A session no workspace row claims fails closed.** The tab renders the explicit "Workspace context unavailable" state instead of borrowing whichever workspace the controller last marked active. The session id itself never enters the iframe URL, and workspace identity is still the `WorkspaceView` row — never a guessed path or a session id alone.
+
+### Added
+
+- `client.js` exports `__resolveWorkspaceCwdForSession` as a test seam alongside the existing `__resolveActiveWorkspaceCwd`, and `docs/architecture-graph.md` documents the session-scoped seat and the `sessionId → workspace cwd` mapping.
+
 ## [0.2.0] - 2026-11-10
 
 The Memory Server rewrite: memory is now owned by an explicit server with per-workspace rooms, a governed router, and Central Memories reachable only by promotion. This is a deliberate clean break — there is no migration, no fallback, and no compatibility mode from the pre-rooms layout.

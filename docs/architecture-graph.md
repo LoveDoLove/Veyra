@@ -232,6 +232,15 @@ ships no second app, no graph React bundle, and no D3. (The package does ship
 `client.js`, but only as the Network Graph sidebar tab; it is
 not the graph surface.)
 
+The sidebar tab is a session-scoped keyed seat
+(`sidebar.right.pane.tab`, key `veyra-network-graph`), so DSH hands each tab
+its own `sessionId`. The tab maps that session through `workspaces.list`
+(`WorkspaceView.sessionIds` → `WorkspaceView.path`) to the workspace cwd it
+puts in the iframe URL, which is why two sessions open on two workspaces show
+two different graphs. A session no workspace row claims renders the explicit
+"Workspace context unavailable" state instead of borrowing whichever workspace
+the controller last marked active; the session id itself never enters the URL.
+
 | Route | Role |
 | --- | --- |
 | `GET /veyra` | vanilla SVG Network Graph page (overview → local drill-down) |

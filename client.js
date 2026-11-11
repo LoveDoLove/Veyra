@@ -71,20 +71,36 @@ window.__ModuleLoader__.load({
       return typeof sid === 'string' && sid ? sid : ''
     }
 
-    function resolveActiveWorkspaceCwd(face) {
+    function listWorkspaceItems(face) {
       var f = face || workspacesFace
       var list = f && f.list
       var snap = list && typeof list.getSnapshot === 'function' ? list.getSnapshot() : null
-      var items = snap && Array.isArray(snap.items) ? snap.items : []
-      var activeSid = bestEffortActiveSessionId(f)
-      if (!activeSid) return ''
+      return snap && Array.isArray(snap.items) ? snap.items : []
+    }
+
+    function cwdFromItems(items, sessionId) {
+      if (!sessionId) return ''
       for (var i = 0; i < items.length; i++) {
         var item = items[i]
-        if (!item || !Array.isArray(item.sessionIds) || item.sessionIds.indexOf(activeSid) < 0) continue
+        if (!item || !Array.isArray(item.sessionIds) || item.sessionIds.indexOf(sessionId) < 0) continue
         // WorkspaceView.path is the canonical host directory path (DSH API).
         return typeof item.path === 'string' && item.path ? item.path : ''
       }
       return ''
+    }
+
+    // Task 37: the tab is a 'session'-scoped keyed seat, so the ui-session
+    // BUILTIN_SOURCE hands it its own sessionId as a prop (props: ['sessionId']).
+    // That session maps to exactly one workspace row; when no row claims it the
+    // tab fails closed instead of showing whichever workspace the controller
+    // last marked active.
+    function resolveWorkspaceCwdForSession(sessionId, face) {
+      if (typeof sessionId !== 'string' || !sessionId) return ''
+      return cwdFromItems(listWorkspaceItems(face), sessionId)
+    }
+
+    function resolveActiveWorkspaceCwd(face) {
+      return cwdFromItems(listWorkspaceItems(face), bestEffortActiveSessionId(face || workspacesFace))
     }
 
     function graphUrlFor(cwd) {
@@ -119,24 +135,31 @@ window.__ModuleLoader__.load({
       }
     }
 
-    function useWorkspaceCwd() {
+    function useWorkspaceCwd(sessionId) {
+      var own = typeof sessionId === 'string' && sessionId ? sessionId : ''
       var state = React.useState(function () {
-        return { version: workspaceVersion, cwd: resolveActiveWorkspaceCwd(workspacesFace) }
+        return { version: workspaceVersion, cwd: resolveCwd(own) }
       })
       var value = state[0]
       var setValue = state[1]
       React.useEffect(function () {
         function sync() {
-          setValue({ version: workspaceVersion, cwd: resolveActiveWorkspaceCwd(workspacesFace) })
+          setValue({ version: workspaceVersion, cwd: resolveCwd(own) })
         }
         sync()
         return subscribeWorkspaceState(sync)
-      }, [])
+      }, [own])
       return value.cwd
     }
 
-    function NetworkGraphTabBody() {
-      var cwd = useWorkspaceCwd()
+    function resolveCwd(sessionId) {
+      return sessionId
+        ? resolveWorkspaceCwdForSession(sessionId, workspacesFace)
+        : resolveActiveWorkspaceCwd(workspacesFace)
+    }
+
+    function NetworkGraphTabBody(props) {
+      var cwd = useWorkspaceCwd(props && props.sessionId)
       var src = graphUrlFor(cwd)
       return el('div', { className: 'veyra-graph-tab' },
         el('style', null, GRAPH_CSS),
@@ -198,10 +221,14 @@ window.__ModuleLoader__.load({
         }
       })
 
-      // Authoritative workspace face for active-workspace cwd resolution.
+      // Authoritative workspace face for cwd resolution.
       // Task 36: cwd is resolved from workspaces.list snapshot items
       // (WorkspaceView.path/sessionIds), never guessed and never proven by
       // sessionId alone.
+      // Task 37: the tab resolves cwd for the sessionId prop DSH hands to a
+      // session-scoped keyed seat, so each session's tab shows its own
+      // workspace; only a tab without that prop falls back to the
+      // controller-wide best-effort hint.
       ctx.inject(['workspaces'], function (scope) {
         workspacesFace = scope && scope.workspaces
         notifyWorkspaceListeners()
@@ -218,6 +245,8 @@ window.__ModuleLoader__.load({
     exports.NetworkGraphTabBody = NetworkGraphTabBody
     // Task 36 test/debug seam: pure resolver for authoritative workspace mapping.
     exports.__resolveActiveWorkspaceCwd = resolveActiveWorkspaceCwd
+    // Task 37 seam: per-session resolver used by the keyed session-scoped tab.
+    exports.__resolveWorkspaceCwdForSession = resolveWorkspaceCwdForSession
     return module.exports
   },
 })

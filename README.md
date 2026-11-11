@@ -356,6 +356,8 @@ Design rationale and a guided tour of every mechanism: the [technical whitepaper
 
 **The Network Graph page looks empty.** Either the workspace has no records yet (`/veyra recent`), or the page resolves a different workspace — `/veyra` prints the workspace path it uses.
 
+**The sidebar tab says "Workspace context unavailable".** The tab maps its own session through `workspaces.list`, and no workspace row claims that session, so it refuses to guess. Confirm the session is open in a workspace (`/veyra` prints the resolved room id and workspace path) and reload once the workspace list is ready.
+
 **Where is my data / how do I reset.** `$DSH_HOME/veyra/` (default `~/.dsh/veyra/`), or `$VEYRA_HOME` if set. Delete a workspace room (`rooms/<roomId>/`) to start that workspace over — nothing is stored in your repository, and pre-rooms `projects/` and `reusable/` directories are left untouched and unread.
 
 **Something wrote wrong memory.** `/veyra forget <id>` soft-forgets (inspectable, out of recall). Nothing becomes `canonical` without you running `/veyra promote <id> canonical`.

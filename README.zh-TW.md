@@ -348,6 +348,8 @@ DSH 設定不再提供專屬的 **Veyra** 區塊——Veyra 以內建預設值�
 
 **網路圖頁面看起來是空的。** 要嘛 workspace 還沒有任何記錄（`/veyra recent`），要嘛頁面解析到的是另一個 workspace——`/veyra` 會印出它使用的 workspace 路徑。
 
+**側邊欄分頁顯示「Workspace context unavailable」。** 該分頁會用自己的 session 到 `workspaces.list` 查詢所屬 workspace；若沒有任何 workspace 記錄擁有這個 session，它會直接失敗（fail closed）而不猜測。確認該 session 是在某個 workspace 中開啟（`/veyra` 會印出解析出的 room id 與 workspace 路徑），等 workspace 清單載入完成後再重新載入。
+
 **資料在哪 / 如何重置。** `$DSH_HOME/veyra/`（預設 `~/.dsh/veyra/`），若設定則為 `$VEYRA_HOME`。刪掉某個工作區的記憶房（`rooms/<roomId>/`）即可讓該工作區重新開始——你的儲存庫中沒有儲存任何東西，而 0.2.0 之前的 `projects/` 與 `reusable/` 目錄會被原樣保留、不被讀取。
 
 **某處寫錯了記憶。** `/veyra forget <id>` 軟遺忘（仍可檢視、退出召回）。除非你執行 `/veyra promote <id> canonical`，否則任何記錄都不會成為 `canonical`。

@@ -7,6 +7,10 @@
  * Task 36: workspace isolation — iframe uses authoritative cwd from DSH
  * workspaces.list (WorkspaceView.path/sessionIds), never sessionId as proof,
  * fails closed when workspace context unavailable.
+ * Task 37: the tab is a 'session'-scoped keyed seat, so it receives its own
+ * sessionId from the ui-session BUILTIN_SOURCE prop roster; that session is
+ * mapped through workspaces.list to its workspace row, so two sessions in two
+ * workspaces each get their own graph, regardless of which is active.
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -118,10 +122,10 @@ function findNode(node, pred) {
   return null
 }
 
-function renderTabBody(state) {
+function renderTabBody(state, props) {
   const reg = state.slotRegistered.find((r) => r.meta?.key === 'veyra-network-graph' && r.meta?.name === 'sidebar.right.pane.tab')
   assert.ok(reg, 'tab body slot registration must exist')
-  return reg.render()
+  return reg.render(props)
 }
 
 test('client bundle exports/inject: Settings UI removed, Network Graph tab remains (no footer button)', () => {
@@ -231,6 +235,55 @@ test('Task 36: resolver selects workspace A/B by authoritative mapping (switch e
   assert.equal(mod.__resolveActiveWorkspaceCwd({ active: { sessionId: 'sess-a' }, list }), '/project-a')
   assert.equal(mod.__resolveActiveWorkspaceCwd({ active: { sessionId: 'sess-b' }, list }), '/project-b')
   assert.equal(mod.__resolveActiveWorkspaceCwd({ active: { sessionId: 'sess-a' }, list }), '/project-a')
+})
+
+test('Task 37: each session-scoped tab resolves its OWN workspace cwd from the sessionId prop', () => {
+  const items = [
+    { workspaceId: 'ws-a', path: '/home/test/workspace-a', sessionIds: ['sess-a'] },
+    { workspaceId: 'ws-b', path: '/home/test/workspace-b', sessionIds: ['sess-b'] },
+  ]
+  // Row A is the controller-active workspace, but the tab belongs to session B:
+  // the session-scoped keyed seat must render B's graph, not the active one's.
+  const tabB = setup({ activeSessionId: 'sess-a', workspaceItems: items })
+  const iframeB = findNode(renderTabBody(tabB.state, { sessionId: 'sess-b' }), (n) => n.type === 'iframe')
+  assert.ok(iframeB, 'session B tab renders an iframe')
+  assert.ok(iframeB.props.src.includes(encodeURIComponent('/home/test/workspace-b')), 'session B gets workspace B cwd')
+  assert.ok(!iframeB.props.src.includes(encodeURIComponent('/home/test/workspace-a')), 'session B never borrows the active workspace cwd')
+  assert.ok(!iframeB.props.src.includes('sess-b'), 'sessionId stays out of the iframe URL')
+
+  const tabA = setup({ activeSessionId: 'sess-b', workspaceItems: items })
+  const iframeA = findNode(renderTabBody(tabA.state, { sessionId: 'sess-a' }), (n) => n.type === 'iframe')
+  assert.ok(iframeA, 'session A tab renders an iframe')
+  assert.ok(iframeA.props.src.includes(encodeURIComponent('/home/test/workspace-a')), 'session A gets workspace A cwd')
+})
+
+test('Task 37: a session no workspace row claims fails closed even when another workspace is active', () => {
+  const { state } = setup({
+    activeSessionId: 'sess-a',
+    workspaceItems: [{ workspaceId: 'ws-a', path: '/home/test/workspace-a', sessionIds: ['sess-a'] }],
+  })
+  const tree = renderTabBody(state, { sessionId: 'sess-orphan' })
+  assert.equal(findNode(tree, (n) => n.type === 'iframe'), null, 'no iframe for an unmapped session')
+  assert.ok(findNode(tree, (n) => n.props && n.props.className === 'veyra-graph-unavailable'), 'explicit unavailable state rendered')
+})
+
+test('Task 37: resolver maps a session-only lookup and refuses empty/unknown input', () => {
+  const { mod } = setup()
+  const list = {
+    getSnapshot: () => ({
+      items: [
+        { workspaceId: 'ws-a', path: '/project-a', sessionIds: ['sess-a'] },
+        { workspaceId: 'ws-b', path: '/project-b', sessionIds: ['sess-b'] },
+      ],
+    }),
+  }
+  const face = { list }
+  assert.equal(mod.__resolveWorkspaceCwdForSession('sess-a', face), '/project-a')
+  assert.equal(mod.__resolveWorkspaceCwdForSession('sess-b', face), '/project-b')
+  assert.equal(mod.__resolveWorkspaceCwdForSession('sess-unknown', face), '')
+  assert.equal(mod.__resolveWorkspaceCwdForSession('', face), '')
+  assert.equal(mod.__resolveWorkspaceCwdForSession(undefined, face), '')
+  assert.equal(mod.__resolveWorkspaceCwdForSession('sess-a', null), '', 'no workspaces face => fail closed')
 })
 
 test('client source has no bottom-left footer button registration or sessionId-as-cwd proof (Task 35.7/36 regression)', () => {
