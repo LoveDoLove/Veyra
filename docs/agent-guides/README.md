@@ -16,7 +16,7 @@ and does not restate the others.
 | [development-workflow.md](./development-workflow.md) | How to plan, implement, and land a change in this repository | You are about to start editing |
 | [testing-and-verification.md](./testing-and-verification.md) | Test layout, how to run, what each suite protects, regression rules | You are writing or running tests, or need to prove a change works |
 | [dsh-integration.md](./dsh-integration.md) | Cordis plugin lifecycle, host seams, tools, commands, skills, settings, WebUI | You touch `src/plugin.mjs` or anything that registers with the host |
-| [cbm-integration.md](./cbm-integration.md) | Code Intelligence boundary and the `@lovedolove/dsh-codebase-memory-mcp` dependency | You touch `src/code/*`, `veyra_code_*`, `veyra_change_impact`, or anything `cbm_*` |
+| [cbm-integration.md](./cbm-integration.md) | Code Intelligence boundary: the optional `@lovedolove/dsh-codebase-memory-mcp` peer, the bridge that loads it, and what degrades without it | You touch `src/code/*`, `veyra_code_*`, `veyra_change_impact`, or anything `cbm_*` |
 | [release-and-packaging.md](./release-and-packaging.md) | `package.json`, published file set, CI, npm staged publishing and approval, versioning | You change dependencies, packaging, workflows, or prepare a release |
 
 ## Precedence

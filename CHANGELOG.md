@@ -1,3 +1,14 @@
+## [Unreleased]
+
+### Changed
+
+- **Veyra loads and runs without Codebase Memory installed.** Code Intelligence now enters through `src/cbm-bridge.mjs`, the only file that names the `@lovedolove/dsh-codebase-memory-mcp` specifier. The bridge resolves the package at runtime and degrades to a frozen stub when it is absent, so a missing or failing bridge can no longer break `apply()`: the engine becomes the null engine, and only `veyra_code_status` reports degraded. Memory, recall, the Observatory, slash commands, and hybrid search are unaffected.
+- **The six `cbm_*` tools belong to the Codebase Memory plugin.** Veyra no longer registers `cbm_projects`, `cbm_search`, `cbm_snippet`, `cbm_trace`, `cbm_arch`, or `cbm_search_code` — the plugin that ships them registers them from its own `apply()`. Veyra defines **11** `veyra_*` tools instead of 17 tools in total.
+- **The `codebase-memory` skill moved out.** Veyra ships **4** bundled skills (`veyra`, `legacy-onboarding`, `memory-review`, `memory-maintenance`); the Codebase Memory skill now ships with CBM's own plugin.
+- **CBM is declared as an optional peer, not a dependency.** `dependencies` is empty; `@lovedolove/dsh-codebase-memory-mcp` is in `peerDependencies` with `peerDependenciesMeta.optional = true`, and in `devDependencies` for CI. This buys **load safety, not removal**: pnpm installs optional peers by default, and a DSH profile that already declares CBM keeps it installed. Nothing is uninstalled by this change, and Code Intelligence keeps working wherever CBM is present.
+- **Minimum Node raised to `>=22.12.0 <25.0.0` (from `>=22.5.0`).** The bridge loads CBM with an unflagged `require(esm)`, which starts at Node 22.12.0; below that floor the bridge would silently degrade to the stub while `engines` claimed support. `node:sqlite` (22.5) still sets the lower bound for the memory layer.
+- Documentation and `AGENTS.md` now describe this shape: CBM as an optional plugin-backed peer that Veyra loads through the bridge, not a runtime dependency Veyra imports throughout `src/`.
+
 ## [0.2.1] - 2026-11-11
 
 ### Fixed

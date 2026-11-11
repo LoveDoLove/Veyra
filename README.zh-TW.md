@@ -40,12 +40,12 @@ Veyra 運作兩層互補的機制，各自回答不同的問題：
 - **自動學習。** 每個回合結束時，觀察到的活動會經過一個治理化的學習閘門（learning gate），由它決定這筆觀察是否足以成為 `derived` 記憶。只有真正改變了檔案的動作才算修改證據——`read`、`grep`、`glob` 只被記為活動；而且一道失敗的測試輸出永遠不會被標記為 `verified`。
 - **自動召回。** 在之後的回合中，相關的 `derived` 與 `canonical` 記錄會自行注入代理上下文，並明確標示為 `not repository truth`。觀察與候選記錄絕不會被自動召回。
 - **混合搜尋。** 單一查詢、多個訊號：FTS5 BM25 ＋符號／路徑加權、token 級語意重疊、意圖親和度（why / how / what-changed）與關係圖凝聚力——並附透明的分數拆解。`goal` 參數可引導排序朝向你正在進行的工作（是方向，而非權威）。
-- **代碼智慧。** 當 `codebase-memory-mcp` 已安裝時，七個代理工具提供結構化呼叫圖追蹤、AST 級符號搜尋、檔案／元件架構摘要與以代碼為依據的搜尋。未安裝時，Veyra 記憶照常運作、不受中斷。
+- **代碼智慧。** 當 Codebase Memory 外掛已安裝時，它的六個 `cbm_*` 工具提供結構化呼叫圖追蹤、AST 級符號搜尋、檔案／元件架構摘要與以代碼為依據的搜尋，並與 Veyra 自家的 `veyra_code_status`、`veyra_change_impact` 並用。該外掛不存在時，Veyra 仍能載入、記憶功能照常運作；代碼智慧只是回報自己不可用。
 - **記憶新鮮度與信任。** 代碼智慧監控變更過的檔案，把證據錨點指向已修改或已刪除代碼的記憶標記為過期，並對過期記錄套用檢索懲罰。讀取時，每筆被召回的記錄都會被分類為 `trusted / review_required / stale / contradicted / insufficient_evidence`，並附理由與建議動作——只是投影；絕不寫入，也不改變記錄的權威或驗證。
 - **變更智能。** 儲存庫變更會自動進入代理上下文——變更摘要置於召回區塊之首，並標註其信任影響——而 `veyra_change_impact` 可針對一組明確的變更檔案做分析：受影響的記憶、受影響的證據錨點、選用覆核候選、與各類別摘要計數。候選絕不會被自動提升為 canonical。
 - **健康與維護。** `veyra_health` 與 `/veyra health` 以唯讀方式回報記憶健康發現；隨附的 `memory-maintenance` 技能僅在明確要求時套用生命週期動作（keep / supersede / invalidate / forget / tombstone / revalidate / defer），並附安全上限與前後對照報告。
 - **人工介面。** `/veyra` 斜線指令、唯讀的知識觀測台（Knowledge Observatory），以及 DSH Web 中 `/veyra` 的可互動網路圖（Network Graph）。
-- **一個執行時 npm 相依。** `@lovedolove/dsh-codebase-memory-mcp`——獨立的 Codebase Memory 橋接套件——驅動外部原生 daemon。其餘全部為純 ESM、無執行時相依；套件約 263 kB（打包後）。
+- **選用的 peer，而非相依。** Veyra 在 [`package.json`](package.json) 中把 `@lovedolove/dsh-codebase-memory-mcp` 列為**選用 peer**，並經由 `src/cbm-bridge.mjs` 載入；套件缺席時橋接會降級為一個凍結的 stub。這項降級買到的是**載入安全**，不是移除：pnpm 預設會安裝選用 peer，所以已經宣告 CBM 的 profile 仍會保有它。Veyra 本身是純 ESM，沒有必要的執行時 npm 相依；套件約 263 kB（打包後）。
 
 ---
 
@@ -125,7 +125,7 @@ dsh plugin --profile web add @lovedolove/veyra
 代碼智慧是結構層，將 Veyra 連接到外部的
 [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) 原生 daemon。橋接代碼——倉庫發現、圖譜 client、code-intelligence engine、watcher，以及 `cbm_*` 工具定義——放在獨立的
 [`@lovedolove/dsh-codebase-memory-mcp`](https://www.npmjs.com/package/@lovedolove/dsh-codebase-memory-mcp)
-套件中，這是 Veyra 唯一宣告的執行時相依。Veyra 本身不附原生二進位、也不內含橋接內部：它只重新公開六個 `cbm_*` 工具加上 `veyra_code_status` / `veyra_change_impact`，並在自家樹中僅保留 `src/code/linking.mjs`（證據錨 ↔ 代碼新鮮度）與 `src/code/retrieval.mjs`（統一管線）。橋接、其安裝流程與原生 daemon 的細節，由該套件的 README 說明，本文件不重複。
+套件中，這是 Veyra 的**選用 peer** 相依。Veyra 本身不附原生二進位、也不內含橋接內部：它不再註冊任何 `cbm_*` 工具（六個 `cbm_*` 由 Codebase Memory 外掛自行註冊）；Veyra 只在自家樹中保留 `src/code/linking.mjs`（證據錨 ↔ 代碼新鮮度）與 `src/code/retrieval.mjs`（統一管線），並經由 `src/cbm-bridge.mjs` 取得橋接。這項降級**不會卸載** CBM：pnpm 預設會安裝選用 peer，已經直接宣告 CBM 的 profile 仍會保有它。橋接、其安裝流程與原生 daemon 的細節，由該套件的 README 說明，本文件不重複。
 
 原生 daemon 為**選用**：沒有它時 Veyra 記憶層完全可用；代碼智慧降級（見下方「二進位不存在時」）。
 
@@ -141,19 +141,15 @@ curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/i
 
 ### 二進位不存在時
 
-代碼智慧進入**降級模式**：六個 `cbm_*` 工具與 `veyra_code_status` 會回傳附安裝指引的結構化錯誤。所有 Veyra 記憶工具、觀測台、斜線指令與混合搜尋照常運作，不受任何中斷。
+代碼智慧進入**降級模式**：六個 `cbm_*` 工具根本不會被註冊（它們屬於 Codebase Memory 外掛，而該外掛未載入），`veyra_code_status` 則回傳附安裝指引的結構化錯誤。所有 Veyra 記憶工具、觀測台、斜線指令與混合搜尋照常運作，不受任何中斷。
 
 ### 代碼智慧提供什麼
 
 | 工具 | 功能 |
 | --- | --- |
-| `cbm_projects` | 列出已索引專案 |
-| `cbm_search` | 依名稱／標籤找符號、函式、類別、檔案 |
-| `cbm_snippet` | 取得符號的精確定義與行上下文 |
-| `cbm_trace` | 自符號追蹤入向／出向呼叫圖 |
-| `cbm_arch` | 目錄層級的元件相依總覽 |
-| `cbm_search_code` | 對已索引倉庫檔案做常規式搜尋 |
 | `veyra_code_status` | 索引狀態與記憶新鮮度報告 |
+
+其餘六個工具——`cbm_projects`、`cbm_search`、`cbm_snippet`、`cbm_trace`、`cbm_arch`、`cbm_search_code`——不是 Veyra 定義的：它們屬於 Codebase Memory 外掛，由該外掛自行註冊。
 
 ### /veyra code 指令
 
@@ -234,7 +230,7 @@ curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/i
 **變更智能**（永遠可用；無二進位時降級為路徑比對）：
 `veyra_change_impact`
 
-**代碼智慧工具**（需要 `codebase-memory-mcp` 二進位；不存在時優雅降級）：
+**代碼智慧工具**（六個 `cbm_*` 工具屬於 Codebase Memory 外掛，只有它安裝時才存在；`veyra_code_status` 在其缺席時優雅降級）：
 `cbm_projects`、`cbm_search`、`cbm_snippet`、`cbm_trace`、`cbm_arch`、`cbm_search_code`、`veyra_code_status`
 
 載入隨附的 `veyra` 技能，取得何時呼叫各工具、以及它們如何互相配合的完整指引。
@@ -243,12 +239,11 @@ curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/i
 
 ## 技能
 
-五個技能隨套件發布並自動註冊（不需另裝）：
+四個技能隨套件發布並自動註冊（不需另裝）：
 
 | 技能 | 適用時機 |
 | --- | --- |
 | `veyra` | 需要 Veyra 自身的指引：工具用法、候選／衍生／正典、因果面向、混合搜尋語意，以及「倉庫事實為準」的規則。 |
-| `codebase-memory` | 使用代碼智慧工具（`cbm_*`）時：何時優先用 `cbm_trace` 而非 grep、如何從符號走到呼叫圖、以及代碼智慧與 Veyra 記憶如何互補。 |
 | `legacy-onboarding` | 首次進入陌生或舊有倉庫：基線評估、漸進式調查深度、證據優先擷取，並建立專案記憶基線（Project Memory Baseline）。 |
 | `memory-review` | 想稽核本會話中值得保存的工程記憶：何者已記錄、何者缺失、何者看似過期或衝突。 |
 | `memory-maintenance` | 明確要求清理或維護記憶時：執行健康發現與生命週期動作（keep / supersede / invalidate / forget / tombstone / revalidate / defer），並附前後對照——健康發現本身絕非授權。 |
@@ -316,7 +311,7 @@ DSH 設定不再提供專屬的 **Veyra** 區塊——Veyra 以內建預設值�
   │  Code Intelligence  (native daemon optional — see below)                │
   │                                                                          │
   │  stdio JSON-RPC 2.0 ──► cbm_* tools ──► freshness checks ──► retrieval  │
-  │  bridge: @lovedolove/dsh-codebase-memory-mcp (declared dependency)      │
+  │  bridge: @lovedolove/dsh-codebase-memory-mcp (optional peer)            │
   │    client.mjs  engine.mjs  discovery.mjs  watcher.mjs  (in bridge pkg)  │
   │  Veyra: src/code/linking.mjs  src/code/retrieval.mjs                   │
   │                                                                          │
@@ -324,7 +319,7 @@ DSH 設定不再提供專屬的 **Veyra** 區塊——Veyra 以內建預設值�
   └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-本地圖是**派生投影，而非第二個儲存**。代碼智慧的橋接放在獨立的 `@lovedolove/dsh-codebase-memory-mcp` 套件（Veyra 的宣告執行時相依）中，透過 stdio 與外部原生 daemon 通訊；daemon 是唯一選用的部分。任何代碼智慧路徑都不會直接修改 Veyra 記憶。
+本地圖是**派生投影，而非第二個儲存**。代碼智慧的橋接放在獨立的 `@lovedolove/dsh-codebase-memory-mcp` 套件（Veyra 的選用 peer，經由 `src/cbm-bridge.mjs` 載入）中，透過 stdio 與外部原生 daemon 通訊；daemon 是唯一選用的部分。任何代碼智慧路徑都不會直接修改 Veyra 記憶。
 
 完整說明：[docs/architecture-graph.md](https://github.com/LoveDoLove/Veyra/blob/main/docs/architecture-graph.md)
 
@@ -336,7 +331,7 @@ DSH 設定不再提供專屬的 **Veyra** 區塊——Veyra 以內建預設值�
 
 **啟動時沒有 `[veyra]` 行。** 插件安裝到了與啟動時不同的 profile。`dsh plugin --profile web add …` 安裝到 `web`；啟動 `dsh tui` 就不會帶上它。同時檢查**設定 → Plugins**。
 
-**Node 版本過舊。** Veyra 需要 Node ≥ 22.5 且 < 25（`engines.node`）。它使用 `node:sqlite`，首次出現於 Node 22.5。升級 Node 後重新安裝。
+**Node 版本過舊。** Veyra 需要 Node ≥ 22.12 且 < 25（`engines.node`）。它使用 `node:sqlite`（首次出現於 Node 22.5），而 `src/cbm-bridge.mjs` 以未加旗標的 `require(esm)` 載入 CBM，那從 Node 22.12 才開始。升級 Node 後重新安裝。
 
 **「Plugin … is incompatible with dsh …」** 套件的相容範圍是 `>=0.1.2-rc.1 <0.3.0-0`。更新 DSH，或按 DSH 印出的精確版本豁免接受風險。
 
@@ -376,12 +371,12 @@ CI 在每次 push 與 pull request 時，對 Node 22 與 24 兩者皆執行（[`
 | | |
 | --- | --- |
 | 目前版本 | `0.2.0` |
-| Node | `>=22.5.0 <25.0.0` |
+| Node | `>=22.12.0 <25.0.0` |
 | DSH | `>=0.1.2-rc.1 <0.3.0-0` |
 | 驗證於 | DSH `0.1.7-rc.2`（插件啟動、工具、`/veyra` ＋ `/veyra/graph`）；DSH `0.2.0-rc.1`（真實相容閘＋組合成 host-service 執行期）；DSH `0.2.0-rc.2`（組合成 host-service 執行期＋對照已宣告範圍的真實 `ToolRuntime` 工具輸出驗證）；DSH `0.2.2-rc.1`（工具執行器與 settings/prompt 效果處理的測試／執行期組裝相容修正；見 CHANGELOG）；CI 於 Node 22 與 24 |
 | Profiles | 依 profile 安裝（`web`、`tui`、…）；網路圖需要 web 表面 |
 | 儲存 | `node:sqlite` ＋ FTS5；每個工作區記憶房一個 DB，位於 `$DSH_HOME/veyra/rooms/<roomId>/`，另有一個共享的 `central/memory.db`。0.2.0 之前的 per-project DB 原樣留在磁碟上、不被讀取 |
-| 代碼智慧 | 橋接以執行時相依 `@lovedolove/dsh-codebase-memory-mcp` 宣告；外部 `codebase-memory-mcp` 原生 daemon 為選用——daemon 缺席時代碼智慧降級，記憶層不受影響（二進位：MIT、DeusData；橋接：MIT、LoveDoLove） |
+| 代碼智慧 | 沒有必要的執行時相依。`@lovedolove/dsh-codebase-memory-mcp` 是**選用 peer**（宣告於 [`package.json`](package.json)），由 `src/cbm-bridge.mjs` 於執行時解析；這項降級不會卸載它。外部 `codebase-memory-mcp` 原生 daemon 同樣為選用——daemon 缺席時代碼智慧降級，記憶層不受影響（二進位：MIT、DeusData；橋接：MIT、LoveDoLove） |
 | 授權 | MIT |
 
 Veyra 處於 1.0 之前的 `0.2.x` 線——已發布的內容見 [CHANGELOG](https://github.com/LoveDoLove/Veyra/blob/main/CHANGELOG.md)。API 與指令表面仍可能在次版之間變動。

@@ -63,10 +63,11 @@ recall failures must never break the agent loop.
 **Secrets are redacted before persistence.** Every write path goes through
 `src/redact.mjs`. Never add a write path that bypasses it.
 
-**CBM stays a dependency, not a copy.** Code Intelligence bridge internals
-(discovery, client, engine, watcher, `cbm_*` tool definitions) belong to
-`@lovedolove/dsh-codebase-memory-mcp`. Do not re-implement or vendor them into
-`src/`. See [CBM integration](docs/agent-guides/cbm-integration.md).
+**CBM stays a separate package.** Veyra loads it through
+`src/cbm-bridge.mjs`, which is the only file naming the specifier and which
+degrades to a frozen stub when the package is absent. Do not copy bridge
+internals into `src/`, and do not register `cbm_*` tools — those belong to
+the Codebase Memory plugin.
 
 **Settings belong to Veyra.** Veyra configuration is owned by Veyra's
 `Config`/`client.js`. Do not work around Veyra problems by editing DSH core,

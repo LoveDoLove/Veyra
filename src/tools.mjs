@@ -1,7 +1,7 @@
 /**
  * Veyra — DSH tools.
  *
- * Eight model-facing tools:
+ * Eleven model-facing tools:
  *   veyra_remember  — keep durable engineering knowledge or RAG knowledge
  *   veyra_recall    — unified hybrid search beyond automatic context
  *   veyra_inspect   — read one record with deep provenance, causal facets, relations
@@ -13,6 +13,13 @@
  *                     optionally gate a remedy-consistent cluster into a candidate
  *   veyra_health    — §21: read-only memory-health categories & maintenance
  *                     findings; never mutates authority or records
+ *   veyra_code_status     — freshness of Code Intelligence for a repository;
+ *                           reports degraded when the bridge is absent
+ *   veyra_change_impact   — which memories a code change may affect
+ *   veyra_stale_ledger    — review ledger of memories whose anchors no longer resolve
+ *
+ * The six `cbm_*` tools are not defined here: they belong to the Codebase
+ * Memory plugin, which registers them from its own `apply()`.
  *
  * Registered through `@deepseek-ai/dsh-tools` `defineTool` when the peer
  * is available. Falls back to a duck-typed definition so unit tests and

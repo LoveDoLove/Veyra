@@ -40,12 +40,12 @@ A **room is a DSH `WorkspaceId`, not a path.** Two workspaces opened on the same
 - **Automatic learning.** Veyra watches the agent work and distills durable cues — what was attempted, what failed, what finally passed, which files genuinely changed — into an *observation*. A governed learning gate then decides whether that observation earned promotion to a `derived` memory. Nothing is learned from a turn that produced no durable engineering cue, and a memory is never stamped `verified` from a record that merely claims success.
 - **Automatic recall.** At the start of a turn Veyra retrieves the records relevant to the prompt and injects them as a compact block, with the trust state of each. The agent does not have to ask, and it is told explicitly when a recalled memory needs review because the code it describes has moved. Learning and recall can each be disabled independently; both are on by default.
 - **Hybrid search.** One query, several signals: FTS5 BM25 + symbol/path boosts, token-level semantic overlap, intent affinity (why / how / what-changed), and relationship graph cohesion — with a transparent score breakdown. A `goal` argument steers ranking toward work you are pursuing (a direction, never an authority).
-- **Code Intelligence.** When `codebase-memory-mcp` is installed, seven agent tools give structural call-graph tracing, AST-level symbol search, file/component architecture summaries, and code-grounded search. When it is not installed, Veyra Memory runs normally without interruption.
+- **Code Intelligence.** When the Codebase Memory plugin is installed, its six `cbm_*` tools give structural call-graph tracing, AST-level symbol search, file/component architecture summaries, and code-grounded search, alongside Veyra's own `veyra_code_status` and `veyra_change_impact`. When that plugin is absent, Veyra still loads and its memory features run without interruption; Code Intelligence simply reports itself unavailable.
 - **Memory freshness and trust.** Code Intelligence watches changed files, flags memories whose evidence anchors point to modified or deleted code, and applies retrieval penalties to stale records. At read time every recalled record is classified `trusted / review_required / stale / contradicted / insufficient_evidence` with reasons and an action — a projection only; it never writes, and never changes a record's authority or validation.
 - **Change intelligence.** Repository changes reach the agent context automatically — a change summary leads the recall block, with the trust impact of that recall — and `veyra_change_impact` analyzes an explicit set of changed files: affected memories, affected evidence anchors, optional review candidates, per-category summary counts. Candidates are never auto-promoted to canonical.
 - **Health and maintenance.** `veyra_health` and `/veyra health` report memory-health findings read-only, plus write-gate accounting — how many learning decisions were accepted, merged, dropped or deferred, and why; the bundled `memory-maintenance` skill applies lifecycle actions (keep / supersede / invalidate / forget / tombstone / revalidate / defer) only on explicit request, with safety limits and before/after reporting.
 - **Human surfaces.** `/veyra` slash commands, a read-only Knowledge Observatory, and an interactive Network Graph at `/veyra` in DSH Web.
-- **Declared runtime dependency.** Veyra declares `@lovedolove/dsh-codebase-memory-mcp` in [`package.json`](package.json) for the standalone Codebase Memory bridge package, which drives the external native daemon. Veyra’s own source is ESM with no other runtime npm dependencies; the package is ~263 kB packed.
+- **Optional peer, not a dependency.** Veyra lists `@lovedolove/dsh-codebase-memory-mcp` as an **optional peer** in [`package.json`](package.json) and loads it through `src/cbm-bridge.mjs`, which degrades to a frozen stub when the package is absent. That demotion buys *load safety*, not removal: pnpm installs optional peers by default, so a profile that has CBM keeps it. Veyra’s own source is ESM with no required runtime npm dependency; the package is ~263 kB packed.
 
 ---
 
@@ -127,11 +127,12 @@ Code Intelligence is a structural layer that connects Veyra to the external
 daemon. The bridge code — repository discovery, the graph client, the
 code-intelligence engine, the watcher, and the `cbm_*` tool definitions —
 lives in the standalone [`@lovedolove/dsh-codebase-memory-mcp`](https://www.npmjs.com/package/@lovedolove/dsh-codebase-memory-mcp)
-package, which Veyra declares as a runtime dependency in [`package.json`](package.json). Veyra itself
-ships no native binary and no bridge internals: it re-exposes the six
-`cbm_*` tools plus `veyra_code_status` / `veyra_change_impact`, and keeps
-only `src/code/linking.mjs` (evidence-anchor ↔ code freshness) and
-`src/code/retrieval.mjs` (the unified pipeline) in its own tree. Details of
+package, which Veyra declares as an **optional peer** in [`package.json`](package.json). Veyra itself
+ships no native binary and no bridge internals: it registers no `cbm_*` tool
+at all (the six belong to the Codebase Memory plugin), keeps only
+`src/code/linking.mjs` (evidence-anchor ↔ code freshness) and
+`src/code/retrieval.mjs` (the unified pipeline) in its own tree, and reaches
+the bridge through `src/cbm-bridge.mjs`. Details of
 the bridge, its install flow, and the native daemon are documented in that
 package's own README, not duplicated here.
 
@@ -150,7 +151,7 @@ Or set `CBM_EXE=/path/to/codebase-memory-mcp` to point to a pre-existing binary.
 
 ### When the binary is absent
 
-Code Intelligence enters **degraded mode**: all six `cbm_*` tools and `veyra_code_status` return a structured error with installation guidance. All Veyra Memory tools, Observatory, slash commands, and hybrid search continue working without any interruption.
+Code Intelligence enters **degraded mode**: the six `cbm_*` tools are simply not registered, because they belong to the Codebase Memory plugin and that plugin is not loaded, and `veyra_code_status` returns a structured error with installation guidance. All Veyra Memory tools, Observatory, slash commands, and hybrid search continue working without any interruption.
 
 ### What Code Intelligence provides
 
@@ -245,7 +246,7 @@ Neither brain replaces the other.
 **Change intelligence** (always available; degrades to path matching without the binary):
 `veyra_change_impact`
 
-**Code Intelligence tools** (require `codebase-memory-mcp` binary; degrade gracefully when absent):
+**Code Intelligence tools** (the six `cbm_*` tools belong to the Codebase Memory plugin and only exist when it is installed; `veyra_code_status` degrades gracefully when absent):
 `cbm_projects`, `cbm_search`, `cbm_snippet`, `cbm_trace`, `cbm_arch`, `cbm_search_code`, `veyra_code_status`
 
 Load the bundled `veyra` skill for full guidance on when to call each tool and how they interact.
@@ -254,12 +255,11 @@ Load the bundled `veyra` skill for full guidance on when to call each tool and h
 
 ## Skills
 
-Five skills ship inside the package and register automatically (no separate install):
+Four skills ship inside the package and register automatically (no separate install):
 
 | Skill | Use it when |
 | --- | --- |
 | `veyra` | You need Veyra's own guidance: tool usage, candidate/derived/canonical, causal facets, hybrid search semantics, and the rule that repo truth wins. |
-| `codebase-memory` | You are using Code Intelligence tools (`cbm_*`): when to prefer `cbm_trace` vs. grep, how to navigate from a symbol to its call graph, and how Code Intelligence and Veyra Memory complement each other. |
 | `legacy-onboarding` | First entry into an unfamiliar or legacy repo: baseline assessment, progressive investigation depth, evidence-first extraction, and building a Project Memory Baseline. |
 | `memory-review` | You want to audit this conversation for durable engineering memory: what is already recorded, what is missing, what looks stale or conflicting. |
 | `memory-maintenance` | You explicitly ask to clean up or maintain memory: runs the health findings and lifecycle actions (keep / supersede / invalidate / forget / tombstone / revalidate / defer) with before/after reporting — health findings alone are never authorization. |
@@ -324,7 +324,7 @@ Veyra works automatically with built-in defaults and needs no configuration. The
   │  Code Intelligence  (native daemon optional — see below)               │
   │                                                                          │
   │  stdio JSON-RPC 2.0 ──► cbm_* tools ──► freshness checks ──► retrieval │
-  │  bridge: @lovedolove/dsh-codebase-memory-mcp (declared dependency)      │
+  │  bridge: @lovedolove/dsh-codebase-memory-mcp (optional peer)           │
   │    client.mjs  engine.mjs  discovery.mjs  watcher.mjs  (in bridge pkg)  │
   │  Veyra: src/code/linking.mjs  src/code/retrieval.mjs                   │
   │                                                                          │
@@ -332,7 +332,7 @@ Veyra works automatically with built-in defaults and needs no configuration. The
   └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-The local graph is a **derived projection, not a second store**. The Code Intelligence bridge ships in the standalone `@lovedolove/dsh-codebase-memory-mcp` package (a declared runtime dependency of Veyra) and communicates with the external native daemon over stdio; that daemon is the only optional piece. No Code Intelligence path modifies Veyra Memory directly.
+The local graph is a **derived projection, not a second store**. The Code Intelligence bridge ships in the standalone `@lovedolove/dsh-codebase-memory-mcp` package (an optional peer of Veyra, loaded through `src/cbm-bridge.mjs`) and communicates with the external native daemon over stdio; that daemon is the only optional piece. No Code Intelligence path modifies Veyra Memory directly.
 
 Full write-up: [docs/architecture-graph.md](https://github.com/LoveDoLove/Veyra/blob/main/docs/architecture-graph.md)
 
@@ -344,7 +344,7 @@ Design rationale and a guided tour of every mechanism: the [technical whitepaper
 
 **No `[veyra]` lines at boot.** The plugin was installed into a different profile than the one you booted. `dsh plugin --profile web add …` installs into `web`; booting `dsh tui` will not have it. Also check **Settings → Plugins**.
 
-**Node is too old.** Veyra requires Node ≥ 22.5 and < 25 (`engines.node`). It uses `node:sqlite`, which first shipped in Node 22.5. Upgrade Node, then reinstall.
+**Node is too old.** Veyra requires Node ≥ 22.12 and < 25 (`engines.node`). It uses `node:sqlite`, which first shipped in Node 22.5, and `src/cbm-bridge.mjs` loads CBM with an unflagged `require(esm)`, which starts at Node 22.12. Upgrade Node, then reinstall.
 
 **"Plugin … is incompatible with dsh …"** The package's compatibility range is `>=0.1.2-rc.1 <0.3.0-0`. Update DSH, or accept the risk with the exact-version exemption DSH prints.
 
@@ -383,12 +383,12 @@ Because staging is not publishing, the package returns **HTTP 404 from the regis
 
 | | |
 | --- | --- |
-| Node | `>=22.5.0 <25.0.0` |
+| Node | `>=22.12.0 <25.0.0` |
 | DSH | `>=0.1.2-rc.1 <0.3.0-0` |
 | Verified on  | DSH `0.1.7-rc.2` (plugin boot, tools, `/veyra` + `/veyra/graph`); DSH `0.2.0-rc.1` (real compatibility gate + composed-host-service runtime); DSH `0.2.0-rc.2` (composed host-service runtime + real `ToolRuntime` tool-output validation against the declared range); DSH `0.2.2-rc.1` (test/runtime composition compatibility fixes for tool-executor and settings/prompt effect handling; see [CHANGELOG.md](CHANGELOG.md)); CI on Node 22 and 24 |
 | Profiles | Installed per profile (`web`, `tui`, …); the Network Graph requires the web surface |
 | Storage | `node:sqlite` + FTS5; one DB per workspace room under `$DSH_HOME/veyra/rooms/`, one shared `central/memory.db`. The pre-rooms per-project DBs sit on disk unread |
-| Runtime dependency | `@lovedolove/dsh-codebase-memory-mcp` (declared in [`package.json`](package.json)); the external `codebase-memory-mcp` native daemon remains optional — Code Intelligence degrades gracefully, the memory layer is unaffected (binary: MIT, DeusData; bridge: MIT, LoveDoLove) |
+| Runtime dependency | None required. `@lovedolove/dsh-codebase-memory-mcp` is an **optional peer** (declared in [`package.json`](package.json)) that `src/cbm-bridge.mjs` resolves at runtime; demoting it does not uninstall it. The external `codebase-memory-mcp` native daemon remains optional too — Code Intelligence degrades gracefully, the memory layer is unaffected (binary: MIT, DeusData; bridge: MIT, LoveDoLove) |
 | License | MIT |
 
 Veyra is on a pre-1.0 `0.2.x` line — see the [CHANGELOG](https://github.com/LoveDoLove/Veyra/blob/main/CHANGELOG.md) for what shipped. APIs and command surface may still change between minor versions.

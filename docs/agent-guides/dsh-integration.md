@@ -10,9 +10,9 @@ registered there or delegated from there.
 | --- | --- | --- |
 | `systemPrompt.section` | `registerPrompt` | Static `GUIDANCE_TEXT` — memory is not repository truth |
 | `systemPrompt.context` | `registerPrompt` | Per-turn automatic recall via `createContextProvider(runtime)` |
-| `ctx.tools.register` | `registerTools` | 17 tools: eleven `veyra_*` plus six `cbm_*` from the bridge factory |
+| `ctx.tools.register` | `registerTools` | 11 tools: ten `veyra_*` plus `veyra_code_status` |
 | `ctx.commands.register` | `registerCommand` | The `/veyra` slash command |
-| `ctx.skills.registerProvider` (fallback `register`) | `registerSkills` | Five bundled skills at rank 600 |
+| `ctx.skills.registerProvider` (fallback `register`) | `registerSkills` | Four bundled skills at rank 600 |
 | `ctx.webServer.register` | `registerWebUi` | `/veyra` HTTP prefix, GET-only |
 | `session/event` | `plugin.mjs` | Observation buffer; compaction checkpoint recovery |
 | `agent/inbox/claimed` | `plugin.mjs` | Remembers the claimed prompt as recall query context |
@@ -54,12 +54,12 @@ Accepted `config:` keys (defaults shown) are documented in `plugin.mjs`:
 
 ## Tools
 
-`buildToolDefinitions` in `src/tools.mjs` returns 16 definitions: ten Veyra
-tools — `veyra_remember`, `veyra_recall`, `veyra_inspect`, `veyra_forget`,
+`buildToolDefinitions` in `src/tools.mjs` returns 11 definitions, all of them
+Veyra's own: `veyra_remember`, `veyra_recall`, `veyra_inspect`, `veyra_forget`,
 `veyra_promote`, `veyra_feedback`, `veyra_recurrence`, `veyra_health`,
-`veyra_code_status`, `veyra_change_impact` — and six `cbm_*` definitions
-obtained from `createCbmToolDefinitions(runtime)` in the bridge package (see
-[CBM integration](./cbm-integration.md)).
+`veyra_code_status`, `veyra_change_impact`, and `veyra_stale_ledger`. The six
+`cbm_*` tools are registered by the Codebase Memory plugin's own `apply()`, not
+by Veyra (see [CBM integration](./cbm-integration.md)).
 
 Two schema rules matter:
 
@@ -84,7 +84,7 @@ subcommands read-only.
 
 `skills/<name>/SKILL.md` frontmatter is the source of truth.
 `BUNDLED_SKILL_DEFINITIONS` in `src/skills.mjs` must stay in parity — a test
-asserts it for all five skills. When adding or changing a skill, update both.
+asserts it for every bundled skill. When adding or changing a skill, update both.
 
 ## Settings and the browser half
 
