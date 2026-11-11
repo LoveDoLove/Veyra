@@ -67,12 +67,6 @@ test('plugin lifecycle initializes code engine, registers tools, and disposes cl
     await new Promise((r) => setTimeout(r, 20))
 
     const toolNames = tools.map((t) => t.name)
-    assert.ok(toolNames.includes('cbm_projects'), 'registered cbm_projects')
-    assert.ok(toolNames.includes('cbm_search'), 'registered cbm_search')
-    assert.ok(toolNames.includes('cbm_snippet'), 'registered cbm_snippet')
-    assert.ok(toolNames.includes('cbm_trace'), 'registered cbm_trace')
-    assert.ok(toolNames.includes('cbm_arch'), 'registered cbm_arch')
-    assert.ok(toolNames.includes('cbm_search_code'), 'registered cbm_search_code')
     assert.ok(toolNames.includes('veyra_code_status'), 'registered veyra_code_status')
 
     assert.ok(sections.some((s) => s.name === 'veyra:guidance' && s.text.includes('Codebase Memory')))

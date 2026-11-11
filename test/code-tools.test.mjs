@@ -8,20 +8,15 @@ import { closeAllStores } from '../src/store.mjs'
 import { AUTHORITIES, CONFIDENCES, KINDS, VALIDATIONS } from '../src/types.mjs'
 import { agentFor, roomIdFor, roomStore, testHome, testRuntime } from './helpers/room.mjs'
 
-test('buildToolDefinitions includes all 7 code intelligence tools with valid schemas', (t) => {
+test('buildToolDefinitions includes veyra_code_status with a valid schema', (t) => {
   const runtime = testRuntime(testHome(t, 'veyra-tools-home-'), process.cwd(), {
     codeEngine: new CodeIntelligenceEngine({ exePath: '/nonexistent/bin' }),
   })
   const tools = buildToolDefinitions(runtime)
-  const toolNames = tools.map((t) => t.name)
 
-  assert.ok(toolNames.includes('cbm_projects'))
-  assert.ok(toolNames.includes('cbm_search'))
-  assert.ok(toolNames.includes('cbm_snippet'))
-  assert.ok(toolNames.includes('cbm_trace'))
-  assert.ok(toolNames.includes('cbm_arch'))
-  assert.ok(toolNames.includes('cbm_search_code'))
-  assert.ok(toolNames.includes('veyra_code_status'))
+  assert.equal(tools.length, 11)
+  assert.deepEqual(tools.filter((d) => d.name.startsWith('cbm_')), [])
+  assert.ok(tools.some((d) => d.name === 'veyra_code_status'))
 
   for (const tool of tools) {
     assert.ok(tool.name, 'tool has name')
@@ -34,45 +29,6 @@ test('buildToolDefinitions includes all 7 code intelligence tools with valid sch
       assert.equal(raw.type, 'object')
     }
   }
-})
-
-test('code intelligence tools return graceful degraded status when engine is offline', async (t) => {
-  const runtime = testRuntime(testHome(t, 'veyra-tools-home-'), process.cwd(), {
-    codeEngine: new CodeIntelligenceEngine({ exePath: '/nonexistent/bin' }),
-  })
-  const tools = new Map(buildToolDefinitions(runtime).map((t) => [t.name, t]))
-
-  const projectsTool = tools.get('cbm_projects')
-  const projectsRes = await projectsTool.execute({ reason: 'testing' }, {})
-  assert.equal(projectsRes.ok, false)
-  assert.equal(projectsRes.degraded, true)
-  const renderedProjects = projectsTool.output.render({}, projectsRes)
-  assert.match(renderedProjects[0].text, /Code Intelligence Degraded/)
-
-  const searchTool = tools.get('cbm_search')
-  const searchRes = await searchTool.execute({ name_pattern: 'auth' }, {})
-  assert.equal(searchRes.ok, false)
-  assert.equal(searchRes.degraded, true)
-
-  const snippetTool = tools.get('cbm_snippet')
-  const snippetRes = await snippetTool.execute({ qualified_name: 'foo.bar' }, {})
-  assert.equal(snippetRes.ok, false)
-  assert.equal(snippetRes.degraded, true)
-
-  const traceTool = tools.get('cbm_trace')
-  const traceRes = await traceTool.execute({ symbol: 'login' }, {})
-  assert.equal(traceRes.ok, false)
-  assert.equal(traceRes.degraded, true)
-
-  const archTool = tools.get('cbm_arch')
-  const archRes = await archTool.execute({ directory: 'src' }, {})
-  assert.equal(archRes.ok, false)
-  assert.equal(archRes.degraded, true)
-
-  const searchCodeTool = tools.get('cbm_search_code')
-  const searchCodeRes = await searchCodeTool.execute({ query: 'function' }, {})
-  assert.equal(searchCodeRes.ok, false)
-  assert.equal(searchCodeRes.degraded, true)
 })
 
 test('veyra_code_status inspects memory freshness against repository workspace', async (t) => {
@@ -196,52 +152,6 @@ test('veyra_code_status raw output is lossless JSON when engine has no message f
     // Render still works for both shapes.
     assert.ok(statusTool.output.render({}, raw)[0].text.includes('not_indexed'))
     assert.ok(statusTool.output.render({}, degraded)[0].text.includes('degraded'))
-  } finally {
-    closeAllStores()
-    rmSync(tmpRepo, { recursive: true, force: true })
-  }
-})
-
-test('cbm_projects render uses value.raw text, not value.projects array', async (t) => {
-  const tmpHome = testHome(t, 'veyra-cbm-projects-')
-  try {
-    // Simulate upstream MCP returning project-list text in raw field
-    const engine = new CodeIntelligenceEngine({ exePath: '/nonexistent/bin' })
-    engine.listProjects = async () => ({ ok: true, raw: 'projects:\n  - home-user-myrepo\n  - home-user-another' })
-
-    const runtime = testRuntime(tmpHome, process.cwd(), { codeEngine: engine })
-    const tools = new Map(buildToolDefinitions(runtime).map((t) => [t.name, t]))
-    const projectsTool = tools.get('cbm_projects')
-    const result = await projectsTool.execute({ reason: 'test' }, {})
-
-    assert.equal(result.ok, true)
-    assert.ok(result.raw)
-    const rendered = projectsTool.output.render({}, result)
-    assert.match(rendered[0].text, /home-user-myrepo/, 'render should surface the raw project list text')
-    assert.match(rendered[0].text, /home-user-another/)
-  } finally {
-    closeAllStores()
-  }
-})
-
-test('cbm_arch render uses value.overview, not value.raw', async (t) => {
-  const tmpHome = testHome(t, 'veyra-cbm-arch-')
-  const tmpRepo = testHome(t, 'veyra-cbm-arch-repo-')
-  try {
-    // Simulate engine returning overview field (the real engine behavior)
-    const engine = new CodeIntelligenceEngine({ exePath: '/nonexistent/bin' })
-    engine.getArchitecture = async () => ({ ok: true, overview: 'Key components:\n- src/main.js: entry point\n- src/lib/: shared utilities' })
-
-    const runtime = testRuntime(tmpHome, tmpRepo, { codeEngine: engine })
-    const tools = new Map(buildToolDefinitions(runtime).map((t) => [t.name, t]))
-    const archTool = tools.get('cbm_arch')
-    const result = await archTool.execute({ repo: tmpRepo }, { agent: agentFor(tmpRepo) })
-
-    assert.equal(result.ok, true)
-    assert.ok(result.overview)
-    const rendered = archTool.output.render({}, result)
-    assert.match(rendered[0].text, /Key components/, 'render should surface the overview field')
-    assert.match(rendered[0].text, /src\/main\.js/)
   } finally {
     closeAllStores()
     rmSync(tmpRepo, { recursive: true, force: true })

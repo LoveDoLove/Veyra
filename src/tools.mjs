@@ -42,9 +42,6 @@ import { detectRecurrence, eligibleForCandidate, recordFeedback, recurrenceCandi
 import { memoryHealth, renderHealth } from './health.mjs'
 import { readGenerationEvidence, summarizeGenerationEvidence, recordExplicitOutcomeLink } from './apply-generation-evidence.mjs'
 import { checkRecordFreshness, checkAnchorFreshness, extractAnchorsFromRecord, findAffectedMemories, buildStaleReviewCandidate } from './code/linking.mjs'
-// `createCbmToolDefinitions` is bound below from the bridge rather than imported
-// from the package: Task 5 deletes the `...createCbmToolDefinitions(runtime)`
-// splice, but until then the name must stay reachable from this module.
 import { cbm, createDegradedEngine, resolveRepoPath } from './cbm-bridge.mjs'
 import { classifyRecordTrust, TRUST_CATEGORIES } from './trust.mjs'
 import { annotateContradictions } from './evolve.mjs'
@@ -803,7 +800,6 @@ export function buildToolDefinitions(runtime) {
       },
       presentCall: (args) => ({ card: 'generic', title: 'Memory health', kind: 'other', rawInput: `failure threshold ${args.failureThreshold ?? 2}` }),
     },
-    ...(typeof cbm.createCbmToolDefinitions === 'function' ? cbm.createCbmToolDefinitions(runtime) : []),
     {
       name: 'veyra_code_status',
       description: 'Inspect Veyra repository code index status, freshness, and affected memories.',

@@ -92,16 +92,11 @@ test('plugin apply completes and registers tools with a degraded engine', async 
     assert.equal(typeof def.execute, 'function', `${def.name} must carry an execute`)
   }
 
-  // These six belong to the CBM factory while the migration is mid-flight; Task
-  // 5 deletes the splice that adds them. Pin only what is true on both sides:
-  // a cbm_* name may only ever come from the bridge, never be invented here.
-  const bridgeNames = typeof cbm.createCbmToolDefinitions === 'function'
-    ? cbm.createCbmToolDefinitions({}).map((d) => d.name)
-    : []
-  for (const def of tools.filter((d) => d.name.startsWith('cbm_'))) {
-    assert.ok(bridgeNames.includes(def.name),
-      `${def.name} is not a definition the CBM bridge supplies`)
-  }
+  // The six cbm_* tools belong to the Codebase Memory plugin, which registers
+  // them itself. Veyra must register none of them: a cbm_* name here would be
+  // a duplicate registration on any host that also installs that plugin.
+  assert.deepEqual(tools.filter((d) => d.name.startsWith('cbm_')).map((d) => d.name), [],
+    'Veyra must not register any cbm_* tool')
 
   dispose?.()
 })

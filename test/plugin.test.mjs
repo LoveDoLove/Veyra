@@ -118,7 +118,7 @@ function assertSupportedLikeDsh(schema, path = 'schema') {
 
 test('output schemas are DSH-registerable without defineTool compilation', () => {
   const defs = buildToolDefinitions({ veyraHome: '/tmp', fallbackCwd: '/tmp', recallLimit: 5 })
-  assert.equal(defs.length, 17)
+  assert.equal(defs.length, 11) // 10 veyra_* + veyra_code_status; cbm_* belongs to the CBM plugin
   const official = loadAssertSupportedJsonSchema()
   for (const def of defs) {
     assertSupportedLikeDsh(def.output.schema)
@@ -174,12 +174,6 @@ test('registerTools keeps going when one tool fails DSH schema checks', async ()
     'veyra_feedback',
     'veyra_recurrence',
     'veyra_health',
-    'cbm_projects',
-    'cbm_search',
-    'cbm_snippet',
-    'cbm_trace',
-    'cbm_arch',
-    'cbm_search_code',
     'veyra_code_status',
     'veyra_change_impact',
     'veyra_stale_ledger',
