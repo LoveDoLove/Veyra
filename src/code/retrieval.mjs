@@ -16,7 +16,21 @@
 
 import { hybridRetrieve } from '../retrieve.mjs'
 import { checkRecordFreshness } from './linking.mjs'
-import { FRESHNESS_STATUS, sanitizeCodeContent } from '@lovedolove/dsh-codebase-memory-mcp'
+import { CODE_FRESHNESS } from '../types.mjs'
+import { cbm } from '../cbm-bridge.mjs'
+import { scrub } from '../redact.mjs'
+
+/**
+ * CBM's `sanitizeCodeContent` scrubs secrets out of raw code text. Without the
+ * bridge the same pass must still happen, so it falls back to Veyra's own
+ * scrubber — which returns `{ clean, scrubbed, … }`, not a string, hence
+ * `.scrubbed`. The `typeof` guard mirrors the upstream function's opening
+ * `if (typeof content !== 'string') return ''`, so a null/non-string result
+ * degrades to an empty string instead of changing shape.
+ */
+const sanitizeCode = typeof cbm.sanitizeCodeContent === 'function'
+  ? cbm.sanitizeCodeContent
+  : (text) => (typeof text === 'string' ? scrub(text).scrubbed : '')
 
 /**
  * Execute a unified search across Code Intelligence and Engineering Memory.
@@ -53,7 +67,7 @@ export async function unifiedRetrieve({
 
       // Evaluate code anchor freshness for each memory hit
       for (const hit of memoryHits) {
-        let freshness = { status: FRESHNESS_STATUS.FRESH, anchors: [] }
+        let freshness = { status: CODE_FRESHNESS.FRESH, anchors: [] }
         if (repoRoot) {
           freshness = checkRecordFreshness(hit, repoRoot)
         }
@@ -65,13 +79,13 @@ export async function unifiedRetrieve({
         }
 
         // Freshness penalty for ranking if stale or invalid
-        if (freshness.status === FRESHNESS_STATUS.POTENTIALLY_STALE) {
+        if (freshness.status === CODE_FRESHNESS.POTENTIALLY_STALE) {
           enrichedHit.scores = {
             ...enrichedHit.scores,
             freshness_penalty: 0.15,
             composite: Math.max(0, Number((enrichedHit.scores.composite - 0.15).toFixed(4))),
           }
-        } else if (freshness.status === FRESHNESS_STATUS.INVALID) {
+        } else if (freshness.status === CODE_FRESHNESS.INVALID) {
           enrichedHit.scores = {
             ...enrichedHit.scores,
             freshness_penalty: 0.35,
@@ -82,7 +96,7 @@ export async function unifiedRetrieve({
         result.memories.push(enrichedHit)
 
         // Flag discrepancies if evidence is invalid or stale
-        if (freshness.status === FRESHNESS_STATUS.INVALID) {
+        if (freshness.status === CODE_FRESHNESS.INVALID) {
           result.contradictions.push({
             type: 'invalid_code_evidence',
             memoryId: hit.id,
@@ -123,7 +137,7 @@ export async function unifiedRetrieve({
         if (textRes.ok && textRes.results) {
           result.code.push({
             type: 'code_text',
-            results: sanitizeCodeContent(textRes.results),
+            results: sanitizeCode(textRes.results),
           })
         }
       } catch (err) {
@@ -170,7 +184,7 @@ export function formatUnifiedForPrompt(unifiedResult) {
   if (unifiedResult.memories.length > 0) {
     sections.push('### Veyra Engineering Memory (Contextual / Historical)')
     for (const m of unifiedResult.memories) {
-      const freshnessTag = m.freshness && m.freshness !== FRESHNESS_STATUS.FRESH ? ` [${m.freshness.toUpperCase()}]` : ''
+      const freshnessTag = m.freshness && m.freshness !== CODE_FRESHNESS.FRESH ? ` [${m.freshness.toUpperCase()}]` : ''
       const line = `- [${m.id}] (${m.scope}/${m.status}/${m.validation}/${m.confidence})${freshnessTag} ${m.title}\n  ${m.body}`
       sections.push(line)
     }

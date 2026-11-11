@@ -24,3 +24,84 @@ test('createCodeAnchor still refuses an out-of-repo path', async () => {
     /escapes repository boundary/,
   )
 })
+
+test('exactly one file under src/ names the codebase memory package', async () => {
+  const { readdirSync, readFileSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const root = new URL('../src/', import.meta.url).pathname
+  const offenders = []
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) { walk(full); continue }
+      if (!entry.name.endsWith('.mjs')) continue
+      if (readFileSync(full, 'utf8').includes('@lovedolove/dsh-codebase-memory-mcp')) {
+        offenders.push(full.slice(root.length))
+      }
+    }
+  }
+  walk(root)
+  assert.deepEqual(offenders, ['cbm-bridge.mjs'])
+})
+
+test('plugin apply completes and registers tools with a degraded engine', async (t) => {
+  // test/helpers/ holds only dsh.mjs, eval-output.mjs, room.mjs — there is no
+  // shared plugin mock. plugin.test.mjs, loop.test.mjs and the three
+  // turn-stopping tests each redefine mockCtx() locally; this file follows the
+  // same convention with only the members apply() touches.
+  const { apply } = await import('../src/plugin.mjs')
+  const { cbm, createDegradedEngine } = await import('../src/cbm-bridge.mjs')
+  const { testHome } = await import('./helpers/room.mjs')
+  const tools = []
+  const sections = []
+  const contexts = []
+  const ctx = {
+    tools: { register: (def) => tools.push(def) },
+    commands: { register: () => {} },
+    skills: { register: () => {}, registerProvider: () => () => {} },
+    systemPrompt: { section: (s) => sections.push(s), context: (c) => contexts.push(c) },
+    on: () => () => {},
+    effect: (factory) => factory(),
+    logger: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} },
+  }
+  // A missing binary is what makes the engine degraded for certain
+  // (`isDegraded === true`, `client.isAvailable === false`); leaving
+  // `codebaseMemoryBin` unset does NOT, because the real engine falls back to
+  // discovering an installed binary on PATH. Assert that premise rather than
+  // assuming it, so this test keeps its meaning once the bridge stops loading
+  // and createDegradedEngine() supplies the engine instead.
+  const noopLog = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} }
+  const premise = typeof cbm.CodeIntelligenceEngine === 'function'
+    ? new cbm.CodeIntelligenceEngine({ exePath: '/nonexistent/cbm-binary-for-test', log: noopLog })
+    : createDegradedEngine()
+  assert.equal(premise.isDegraded, true, 'a missing binary must leave the engine degraded')
+  premise.dispose?.()
+
+  const dispose = apply(ctx, {
+    home: testHome(t),
+    observe: true,
+    codebaseMemoryBin: '/nonexistent/cbm-binary-for-test',
+  })
+  // Tools register asynchronously: registerTools() awaits a dynamic
+  // `import('@deepseek-ai/dsh-tools')` before the first ctx.tools.register call.
+  await new Promise((r) => setTimeout(r, 50))
+
+  assert.ok(tools.some((d) => d.name === 'veyra_recall'), 'veyra_recall must register')
+  assert.ok(tools.some((d) => d.name === 'veyra_code_status'), 'veyra_code_status must register')
+  for (const def of tools) {
+    assert.equal(typeof def.execute, 'function', `${def.name} must carry an execute`)
+  }
+
+  // These six belong to the CBM factory while the migration is mid-flight; Task
+  // 5 deletes the splice that adds them. Pin only what is true on both sides:
+  // a cbm_* name may only ever come from the bridge, never be invented here.
+  const bridgeNames = typeof cbm.createCbmToolDefinitions === 'function'
+    ? cbm.createCbmToolDefinitions({}).map((d) => d.name)
+    : []
+  for (const def of tools.filter((d) => d.name.startsWith('cbm_'))) {
+    assert.ok(bridgeNames.includes(def.name),
+      `${def.name} is not a definition the CBM bridge supplies`)
+  }
+
+  dispose?.()
+})

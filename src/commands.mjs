@@ -6,7 +6,7 @@
  */
 
 import { readFileSync } from 'node:fs'
-import { AUTHORITIES, KINDS, VALIDATIONS } from './types.mjs'
+import { AUTHORITIES, CODE_FRESHNESS, KINDS, VALIDATIONS } from './types.mjs'
 import { resolveVeyraHome } from './ids.mjs'
 import { MEMORY_OPERATIONS } from './memory-router.mjs'
 import { recall } from './retrieve.mjs'
@@ -25,8 +25,8 @@ import {
   observatoryRelationships,
   observatorySearch,
 } from './observatory.mjs'
-import { CodeIntelligenceEngine, FRESHNESS_STATUS } from '@lovedolove/dsh-codebase-memory-mcp'
 import { checkRecordFreshness, findAffectedMemories } from './code/linking.mjs'
+import { createDegradedEngine } from './cbm-bridge.mjs'
 
 /** Installed version, read from package.json; 'dev' outside the package. */
 export function packageVersion() {
@@ -393,7 +393,7 @@ export function handleVeyraCommand(runtime, invocation) {
 async function handleCodeCommand(runtime, projectStore, cwd, arg) {
   const [sub, ...subRest] = arg.split(/\s+/)
   const subArg = subRest.join(' ').trim()
-  const engine = runtime.codeEngine || new CodeIntelligenceEngine()
+  const engine = runtime.codeEngine || createDegradedEngine()
 
   if (!sub || sub === 'status') {
     const status = await engine.getStatus(cwd)
@@ -403,9 +403,9 @@ async function handleCodeCommand(runtime, projectStore, cwd, arg) {
     let invalidCount = 0
     for (const mem of projectRecords) {
       const f = checkRecordFreshness(mem, cwd)
-      if (f.status === FRESHNESS_STATUS.FRESH) freshCount++
-      else if (f.status === FRESHNESS_STATUS.POTENTIALLY_STALE) staleCount++
-      else if (f.status === FRESHNESS_STATUS.INVALID) invalidCount++
+      if (f.status === CODE_FRESHNESS.FRESH) freshCount++
+      else if (f.status === CODE_FRESHNESS.POTENTIALLY_STALE) staleCount++
+      else if (f.status === CODE_FRESHNESS.INVALID) invalidCount++
     }
     const lines = [
       `Code Intelligence Status for ${cwd}:`,
@@ -460,7 +460,7 @@ async function handleCodeCommand(runtime, projectStore, cwd, arg) {
     const affected = []
     for (const mem of projectRecords) {
       const f = checkRecordFreshness(mem, cwd)
-      if (f.status !== FRESHNESS_STATUS.FRESH) {
+      if (f.status !== CODE_FRESHNESS.FRESH) {
         affected.push(`- [${mem.id}] ${mem.title} (${f.status})`)
       }
     }

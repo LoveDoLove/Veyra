@@ -29,7 +29,7 @@
  *   supported on type "boolean"
  */
 
-import { AUTHORITIES, CONFIDENCES, KINDS, SCOPES, VALIDATIONS, VALID_AUTHORITIES, VALID_CONFIDENCES, VALID_KINDS, VALID_SCOPES } from './types.mjs'
+import { AUTHORITIES, CODE_FRESHNESS, CONFIDENCES, KINDS, SCOPES, VALIDATIONS, VALID_AUTHORITIES, VALID_CONFIDENCES, VALID_KINDS, VALID_SCOPES } from './types.mjs'
 import { provenanceDimensions, resolveWorkspace } from './ids.mjs'
 
 import { MEMORY_OPERATIONS } from './memory-router.mjs'
@@ -41,9 +41,11 @@ import { forget as lifecycleForget } from './lifecycle.mjs'
 import { detectRecurrence, eligibleForCandidate, recordFeedback, recurrenceCandidate } from './feedback.mjs'
 import { memoryHealth, renderHealth } from './health.mjs'
 import { readGenerationEvidence, summarizeGenerationEvidence, recordExplicitOutcomeLink } from './apply-generation-evidence.mjs'
-import { CodeIntelligenceEngine, FRESHNESS_STATUS, createCbmToolDefinitions } from '@lovedolove/dsh-codebase-memory-mcp'
 import { checkRecordFreshness, checkAnchorFreshness, extractAnchorsFromRecord, findAffectedMemories, buildStaleReviewCandidate } from './code/linking.mjs'
-import { resolveSafeRepoPath } from '@lovedolove/dsh-codebase-memory-mcp/discovery'
+// `createCbmToolDefinitions` is bound below from the bridge rather than imported
+// from the package: Task 5 deletes the `...createCbmToolDefinitions(runtime)`
+// splice, but until then the name must stay reachable from this module.
+import { cbm, createDegradedEngine, resolveRepoPath } from './cbm-bridge.mjs'
 import { classifyRecordTrust, TRUST_CATEGORIES } from './trust.mjs'
 import { annotateContradictions } from './evolve.mjs'
 
@@ -801,7 +803,7 @@ export function buildToolDefinitions(runtime) {
       },
       presentCall: (args) => ({ card: 'generic', title: 'Memory health', kind: 'other', rawInput: `failure threshold ${args.failureThreshold ?? 2}` }),
     },
-    ...createCbmToolDefinitions(runtime),
+    ...(typeof cbm.createCbmToolDefinitions === 'function' ? cbm.createCbmToolDefinitions(runtime) : []),
     {
       name: 'veyra_code_status',
       description: 'Inspect Veyra repository code index status, freshness, and affected memories.',
@@ -836,7 +838,7 @@ export function buildToolDefinitions(runtime) {
       async execute(args, exec) {
         const cwd = resolveWorkspace(exec?.agent) || runtime.fallbackCwd
         const targetRepo = args.repo || cwd
-        const engine = runtime.codeEngine || new CodeIntelligenceEngine()
+        const engine = runtime.codeEngine || createDegradedEngine()
         const status = await engine.getStatus(targetRepo)
 
         const projectStore = storesForRepository(runtime, targetRepo).projectStore
@@ -847,9 +849,9 @@ export function buildToolDefinitions(runtime) {
 
         for (const mem of memories) {
           const f = checkRecordFreshness(mem, targetRepo)
-          if (f.status === FRESHNESS_STATUS.FRESH) freshCount++
-          else if (f.status === FRESHNESS_STATUS.POTENTIALLY_STALE) staleCount++
-          else if (f.status === FRESHNESS_STATUS.INVALID) invalidCount++
+          if (f.status === CODE_FRESHNESS.FRESH) freshCount++
+          else if (f.status === CODE_FRESHNESS.POTENTIALLY_STALE) staleCount++
+          else if (f.status === CODE_FRESHNESS.INVALID) invalidCount++
         }
 
         return {
@@ -1001,7 +1003,7 @@ export function buildToolDefinitions(runtime) {
       async execute(args, exec) {
         const cwd = resolveWorkspace(exec?.agent) || runtime.fallbackCwd
         const targetRepo = args.repo || cwd
-        const engine = runtime.codeEngine || new CodeIntelligenceEngine()
+        const engine = runtime.codeEngine || createDegradedEngine()
         const projectStore = storesForRepository(runtime, targetRepo).projectStore
         const memories = projectStore ? projectStore.list({ limit: 500, includeForgotten: false }) : []
 
@@ -1022,7 +1024,7 @@ export function buildToolDefinitions(runtime) {
         if (!changedFiles) {
           for (const mem of memories) {
             const f = checkRecordFreshness(mem, targetRepo)
-            if (f.status !== FRESHNESS_STATUS.FRESH) {
+            if (f.status !== CODE_FRESHNESS.FRESH) {
               affectedMemories.push({
                 memoryId: mem.id,
                 title: mem.title,
@@ -1058,7 +1060,7 @@ export function buildToolDefinitions(runtime) {
         if (args.createCandidates && projectStore && affectedMemories.length > 0) {
           // We need to get the full memory records for candidate creation
           for (const am of affectedMemories) {
-            if (am.freshness === FRESHNESS_STATUS.POTENTIALLY_STALE || am.freshness === FRESHNESS_STATUS.INVALID) {
+            if (am.freshness === CODE_FRESHNESS.POTENTIALLY_STALE || am.freshness === CODE_FRESHNESS.INVALID) {
               const memRecord = projectStore.get(am.memoryId)
               if (memRecord) {
                 const candidate = buildStaleReviewCandidate(
@@ -1242,7 +1244,7 @@ export function buildToolDefinitions(runtime) {
                 }
                 let safeRel = null
                 let resolveError = null
-                try { safeRel = resolveSafeRepoPath(cwd, anc.path) } catch (e) { resolveError = e instanceof Error ? e.message : String(e) }
+                try { safeRel = resolveRepoPath(cwd, anc.path) } catch (e) { resolveError = e instanceof Error ? e.message : String(e) }
                 const base = { anchor: anc, resolvedPath: safeRel }
                 if (resolveError) return { ...base, status: 'unresolved', reason: `Path resolution unavailable: ${resolveError}` }
                 if (!safeRel) return { ...base, status: 'outside_or_invalid', reason: 'Path outside repository or invalid' }

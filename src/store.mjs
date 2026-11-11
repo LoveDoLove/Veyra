@@ -39,7 +39,7 @@ import { contentHash, newRecordId, projectDbPath, reusableDbPath } from './ids.m
 import { centralDbPath, roomDbPath } from './rooms.mjs'
 import { scrub } from './redact.mjs'
 import { tokenize } from './text.mjs'
-import { closeAllWatchers } from '@lovedolove/dsh-codebase-memory-mcp'
+import { cbm } from './cbm-bridge.mjs'
 
 /**
  * Merge evidence arrays, deduplicating by the path:note:uri:anchor key.
@@ -825,7 +825,9 @@ export function openCentralStore(veyraHome) {
 export function closeAllStores() {
   for (const store of storeCache.values()) store.close()
   storeCache.clear()
-  closeAllWatchers()
+  // Watchers belong to CBM; `?.()` keeps an absent bridge a no-op instead of a
+  // TypeError on the one path that runs at plugin dispose.
+  cbm.closeAllWatchers?.()
 }
 
 /** Test helper: open an isolated in-memory / temp store that is not cached. */
