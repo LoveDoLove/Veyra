@@ -2,9 +2,11 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   AUTHORITIES,
+  CODE_FRESHNESS,
   KINDS,
   STATUSES,
   VALIDATIONS,
+  VALID_CODE_FRESHNESS,
   assertAuthorityTransition,
   isRecallEligible,
 } from '../src/types.mjs'
@@ -51,4 +53,14 @@ test('explicit canonical promotion is allowed', () => {
   assert.doesNotThrow(() => {
     assertAuthorityTransition(AUTHORITIES.DERIVED, AUTHORITIES.CANONICAL, { explicit: true })
   })
+})
+
+test('CODE_FRESHNESS is a frozen stdio wire contract', () => {
+  assert.deepEqual(CODE_FRESHNESS, {
+    FRESH: 'fresh',
+    POTENTIALLY_STALE: 'potentially_stale',
+    INVALID: 'invalid',
+  })
+  assert.ok(Object.isFrozen(CODE_FRESHNESS))
+  assert.deepEqual([...VALID_CODE_FRESHNESS], ['fresh', 'potentially_stale', 'invalid'])
 })

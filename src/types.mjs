@@ -67,6 +67,17 @@ export const VALID_CONFIDENCES = Object.freeze(Object.values(CONFIDENCES))
 export const VALID_SCOPES = Object.freeze(Object.values(SCOPES))
 export const VALID_RELATIONS = Object.freeze(Object.values(RELATIONS))
 
+// Code freshness is a stdio wire contract with the Code Intelligence daemon,
+// not a bridge implementation detail: these three literals are persisted in
+// record anchors, rendered in trust labels, and scored in retrieval. Declaring
+// them here keeps Veyra correct when the bridge package is absent.
+export const CODE_FRESHNESS = Object.freeze({
+  FRESH: 'fresh',
+  POTENTIALLY_STALE: 'potentially_stale',
+  INVALID: 'invalid',
+})
+export const VALID_CODE_FRESHNESS = Object.freeze(Object.values(CODE_FRESHNESS))
+
 /**
  * M8 capture provenance — canonical origin order for
  * `source.provenance.origins`: which source streams (user, assistant,
