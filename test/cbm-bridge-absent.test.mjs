@@ -135,3 +135,49 @@ test('guidance omits the Code Intelligence block when the engine is degraded', a
 
   dispose?.()
 })
+
+// The mirror of the test above, and the reason the feature exists: when Code
+// Intelligence CAN answer, the model must be told the tool surface exists.
+// Without this, every remaining assertion is negative (block absent) and the
+// true-branch of `cbm.available && isDegraded !== true` could regress to
+// always-absent with the whole suite still green.
+test('guidance appends the Code Intelligence block when the engine is available', async (t) => {
+  const { mkdtempSync, writeFileSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { apply } = await import('../src/plugin.mjs')
+  const { CODE_INTELLIGENCE_GUIDANCE, GUIDANCE_TEXT } = await import('../src/context.mjs')
+  const { testHome } = await import('./helpers/room.mjs')
+  const sections = []
+  const ctx = {
+    tools: { register: () => {} },
+    commands: { register: () => {} },
+    skills: { register: () => {}, registerProvider: () => () => {} },
+    systemPrompt: { section: (s) => sections.push(s), context: () => {} },
+    on: () => () => {},
+    effect: (factory) => factory(),
+    logger: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} },
+  }
+  // Availability is decided by `Boolean(exePath && existsSync(exePath))`, so any
+  // EXISTING file counts as available and no real binary is needed. The file is
+  // never executed: apply() does not await the daemon and a failed spawn is only
+  // logged. `observe: false` keeps it that way — with observation on, the plugin
+  // tries to start the fake binary and logs a spawn EACCES the test does not
+  // need, while the guidance question is already settled at apply() time.
+  const bin = join(mkdtempSync(join(tmpdir(), 'veyra-fake-cbm-')), 'fake-mcp')
+  writeFileSync(bin, '')
+  const dispose = apply(ctx, { home: testHome(t), observe: false, codebaseMemoryBin: bin })
+
+  const guidance = sections.filter((s) => s.name === 'veyra:guidance')
+  assert.equal(guidance.length, 1)
+  assert.ok(guidance[0].text.includes('Codebase Memory Policy'), 'the block must be advertised when CI can answer')
+  assert.ok(guidance[0].text.includes('cbm_trace'), 'the block must name a real tool')
+  // Composition, not exact equality: `startsWith` + `includes` proves the block
+  // is appended to the intact base policy without freezing both strings
+  // verbatim, so a future wording edit does not turn this into a maintenance
+  // tax.
+  assert.ok(guidance[0].text.startsWith(GUIDANCE_TEXT), 'the base agent policy must come first and stay intact')
+  assert.ok(guidance[0].text.endsWith(CODE_INTELLIGENCE_GUIDANCE), 'the block is appended last')
+
+  dispose?.()
+})
