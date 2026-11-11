@@ -100,3 +100,38 @@ test('plugin apply completes and registers tools with a degraded engine', async 
 
   dispose?.()
 })
+
+test('guidance omits the Code Intelligence block when the engine is degraded', async (t) => {
+  const { apply } = await import('../src/plugin.mjs')
+  const { GUIDANCE_TEXT } = await import('../src/context.mjs')
+  const { testHome } = await import('./helpers/room.mjs')
+  const sections = []
+  const ctx = {
+    tools: { register: () => {} },
+    commands: { register: () => {} },
+    skills: { register: () => {}, registerProvider: () => () => {} },
+    systemPrompt: { section: (s) => sections.push(s), context: () => {} },
+    on: () => () => {},
+    effect: (factory) => factory(),
+    logger: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} },
+  }
+  // A missing binary makes the engine degraded for certain, exactly as in the
+  // apply() test above: an unset codebaseMemoryBin would discover the installed
+  // binary on PATH and leave the guidance legitimately enabled.
+  const dispose = apply(ctx, {
+    home: testHome(t),
+    observe: true,
+    codebaseMemoryBin: '/nonexistent/cbm-binary-for-test',
+  })
+
+  const guidance = sections.filter((s) => s.name === 'veyra:guidance')
+  assert.equal(guidance.length, 1)
+  // With Code Intelligence unusable, the section is exactly the degraded text:
+  // no extra newline, no partial block, nothing the model could misread as a
+  // usable cbm_* tool surface.
+  assert.equal(guidance[0].text, GUIDANCE_TEXT)
+  assert.ok(!guidance[0].text.includes('Codebase Memory Policy'))
+  assert.ok(!guidance[0].text.includes('cbm_trace'))
+
+  dispose?.()
+})

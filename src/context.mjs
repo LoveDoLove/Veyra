@@ -455,7 +455,14 @@ export const GUIDANCE_TEXT = [
   '  repeated retrieval as resolution; it never becomes canonical by being recalled.',
   '- "No known engineering history" means nothing is remembered for this query —',
   '  absence of memory, not evidence that no history exists.',
-  '',
+].join('\n')
+
+// Conditional, never part of GUIDANCE_TEXT: the cbm_* tools are registered by
+// the Codebase Memory plugin, not by Veyra, so they may not exist at all (the
+// bridge degraded because the package is absent) or may exist but answer
+// nothing (the daemon is down). Advertising them unconditionally tells the
+// model to call tools that cannot answer.
+export const CODE_INTELLIGENCE_GUIDANCE = [
   'Codebase Memory Policy — Structural Code Intelligence is available in this session.',
   'Tools: cbm_projects, cbm_search, cbm_snippet, cbm_trace, cbm_arch, cbm_search_code, veyra_code_status.',
   '- Repository code is authoritative truth. Codebase Memory reflects this truth.',

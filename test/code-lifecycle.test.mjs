@@ -69,7 +69,10 @@ test('plugin lifecycle initializes code engine, registers tools, and disposes cl
     const toolNames = tools.map((t) => t.name)
     assert.ok(toolNames.includes('veyra_code_status'), 'registered veyra_code_status')
 
-    assert.ok(sections.some((s) => s.name === 'veyra:guidance' && s.text.includes('Codebase Memory')))
+    // The configured bin is '/nonexistent/codebase-memory-mcp', so the engine is
+    // degraded and the cbm_* tools are not usable: the guidance must NOT advertise
+    // them, or the model is told about tools that cannot answer.
+    assert.ok(sections.some((s) => s.name === 'veyra:guidance' && !s.text.includes('cbm_trace')))
     assert.ok(commands.some((c) => c.name === 'veyra'))
 
     // Clean teardown

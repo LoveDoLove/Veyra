@@ -21,7 +21,7 @@ import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
 import { createMemoryServer } from './memory-server.mjs'
 import { MEMORY_OPERATIONS } from './memory-router.mjs'
-import { DEFAULT_RECALL_CHARS, GUIDANCE_TEXT, createContextProvider, rememberClaimedPrompt, rememberCompactedCheckpoint, recordRepositoryChange } from './context.mjs'
+import { CODE_INTELLIGENCE_GUIDANCE, DEFAULT_RECALL_CHARS, GUIDANCE_TEXT, createContextProvider, rememberClaimedPrompt, rememberCompactedCheckpoint, recordRepositoryChange } from './context.mjs'
 import { candidateFromBuffer, newBuffer, observeEvent } from './observe.mjs'
 import { maybeLearn, provenanceAllowsLearning, reviewCandidate, strengthenMemory } from './learn.mjs'
 import { markStale, sweepStale } from './evolve.mjs'
@@ -261,11 +261,19 @@ export function apply(ctx, config = {}) {
         return typeof disposer === 'function' ? disposer : undefined
       })
     }
+    // Advertise Code Intelligence only when it can actually answer. Computed
+    // here, not at module scope or in apply(): registerPrompt runs per apply,
+    // after createRuntime(), so runtime.codeEngine already exists. The `?.`
+    // matters because a host may register the prompt with a runtime that has
+    // no engine at all.
+    const guidanceText = cbm.available && runtime.codeEngine?.isDegraded !== true
+      ? `${GUIDANCE_TEXT}\n\n${CODE_INTELLIGENCE_GUIDANCE}`
+      : GUIDANCE_TEXT
     try {
       runPromptEffect(() => scope.systemPrompt.section({
         name: 'veyra:guidance',
         order: 3050,
-        text: GUIDANCE_TEXT,
+        text: guidanceText,
       }))
     } catch (err) {
       runtime.log.warn(`[veyra] section register failed: ${err instanceof Error ? err.message : String(err)}`)

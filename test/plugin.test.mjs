@@ -307,7 +307,12 @@ test('plugin exports name=veyra and wires DSH surfaces', async () => {
 test('Veyra Agent Policy is registered as exactly one static system-prompt section', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'veyra-policy-'))
   const ctx = mockCtx()
-  const dispose = apply(ctx, { home: dir, observe: true })
+  // An explicit nonexistent bin keeps the engine degraded on EVERY host. Leaving
+  // it unset is host-dependent: the engine falls back to PATH discovery, and a
+  // dev machine with codebase-memory-mcp installed is NOT degraded, which flips
+  // the guidance to include the Code Intelligence block and breaks the identity
+  // assertion below for the wrong reason.
+  const dispose = apply(ctx, { home: dir, observe: true, codebaseMemoryBin: '/nonexistent/cbm-binary-for-test' })
   const guidance = ctx._sections.filter((s) => s.name === 'veyra:guidance')
   assert.equal(guidance.length, 1, 'exactly one veyra:guidance section — no duplicate injection')
   assert.equal(guidance[0].order, 3050)
