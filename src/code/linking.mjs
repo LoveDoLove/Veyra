@@ -16,15 +16,15 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { sha256Hex } from '../ids.mjs'
-import { FRESHNESS_STATUS, resolveSafeRepoPath } from '@lovedolove/dsh-codebase-memory-mcp'
-import { KINDS, STATUSES, AUTHORITIES, VALIDATIONS, CONFIDENCES, SCOPES } from '../types.mjs'
+import { resolveRepoPath } from '../cbm-bridge.mjs'
+import { CODE_FRESHNESS, KINDS, STATUSES, AUTHORITIES, VALIDATIONS, CONFIDENCES, SCOPES } from '../types.mjs'
 import { VALID_STATUSES } from '../types.mjs'
 
 /**
  * Build a structured code evidence anchor.
  */
 export function createCodeAnchor({ repoRoot, path, symbol, projectId, revision }) {
-  const safeRel = resolveSafeRepoPath(repoRoot, path)
+  const safeRel = resolveRepoPath(repoRoot, path)
   if (!safeRel) {
     throw new Error(`Anchor path escapes repository boundary: ${path}`)
   }
@@ -103,17 +103,17 @@ export function extractAnchorsFromRecord(record) {
  */
 export function checkAnchorFreshness(anchor, repoRoot) {
   if (!anchor || !anchor.path) {
-    return { status: FRESHNESS_STATUS.FRESH, reason: 'No file path specified' }
+    return { status: CODE_FRESHNESS.FRESH, reason: 'No file path specified' }
   }
 
-  const safeRel = resolveSafeRepoPath(repoRoot, anchor.path)
+  const safeRel = resolveRepoPath(repoRoot, anchor.path)
   if (!safeRel) {
-    return { status: FRESHNESS_STATUS.INVALID, reason: 'Path outside repository or invalid' }
+    return { status: CODE_FRESHNESS.INVALID, reason: 'Path outside repository or invalid' }
   }
 
   const absPath = join(repoRoot, safeRel)
   if (!existsSync(absPath)) {
-    return { status: FRESHNESS_STATUS.INVALID, reason: `File not found: ${safeRel}` }
+    return { status: CODE_FRESHNESS.INVALID, reason: `File not found: ${safeRel}` }
   }
 
   if (anchor.content_hash) {
@@ -122,12 +122,12 @@ export function checkAnchorFreshness(anchor, repoRoot) {
       const currentHash = sha256Hex(currentContent)
       if (currentHash !== anchor.content_hash) {
         return {
-          status: FRESHNESS_STATUS.POTENTIALLY_STALE,
+          status: CODE_FRESHNESS.POTENTIALLY_STALE,
           reason: `Content hash changed from ${anchor.content_hash.slice(0, 8)} to ${currentHash.slice(0, 8)}`,
         }
       }
     } catch (err) {
-      return { status: FRESHNESS_STATUS.POTENTIALLY_STALE, reason: `Cannot verify file: ${err.message}` }
+      return { status: CODE_FRESHNESS.POTENTIALLY_STALE, reason: `Cannot verify file: ${err.message}` }
     }
   }
 
@@ -137,7 +137,7 @@ export function checkAnchorFreshness(anchor, repoRoot) {
       const content = readFileSync(absPath, 'utf8')
       if (!content.includes(anchor.symbol)) {
         return {
-          status: FRESHNESS_STATUS.POTENTIALLY_STALE,
+          status: CODE_FRESHNESS.POTENTIALLY_STALE,
           reason: `Symbol ${anchor.symbol} not found in ${safeRel}`,
         }
       }
@@ -146,7 +146,7 @@ export function checkAnchorFreshness(anchor, repoRoot) {
     }
   }
 
-  return { status: FRESHNESS_STATUS.FRESH, reason: 'File and symbol verified' }
+  return { status: CODE_FRESHNESS.FRESH, reason: 'File and symbol verified' }
 }
 
 /**
@@ -156,7 +156,7 @@ export function checkRecordFreshness(record, repoRoot) {
   const anchors = extractAnchorsFromRecord(record)
   if (anchors.length === 0) {
     return {
-      status: FRESHNESS_STATUS.FRESH,
+      status: CODE_FRESHNESS.FRESH,
       anchors: [],
       reason: 'No code anchors attached',
     }
@@ -169,15 +169,15 @@ export function checkRecordFreshness(record, repoRoot) {
   for (const anc of anchors) {
     const fresh = checkAnchorFreshness(anc, repoRoot)
     evaluated.push({ anchor: anc, ...fresh })
-    if (fresh.status === FRESHNESS_STATUS.INVALID) hasInvalid = true
-    if (fresh.status === FRESHNESS_STATUS.POTENTIALLY_STALE) hasStale = true
+    if (fresh.status === CODE_FRESHNESS.INVALID) hasInvalid = true
+    if (fresh.status === CODE_FRESHNESS.POTENTIALLY_STALE) hasStale = true
   }
 
-  let status = FRESHNESS_STATUS.FRESH
+  let status = CODE_FRESHNESS.FRESH
   if (hasInvalid) {
-    status = FRESHNESS_STATUS.INVALID
+    status = CODE_FRESHNESS.INVALID
   } else if (hasStale) {
-    status = FRESHNESS_STATUS.POTENTIALLY_STALE
+    status = CODE_FRESHNESS.POTENTIALLY_STALE
   }
 
   return {
@@ -216,13 +216,13 @@ export function normalizeRenameEvidence(repoRoot, renames) {
       return { ok: false, error: 'each rename entry requires non-empty string from and to paths' }
     }
     let safeFrom, safeTo
-    try { safeFrom = resolveSafeRepoPath(repoRoot, from) } catch {
+    try { safeFrom = resolveRepoPath(repoRoot, from) } catch {
       safeFrom = null
     }
     if (typeof safeFrom !== 'string' || !safeFrom) {
       return { ok: false, error: `rename from path is outside the repository or invalid: ${from}` }
     }
-    try { safeTo = resolveSafeRepoPath(repoRoot, to) } catch {
+    try { safeTo = resolveRepoPath(repoRoot, to) } catch {
       safeTo = null
     }
     if (typeof safeTo !== 'string' || !safeTo) {
@@ -265,7 +265,11 @@ export function findAffectedMemories(repoRoot, changedFiles = [], memories = [],
   // existing skip-on-invalid behavior; do not throw for bad changed paths).
   const normalizedChanged = new Set()
   for (const f of Array.isArray(changedFiles) ? changedFiles : []) {
-    try { normalizedChanged.add(resolveSafeRepoPath(repoRoot, f)) } catch { /* skip paths outside repo */ }
+    // resolveRepoPath returns null instead of throwing (absent bridge, or a
+    // path outside the repo), so the skip must be explicit: adding the null
+    // would poison the set that anchor matching compares against.
+    const rel = resolveRepoPath(repoRoot, f)
+    if (rel) normalizedChanged.add(rel)
   }
   if (normalizedChanged.size === 0) return []
 
@@ -290,7 +294,7 @@ export function findAffectedMemories(repoRoot, changedFiles = [], memories = [],
     for (const anc of anchors) {
       if (!anc.path) continue
       let safeRel
-      try { safeRel = resolveSafeRepoPath(repoRoot, anc.path) } catch { continue }
+      try { safeRel = resolveRepoPath(repoRoot, anc.path) } catch { continue }
       if (safeRel && normalizedChanged.has(safeRel)) {
         matchingAnchors.push(anc)
         continue

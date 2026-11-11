@@ -24,8 +24,8 @@
  *     fabricated symbol or call-graph relationships.
  */
 
-import { AUTHORITIES, STATUSES, VALIDATIONS } from './types.mjs'
-import { FRESHNESS_STATUS, resolveSafeRepoPath } from '@lovedolove/dsh-codebase-memory-mcp'
+import { AUTHORITIES, CODE_FRESHNESS, STATUSES, VALIDATIONS } from './types.mjs'
+import { resolveRepoPath } from './cbm-bridge.mjs'
 import { extractAnchorsFromRecord, checkRecordFreshness, normalizeRenameEvidence, renameTargetsForAnchor } from './code/linking.mjs'
 import { temporalState, contextCompatibility } from './retrieve.mjs'
 
@@ -117,11 +117,11 @@ export function classifyRecordTrust(record, options = {}) {
       reason: 'code freshness could not be evaluated against the workspace',
     })
   }
-  if (freshness && freshness.status !== FRESHNESS_STATUS.FRESH) {
+  if (freshness && freshness.status !== CODE_FRESHNESS.FRESH) {
     const details = (freshness.anchors || [])
-      .filter((a) => a.status !== FRESHNESS_STATUS.FRESH && a.reason)
+      .filter((a) => a.status !== CODE_FRESHNESS.FRESH && a.reason)
       .map((a) => a.reason)
-    const label = freshness.status === FRESHNESS_STATUS.INVALID ? 'invalid' : 'stale'
+    const label = freshness.status === CODE_FRESHNESS.INVALID ? 'invalid' : 'stale'
     signals.push({
       category: TRUST_CATEGORIES.STALE,
       reason: `code evidence ${label}${details.length ? `: ${details[0]}` : ''}`,
@@ -202,7 +202,7 @@ export function classifyRecordTrust(record, options = {}) {
   // Phase 1 explicit rename evidence is accepted only as unambiguous mappings
   // (never inferred). Invalid/conflicting/out-of-repo evidence fails closed.
   const changedSet = workspace && Array.isArray(changedFiles) && changedFiles.length > 0
-    ? new Set(changedFiles.map((f) => { try { return resolveSafeRepoPath(workspace, f) } catch { return null } }).filter(Boolean))
+    ? new Set(changedFiles.map((f) => { try { return resolveRepoPath(workspace, f) } catch { return null } }).filter(Boolean))
     : null
   let renameMap = new Map()
   if (options?.renameMap instanceof Map) {
@@ -225,7 +225,7 @@ export function classifyRecordTrust(record, options = {}) {
       for (const a of anchors) {
         if (!a?.path) continue
         let rel
-        try { rel = resolveSafeRepoPath(workspace, a.path) } catch { continue }
+        try { rel = resolveRepoPath(workspace, a.path) } catch { continue }
         if (changedSet.has(rel)) {
           if (!seen.has(rel)) { seen.add(rel); changedMatches.push(rel) }
           continue
