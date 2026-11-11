@@ -59,7 +59,15 @@ export function loadCbmBridge({ requireFrom = import.meta.url } = {}) {
   }
   if (!api || typeof api !== 'object') return unavailable()
   if (!discovery || typeof discovery !== 'object') discovery = {}
-  return Object.freeze({ ...api, ...discovery, available: true })
+  // The spread reads every enumerable property, so a throwing getter on either
+  // export object would escape here — and `cbm` is built at module evaluation,
+  // where that throw becomes a failed `import` that kills plugin load. Failing
+  // to an object is a degraded engine; failing to import is no plugin at all.
+  try {
+    return Object.freeze({ ...api, ...discovery, available: true })
+  } catch {
+    return unavailable()
+  }
 }
 
 /** Frozen at module evaluation; never reloaded, never retried. */

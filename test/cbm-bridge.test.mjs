@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { loadCbmBridge, createDegradedEngine, resolveRepoPath, cbm } from '../src/cbm-bridge.mjs'
@@ -66,4 +66,37 @@ test('resolveRepoPath returns null when no boundary authority exists', () => {
   assert.equal(resolveRepoPath('/repo', '/repo/a.mjs', throwing), null)
   const working = { available: true, resolveSafeRepoPath: () => 'a.mjs' }
   assert.equal(resolveRepoPath('/repo', '/repo/a.mjs', working), 'a.mjs')
+})
+
+test('bridge degrades instead of throwing when an export getter throws', () => {
+  // A package whose main entry exposes a throwing enumerable getter must not
+  // be able to kill plugin load: the export spread runs at module evaluation,
+  // so an escape here would surface as a failed `import`, not a degraded engine.
+  const dir = mkdtempSync(join(tmpdir(), 'veyra-malformed-cbm-'))
+  try {
+    const pkg = join(dir, 'node_modules', '@lovedolove', 'dsh-codebase-memory-mcp')
+    mkdirSync(pkg, { recursive: true })
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({
+      name: '@lovedolove/dsh-codebase-memory-mcp',
+      version: '9.9.9',
+      main: 'index.cjs',
+      exports: { '.': './index.cjs', './discovery': './discovery.cjs' },
+    }))
+    writeFileSync(join(pkg, 'index.cjs'), [
+      "const api = { findExe: () => 'x' }",
+      "Object.defineProperty(api, 'resolveSafeRepoPath', {",
+      "  enumerable: true,",
+      "  get() { throw new Error('malformed export') },",
+      '})',
+      'module.exports = api',
+    ].join('\n'))
+    writeFileSync(join(pkg, 'discovery.cjs'), "module.exports = { resolveSafeRepoPath: () => 'ok' }\n")
+
+    let loaded
+    assert.doesNotThrow(() => { loaded = loadCbmBridge({ requireFrom: join(dir, 'entry.mjs') }) })
+    assert.equal(loaded.available, false)
+    assert.equal(loaded.resolveSafeRepoPath, null)
+    assert.ok(Object.isFrozen(loaded))
+    assert.deepEqual(loaded.FRESHNESS_STATUS, CODE_FRESHNESS)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })
