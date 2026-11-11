@@ -39,7 +39,7 @@ Every other importer goes through the same bridge, never through the package
 directly:
 
 - `src/plugin.mjs:33` — `{ cbm, createDegradedEngine }`
-- `src/tools.mjs:45` — `{ cbm, createDegradedEngine, resolveRepoPath }`
+- `src/tools.mjs:52` — `{ cbm, createDegradedEngine, resolveRepoPath }`
 - `src/commands.mjs:29` — `{ createDegradedEngine }`
 - `src/store.mjs:42` — `{ cbm }`
 - `src/trust.mjs:28` — `{ resolveRepoPath }`

@@ -225,7 +225,7 @@ curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/i
 ## 工具
 
 **記憶工具**（永遠可用）：
-`veyra_remember`、`veyra_recall`、`veyra_inspect`、`veyra_forget`、`veyra_promote`、`veyra_feedback`、`veyra_recurrence`、`veyra_health`
+`veyra_remember`、`veyra_recall`、`veyra_inspect`、`veyra_forget`、`veyra_promote`、`veyra_feedback`、`veyra_recurrence`、`veyra_health`、`veyra_stale_ledger`
 
 **變更智能**（永遠可用；無二進位時降級為路徑比對）：
 `veyra_change_impact`
