@@ -2,16 +2,16 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-**为编码智能体提供工程记忆。** Veyra 学习你的智能体已经付出代价换来的教训，记住那些经受住检验的，并在同样的问题再次出现时把它们放回智能体面前。
+**为编码智能体提供持久化工程记忆。** Veyra 学习你的智能体已经付出代价换来的教训，记住那些经受住检验的，并在同样的问题再次出现时把它们放回智能体面前。
 
-无需手动收藏。无需下周再推导一遍同样的根因。
+本地 SQLite。按工作区隔离。无守护进程。无 API 密钥。无需手动收藏。无需下周再推导一遍同样的根因。
 
 [![npm](https://img.shields.io/npm/v/@lovedolove/veyra?color=16a34a)](https://www.npmjs.com/package/@lovedolove/veyra)
 [![CI](https://github.com/LoveDoLove/Veyra/actions/workflows/ci.yml/badge.svg)](https://github.com/LoveDoLove/Veyra/actions/workflows/ci.yml)
 [![node](https://img.shields.io/badge/node-%3E%3D22.12%20%3C25-16a34a)](package.json)
 [![license](https://img.shields.io/badge/license-MIT-16a34a)](LICENSE)
 
-[DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness) 的插件。纯 ESM。无守护进程。无 API 密钥。打包后 263.8 kB。
+[DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness) 的插件。本地 SQLite 存储。无守护进程。无 API 密钥。打包后 264.0 kB。纯 ESM。
 
 ---
 
@@ -46,6 +46,12 @@ dsh plugin --profile web add @lovedolove/veyra
 ```
 
 重启 DSH，安装就完成了。
+
+如果 DSH 安装的版本比上方 npm 徽章显示的更旧，可能是包管理器的供应链发布年龄策略暂缓了最新发布。可以显式安装当前版本：
+
+```sh
+dsh plugin --profile web add @lovedolove/veyra@0.3.1
+```
 
 然后正常干活。在产生了持久价值的回合结束时，Veyra 会存储它。在同一工作区的下一个回合开始时，它又会出现。
 

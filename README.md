@@ -2,11 +2,9 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-**Engineering memory for coding agents.** Veyra learns the lessons your agent
-already paid for, remembers the ones that held up, and puts them back in front
-of it the next time the same problem appears.
+**Persistent engineering memory for coding agents.** Veyra learns the lessons your agent already paid for, remembers the ones that held up, and puts them back in front of it the next time the same problem appears.
 
-No manual bookmarking. No re-deriving the same root cause next week.
+Local SQLite. Per-workspace isolation. No daemon. No API keys. No manual bookmarking. No re-deriving the same root cause next week.
 
 [![npm](https://img.shields.io/npm/v/@lovedolove/veyra?color=16a34a)](https://www.npmjs.com/package/@lovedolove/veyra)
 [![CI](https://github.com/LoveDoLove/Veyra/actions/workflows/ci.yml/badge.svg)](https://github.com/LoveDoLove/Veyra/actions/workflows/ci.yml)
@@ -14,7 +12,7 @@ No manual bookmarking. No re-deriving the same root cause next week.
 [![license](https://img.shields.io/badge/license-MIT-16a34a)](LICENSE)
 
 A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness).
-Pure ESM. No daemon. No API keys. 263.8 kB packed.
+Local SQLite storage. No daemon. No API keys. 264.0 kB packed. Pure ESM.
 
 ---
 
@@ -53,6 +51,12 @@ dsh plugin --profile web add @lovedolove/veyra
 ```
 
 Restart DSH. That is the whole setup.
+
+If DSH installs an older version than the one shown on the npm badge above, your package manager may be holding back a release that is still inside its supply-chain age window. Install the current version explicitly:
+
+```sh
+dsh plugin --profile web add @lovedolove/veyra@0.3.1
+```
 
 Then just work. At the end of a turn that produced something durable, Veyra
 stores it. At the start of the next turn in the same workspace, it comes back.
