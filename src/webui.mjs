@@ -317,40 +317,40 @@ export function graphPage() {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Veyra Network Graph</title>
 <style>
-:root{--bg:#12141a;--panel:#1b1f28;--ink:#e8edf5;--muted:#8b95a8;--line:#2c3340;--sel:#f0c14b;--trust:#7dcea0;--inspect:#c39bd3;--contra:#e74c3c;--hist:#6c7585}
+:root{--bg:#020617;--panel:#0B0F19;--ink:#F8FAFC;--muted:#64748B;--line:#1E293B;--sel:#F59E0B;--trust:#10B981;--inspect:#8B5CF6;--contra:#EF4444;--hist:#475569}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:13px/1.4 ui-sans-serif,system-ui,sans-serif}
 #app{display:grid;grid-template-rows:auto 1fr;height:100%}
 header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
 header h1{font-size:14px;margin:0 8px 0 0}
-header input[type=search]{flex:1;min-width:160px;background:#0e1116;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:6px 8px}
-header button,header select,header label{background:#0e1116;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:5px 8px}
+header input[type=search]{flex:1;min-width:160px;background:#030712;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:6px 8px}
+header button,header select,header label{background:#030712;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:5px 8px}
 header label{display:flex;gap:4px;align-items:center;font-size:12px;color:var(--muted)}
 main{display:grid;grid-template-columns:1fr 320px;min-height:0}
 @media(max-width:800px){main{grid-template-columns:1fr}}
 #canvas-wrap{position:relative;min-height:0;border-right:1px solid var(--line)}
-svg{width:100%;height:100%;display:block;background:#0e1116;touch-action:none}
-#status{position:absolute;left:10px;top:10px;color:var(--muted);background:#0e1116cc;padding:4px 8px;border-radius:4px;max-width:70%}
-#legend{position:absolute;left:10px;bottom:10px;color:var(--muted);background:#0e1116cc;padding:6px 8px;border-radius:4px;font-size:11px}
-#loading{position:absolute;inset:0;display:flex;gap:10px;align-items:center;justify-content:center;background:#0e1116cc;color:var(--ink);z-index:5}
+svg{width:100%;height:100%;display:block;background:#020617;touch-action:none}
+#status{position:absolute;left:10px;top:10px;color:var(--muted);background:#0B0F19cc;padding:4px 8px;border-radius:4px;max-width:70%}
+#legend{position:absolute;left:10px;bottom:10px;color:var(--muted);background:#0B0F19cc;padding:6px 8px;border-radius:4px;font-size:11px}
+#loading{position:absolute;inset:0;display:flex;gap:10px;align-items:center;justify-content:center;background:#020617cc;color:var(--ink);z-index:5}
 #loading[hidden]{display:none}
 .spin{width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--sel);border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-#tip{position:absolute;pointer-events:none;max-width:280px;background:#0e1116f2;border:1px solid var(--line);border-radius:4px;padding:6px 8px;font-size:11px;white-space:pre-line;z-index:6}
+#tip{position:absolute;pointer-events:none;max-width:280px;background:#0B0F19f2;border:1px solid var(--line);border-radius:4px;padding:6px 8px;font-size:11px;white-space:pre-line;z-index:6}
 #tip[hidden]{display:none}
 aside{overflow:auto;padding:12px;background:var(--panel)}
 aside h2{font-size:14px;margin:0 0 8px}
 aside .meta{color:var(--muted);font-size:12px}
-aside .body{white-space:pre-wrap;margin:8px 0;padding:8px;background:#0e1116;border-radius:4px}
+aside .body{white-space:pre-wrap;margin:8px 0;padding:8px;background:#030712;border-radius:4px}
 aside .warn{color:var(--contra)}
 aside .actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-aside .actions button{background:#0e1116;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:5px 8px;cursor:pointer}
+aside .actions button{background:#030712;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:5px 8px;cursor:pointer}
 .badge{display:inline-block;border:1px solid var(--line);border-radius:3px;padding:1px 5px;margin:0 4px 4px 0;font-size:11px}
 #hits{list-style:none;margin:8px 0 0;padding:0}
-#hits button{width:100%;text-align:left;background:#0e1116;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:6px;margin-bottom:6px;cursor:pointer}
+#hits button{width:100%;text-align:left;background:#030712;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:6px;margin-bottom:6px;cursor:pointer}
 .node.selected .ring{stroke:var(--sel);stroke-width:3}
 .node.hover .shape{stroke:var(--sel);stroke-width:2.5}
-.node.hover .ring{stroke:#f0c14b88}
+.node.hover .ring{stroke:#f59e0b88}
 .node.inspect .shape{fill:none;stroke-dasharray:4 3}
 .node.historical{opacity:.55}
 .node.forgotten .shape{stroke-dasharray:2 3}
@@ -472,6 +472,21 @@ function layout(graph){
 }
 function applyView(){
   $('world').setAttribute('transform', 'translate('+state.vx+','+state.vy+') scale('+state.scale+')')
+}
+function animateView(targetVx, targetVy, targetScale, duration = 300) {
+  const startVx = state.vx, startVy = state.vy, startScale = state.scale
+  const startTime = performance.now()
+  function step(now) {
+    const elapsed = now - startTime
+    const t = Math.min(1, elapsed / duration)
+    const ease = 1 - Math.pow(1 - t, 3)
+    state.vx = startVx + (targetVx - startVx) * ease
+    state.vy = startVy + (targetVy - startVy) * ease
+    state.scale = startScale + (targetScale - startScale) * ease
+    applyView()
+    if (t < 1) requestAnimationFrame(step)
+  }
+  requestAnimationFrame(step)
 }
 // Client pixel → SVG viewBox coordinates (keeps pan/zoom correct under any container scale).
 function svgPt(ev){
