@@ -1,7 +1,11 @@
 # Autonomous Engineering Memory — Design
 
 Date: 2026-11-11
-Status: proposed (planning only; no code changed)
+Status: implemented (2026-11-12) — see
+`docs/superpowers/plans/2026-11-11-autonomous-engineering-memory.md` for the
+measured per-task ladder. Two behaviours changed while executing: compact
+rendering keeps every warning line (§4.1), and the turn-end signal reuses
+`testOutcomeFrom` rather than inspecting tool text (§4.4).
 Related: `docs/PRODUCT-EVOLUTION-BLUEPRINT.md`, `docs/research/phase1-6-delivery-application-proof-feasibility.md`
 
 ## 1. Intent
