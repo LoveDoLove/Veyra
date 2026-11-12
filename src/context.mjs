@@ -313,7 +313,13 @@ export function renderAgentContext(composed, { heading = 'Veyra recalled enginee
     const injection = injectionWarning(`${rec.title}\n${rec.body ?? ''}`)
     if (injection) lines.push(`  • ${injection}`)
 
-    if (entry.codeFreshness?.status === 'potentially_stale') {
+    // Unverifiable is checked first: such an anchor is INVALID on the wire (the
+    // status enum stays a three-member contract), but the INVALID bullet would
+    // claim the file is "missing or unresolvable", a repository fact nobody
+    // checked when the bridge has no authority to check it.
+    if (entry.codeFreshness?.unverifiable === true) {
+      lines.push('  • ⚠️ [CODE EVIDENCE UNVERIFIABLE: code intelligence is unavailable]')
+    } else if (entry.codeFreshness?.status === 'potentially_stale') {
       lines.push('  • ⚠️ [CODE EVIDENCE STALE: anchored file was modified]')
     } else if (entry.codeFreshness?.status === 'invalid') {
       lines.push('  • ⚠️ [CODE EVIDENCE INVALID: anchored file missing or symbol unresolvable]')
@@ -455,9 +461,16 @@ export const GUIDANCE_TEXT = [
   '  repeated retrieval as resolution; it never becomes canonical by being recalled.',
   '- "No known engineering history" means nothing is remembered for this query —',
   '  absence of memory, not evidence that no history exists.',
-  '',
-  'Codebase Memory Policy — Structural Code Intelligence is available in this session.',
-  'Tools: cbm_projects, cbm_search, cbm_snippet, cbm_trace, cbm_arch, cbm_search_code, veyra_code_status.',
+].join('\n')
+
+// Conditional, never part of GUIDANCE_TEXT: the cbm_* tools are registered by
+// the Codebase Memory plugin, not by Veyra, so they may not exist at all (the
+// bridge degraded because the package is absent) or may exist but answer
+// nothing (the daemon is down). Advertising them unconditionally tells the
+// model to call tools that cannot answer.
+export const CODE_INTELLIGENCE_GUIDANCE = [
+  'Codebase Memory Policy — if the cbm_* tools are present in this session, they come from the Codebase Memory plugin.',
+  'Tools: cbm_projects, cbm_search, cbm_snippet, cbm_trace, cbm_arch, cbm_search_code, veyra_code_status. They are registered by that plugin, not by Veyra.',
   '- Repository code is authoritative truth. Codebase Memory reflects this truth.',
   '- Prefer cbm_trace for caller/callee relationships, hierarchies, and blast-radius analysis.',
   '- Prefer cbm_search for AST symbol discovery (functions, classes, interfaces).',
@@ -465,6 +478,19 @@ export const GUIDANCE_TEXT = [
   '- Prefer cbm_arch for directory component dependencies and architecture overview.',
   '- Veyra memory provides historical context; if memory contradicts code, code wins.',
 ].join('\n')
+
+// The §6 counterpart: when the bridge cannot supply Code Intelligence, say so
+// in one line instead of staying silent. Silence read as "nothing to say about
+// code", which left the model with no instruction to fall back to its own file
+// tools. Deliberately names no cbm_* tool — there is nothing to advertise.
+//
+// It states that Code Intelligence is unavailable, not that the package is
+// uninstalled: the gate also trips when the package is present and its native
+// binary is missing, and the Codebase Memory plugin registers its six tools in
+// that case regardless. Only the capability is known here, so only the
+// capability is claimed.
+export const CODE_INTELLIGENCE_UNAVAILABLE_GUIDANCE =
+  'Code Intelligence is unavailable in this profile: the cbm_* tools cannot be used, so use your own file search, read, and grep tools instead.'
 
 // Claimed inbox text is gone from inbox and not yet on deriveMessages()
 // when systemPrompt.assemble runs (preStep claims, then assembles).

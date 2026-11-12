@@ -36,13 +36,15 @@ create a module for a handful of lines that belong where they are.
 
 ## When a new dependency is justified
 
-Almost never. The current runtime dependency set is deliberately minimal
-(`package.json` declares one: `@lovedolove/dsh-codebase-memory-mcp`), because
-`dsh plugin add` installs with pnpm and undeclared or bundled runtime deps have
-already caused `ERR_MODULE_NOT_FOUND` at plugin load. A new dependency requires:
+Almost never. The current required runtime dependency set is empty; the bridge
+(`@lovedolove/dsh-codebase-memory-mcp`) is a declared optional peer rather than a
+required dependency. The set stays deliberately minimal because `dsh plugin add`
+installs with pnpm and undeclared or bundled runtime deps have already caused
+`ERR_MODULE_NOT_FOUND` at plugin load. A new dependency requires:
 
 1. Evidence that the current code cannot reasonably do the job.
-2. A declared entry in `dependencies` (never `bundledDependencies`).
+2. A declared entry in `dependencies` or `peerDependencies` (never
+   `bundledDependencies`).
 3. Passing `node scripts/runtime-deps-check.mjs`.
 4. Review of the install path, since profiles install from the registry.
 

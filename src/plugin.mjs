@@ -14,14 +14,14 @@
  * Memory lives under $DSH_HOME/veyra/, never inside the user's repository.
  */
 
-import { AUTHORITIES, DEFAULT_RECALL_LIMIT } from './types.mjs'
+import { AUTHORITIES, CODE_FRESHNESS, DEFAULT_RECALL_LIMIT } from './types.mjs'
 import { Config, normalizeRecallLimit } from './config.mjs'
 import { closeAllStores } from './store.mjs'
 import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
 import { createMemoryServer } from './memory-server.mjs'
 import { MEMORY_OPERATIONS } from './memory-router.mjs'
-import { DEFAULT_RECALL_CHARS, GUIDANCE_TEXT, createContextProvider, rememberClaimedPrompt, rememberCompactedCheckpoint, recordRepositoryChange } from './context.mjs'
+import { CODE_INTELLIGENCE_GUIDANCE, CODE_INTELLIGENCE_UNAVAILABLE_GUIDANCE, DEFAULT_RECALL_CHARS, GUIDANCE_TEXT, createContextProvider, rememberClaimedPrompt, rememberCompactedCheckpoint, recordRepositoryChange } from './context.mjs'
 import { candidateFromBuffer, newBuffer, observeEvent } from './observe.mjs'
 import { maybeLearn, provenanceAllowsLearning, reviewCandidate, strengthenMemory } from './learn.mjs'
 import { markStale, sweepStale } from './evolve.mjs'
@@ -30,17 +30,18 @@ import { registerTools } from './tools.mjs'
 import { registerCommand } from './commands.mjs'
 import { registerSkills } from './skills.mjs'
 import { registerWebUi } from './webui.mjs'
-import {
-  CodeIntelligenceEngine,
-  RepositoryWatcher,
-  FRESHNESS_STATUS,
-  autoStartCodebaseMemory,
-  findExe,
-  getOrCreateClient,
-  createClient,
-  cbmApply,
-} from '@lovedolove/dsh-codebase-memory-mcp'
+import { CBM_PACKAGE_NAME, cbm, createDegradedEngine, cbmLoadFailure, isAbsentFailure, isCodeIntelligenceAvailable } from './cbm-bridge.mjs'
 import { findAffectedMemories, buildStaleReviewCandidate } from './code/linking.mjs'
+
+// `src/plugin.mjs` is this package's `main`/`exports` target, so these five CBM
+// helpers are part of Veyra's own public module surface. They are bound from the
+// bridge (and stay `undefined` when it cannot load) rather than from a direct
+// package import, which is why the re-export block below is unchanged.
+const findExe = cbm.findExe
+const getOrCreateClient = cbm.getOrCreateClient
+const createClient = cbm.createClient
+const cbmApply = cbm.cbmApply
+const autoStartCodebaseMemory = cbm.autoStartCodebaseMemory
 
 export const name = 'veyra'
 export const inject = ['tools']
@@ -126,11 +127,15 @@ function loggerOf(ctx) {
 
 function createRuntime(ctx, config = {}) {
   const log = loggerOf(ctx)
-  const codeEngine = new CodeIntelligenceEngine({
-    exePath: config.codebaseMemoryBin,
-    defaultPort: config.codebaseMemoryPort,
-    log,
-  })
+  // A missing/loading bridge must not break `apply()`: fall back to the null
+  // engine, which answers `{ ok: false, degraded: true }` to every call.
+  const codeEngine = typeof cbm.CodeIntelligenceEngine === 'function'
+    ? new cbm.CodeIntelligenceEngine({
+      exePath: config.codebaseMemoryBin,
+      defaultPort: config.codebaseMemoryPort,
+      log,
+    })
+    : createDegradedEngine()
   return {
     veyraHome: resolveVeyraHome(config),
     recallLimit: normalizeRecallLimit(config.recallLimit),
@@ -165,6 +170,30 @@ export function apply(ctx, config = {}) {
 
   const runtime = createRuntime(ctx, { ...DEFAULT_CONFIG, ...config })
 
+  // Spec §13: a corrupt install must not look like no install. The bridge
+  // degrades silently by design (module evaluation stays side-effect free), so
+  // the one warning lives here, where a logger exists. Only a failure that is
+  // not a plain absence is news, and the two are not distinguishable by the
+  // error code — `require` reports a missing package, a package whose `main` is
+  // missing, and a package whose dependency is missing all as MODULE_NOT_FOUND.
+  // `isAbsentFailure` compares the named specifier instead, so the broken
+  // install §13 exists to surface is not suppressed along with the absent one.
+  // `runtime.log.warn` is the logger wrapper that already swallows sink
+  // failures, so this can never break plugin load; there is one call per
+  // apply(), no interval/retry.
+  //
+  // The package name comes from the bridge: this file must never spell the
+  // specifier itself (a test asserts exactly one src/ file names it).
+  if (cbmLoadFailure && !isAbsentFailure(cbmLoadFailure)) {
+    try {
+      runtime.log.warn(
+        `[veyra] Codebase Memory failed to load (${cbmLoadFailure.code || 'unknown'}): ${cbmLoadFailure.message}. Code Intelligence is degraded; install or reinstall ${CBM_PACKAGE_NAME} to restore it.`,
+      )
+    } catch {
+      // A broken logger must never break plugin load.
+    }
+  }
+
   // The Memory Server is created once per plugin lifecycle and owns workspace
   // resolution, room routing, migration, and promotion for every consumer
   // (tools, commands, WebUI, automatic recall, automatic learning).
@@ -182,7 +211,7 @@ export function apply(ctx, config = {}) {
     : !isTest
 
   if (shouldEagerStart && runtime.codeEngine?.client?.isAvailable) {
-    autoStartCodebaseMemory(runtime.codeEngine.client, runtime.log)
+    autoStartCodebaseMemory?.(runtime.codeEngine.client, runtime.log)
   }
 
   const buffers = new WeakMap()
@@ -190,8 +219,9 @@ export function apply(ctx, config = {}) {
 
   const ensureWatcher = (cwd) => {
     if (!runtime.codebaseWatch || !cwd || watchers.has(cwd)) return
+    if (typeof cbm.RepositoryWatcher !== 'function') return
     try {
-      const watcher = new RepositoryWatcher(cwd, {
+      const watcher = new cbm.RepositoryWatcher(cwd, {
         onBatchChanges: async (events) => {
           try {
             const changedFiles = events.map((e) => e.relativePath)
@@ -209,7 +239,7 @@ export function apply(ctx, config = {}) {
             const memories = projectStore.list({ limit: 500 })
             const affected = findAffectedMemories(cwd, changedFiles, memories)
             for (const item of affected) {
-              if (item.freshness === FRESHNESS_STATUS.POTENTIALLY_STALE || item.freshness === FRESHNESS_STATUS.INVALID) {
+              if (item.freshness === CODE_FRESHNESS.POTENTIALLY_STALE || item.freshness === CODE_FRESHNESS.INVALID) {
                 const candidate = buildStaleReviewCandidate(
                   item.record,
                   item.affectedAnchors[0]?.path || 'modified code',
@@ -255,11 +285,27 @@ export function apply(ctx, config = {}) {
         return typeof disposer === 'function' ? disposer : undefined
       })
     }
+    // Advertise Code Intelligence only when it can actually answer. Computed
+    // here, not at module scope or in apply(): registerPrompt runs per apply,
+    // after createRuntime(), so runtime.codeEngine already exists. The `?.`
+    // matters because a host may register the prompt with a runtime that has
+    // no engine at all.
+    //
+    // `cbm.available` alone is not the test: it records that the optional peer
+    // package resolved, not that the six cbm_* tools exist. They are registered
+    // by the Codebase Memory plugin's own apply(), which DSH gives Veyra no way
+    // to probe — so the block is phrased conditionally and an unusable bridge
+    // emits the §6 fallback line instead of silence.
+    const codeIntelligenceUsable =
+      isCodeIntelligenceAvailable() && runtime.codeEngine?.isDegraded !== true
+    const guidanceText = codeIntelligenceUsable
+      ? `${GUIDANCE_TEXT}\n\n${CODE_INTELLIGENCE_GUIDANCE}`
+      : `${GUIDANCE_TEXT}\n\n${CODE_INTELLIGENCE_UNAVAILABLE_GUIDANCE}`
     try {
       runPromptEffect(() => scope.systemPrompt.section({
         name: 'veyra:guidance',
         order: 3050,
-        text: GUIDANCE_TEXT,
+        text: guidanceText,
       }))
     } catch (err) {
       runtime.log.warn(`[veyra] section register failed: ${err instanceof Error ? err.message : String(err)}`)

@@ -17,7 +17,7 @@ the module you are about to change.
 | `THIRD_PARTY.md` | Third-party attributions |
 | `cordis.patch.yml` | Bundle patch that inserts the `veyra` plugin into a DSH profile |
 | `client.js` | Browser half: Network Graph sidebar tab (no Settings section) |
-| `scripts/runtime-deps-check.mjs` | Release guardrail: every bare import must be builtin, host-provided, or a declared dependency |
+| `scripts/runtime-deps-check.mjs` | Release guardrail: every statically visible bare import must be builtin, host-provided, or a declared dependency (the bridge's runtime-resolved specifier is covered by its own test) |
 | `package.json` | Package manifest, published file set, DSH compatibility block |
 | `.github/workflows/ci.yml` | Push/PR: runtime-dep check, `npm test`, `npm pack --dry-run` on Node 22 and 24 |
 | `.github/workflows/publish-npm.yml` | Tag/manual: version validation, staged npm publish, GitHub Release |
@@ -81,6 +81,7 @@ the module you are about to change.
 
 | File | Responsibility |
 | --- | --- |
+| `src/cbm-bridge.mjs` | The only place under `src/` that names the CBM specifier. Resolves the package with `createRequire` at module evaluation (no async loader, no retry), re-exports the bound engine surface, records the first load failure in `cbmLoadFailure`, and degrades to a frozen stub when the package cannot load |
 | `src/code/linking.mjs` | Evidence-anchor ↔ code freshness: `checkRecordFreshness`, `findAffectedMemories`, stale review candidates |
 | `src/code/retrieval.mjs` | Unified retrieval pipeline across memory and structural code facts |
 
@@ -90,7 +91,7 @@ Bridge internals do **not** live here. See [CBM integration](./cbm-integration.m
 
 | File | Responsibility |
 | --- | --- |
-| `src/tools.mjs` | Model-facing tool definitions: 11 `veyra_*` tools plus 6 `cbm_*` spliced in from the bridge factory, schema shaping, `registerTools`, `createToolHarness` for tests |
+| `src/tools.mjs` | Model-facing tool definitions: 11 `veyra_*` tools (the six `cbm_*` tools belong to the Codebase Memory plugin and are not defined here), schema shaping, `registerTools`, `createToolHarness` for tests |
 | `src/commands.mjs` | `/veyra` slash command parsing, dispatch, help text, `packageVersion` |
 | `src/skills.mjs` | `BUNDLED_SKILL_DEFINITIONS` and bundled skill provider registration |
 | `src/observatory.mjs` | Read-only Observatory projections: overview, record, search, causality, relationships, local graph, contradictions, consolidation |
@@ -98,10 +99,10 @@ Bridge internals do **not** live here. See [CBM integration](./cbm-integration.m
 
 ## Bundled skills
 
-`skills/<name>/SKILL.md` — five skills shipped in the package: `veyra`,
-`codebase-memory`, `legacy-onboarding`, `memory-review`, `memory-maintenance`.
+`skills/<name>/SKILL.md` — four skills shipped in the package:
+`legacy-onboarding`, `memory-maintenance`, `memory-review`, `veyra`.
 Frontmatter is the source of truth; `src/skills.mjs` must stay in parity (a test
-asserts it).
+asserts it). The `codebase-memory` skill now ships with CBM's own plugin.
 
 ## Tests
 

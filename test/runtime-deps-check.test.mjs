@@ -85,19 +85,52 @@ test('packaging regression: Veyra package.json uses DSH-supported packaging', ()
     'Veyra must not use bundleDependencies'
   )
 
-  // 2. Must declare CBM in dependencies
+  // 2. Must declare CBM, as an optional peer (the bridge resolves it at runtime
+  //    and degrades when it is absent; see the dedicated tests below)
   assert.ok(
-    pkg.dependencies?.['@lovedolove/dsh-codebase-memory-mcp'],
-    '@lovedolove/dsh-codebase-memory-mcp must be declared in dependencies'
+    pkg.peerDependencies?.['@lovedolove/dsh-codebase-memory-mcp'],
+    '@lovedolove/dsh-codebase-memory-mcp must be declared in peerDependencies'
   )
 
   // 3. Shipped files must have zero undeclared runtime imports
   const fileMap = buildShippedFileMap(pkg)
   assert.ok(Object.keys(fileMap).length > 25, 'Expected >25 shipped files')
-  const { violations } = checkRuntimeImports(pkg.dependencies ?? {}, fileMap)
+  const { violations } = checkRuntimeImports(
+    { ...(pkg.dependencies ?? {}), ...(pkg.peerDependencies ?? {}) },
+    fileMap
+  )
   assert.deepEqual(
     violations,
     [],
     `Found undeclared runtime imports in shipped files: ${JSON.stringify(violations)}`
   )
+})
+
+test('CBM is declared as an optional peer, not a runtime dependency', () => {
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  // Not `deepEqual(dependencies, {})`: a future legitimate dependency must not
+  // break a test that only cares where CBM is declared.
+  assert.equal(pkg.dependencies?.['@lovedolove/dsh-codebase-memory-mcp'], undefined)
+  assert.ok(pkg.peerDependencies?.['@lovedolove/dsh-codebase-memory-mcp'])
+  assert.equal(pkg.peerDependenciesMeta?.['@lovedolove/dsh-codebase-memory-mcp']?.optional, true)
+  // npm does not install an optional peer on `npm install`, and CI runs plain
+  // `npm install`. Ten tests import this package statically, so without the
+  // devDependency the whole suite fails in CI with ERR_MODULE_NOT_FOUND.
+  assert.ok(pkg.devDependencies?.['@lovedolove/dsh-codebase-memory-mcp'])
+  assert.match(pkg.engines.node, />=22\.12\.0/)
+})
+
+test('the bridge specifier is declared even though the guard cannot see it', () => {
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  const bridge = readFileSync(new URL('../src/cbm-bridge.mjs', import.meta.url), 'utf8')
+  // The bridge resolves the package through createRequire with a const
+  // specifier, so extractSpecifiers cannot see it (measured: it returns [] for
+  // this file). Read the constants out of the source instead.
+  const specifiers = [...bridge.matchAll(/const\s+([A-Z_]*SPECIFIER)\s*=\s*'([^']+)'/g)].map((m) => m[2])
+  assert.equal(specifiers.length, 2, 'expected the main and /discovery specifiers')
+  const declared = { ...(pkg.dependencies ?? {}), ...(pkg.peerDependencies ?? {}) }
+  for (const spec of specifiers) {
+    const pkgName = spec.split('/').slice(0, spec.startsWith('@') ? 2 : 1).join('/')
+    assert.ok(declared[pkgName], `${pkgName} must be declared in dependencies or peerDependencies`)
+  }
 })

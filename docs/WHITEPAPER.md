@@ -13,10 +13,11 @@ performance or outcome guarantee beyond the stated evidence.
 > (commit 75d74ab). Architecture has since moved on: as of v0.1.65/0.1.66 the
 > Code Intelligence bridge (discovery, client, engine, watcher, `cbm_*` tool
 > definitions) lives in the standalone `@lovedolove/dsh-codebase-memory-mcp`
-> package, which Veyra declares as its sole runtime npm dependency — so §4's
-> "zero runtime dependencies" and "~180 kB packed" statements describe the
-> v0.1.57 revision, not the current one. Read the current README for the
-> present architecture; this paper's revision pin and traceability claims
+> package, which the v0.1.65/0.1.66 revisions declare as their sole runtime npm
+> dependency; from the current release it is declared as an **optional peer**
+> instead — so §4's "zero runtime dependencies" and "~180 kB packed" statements
+> describe the v0.1.57 revision, not the current one. Read the current README for
+> the present architecture; this paper's revision pin and traceability claims
 > remain scoped to v0.1.57.
 
 **繁體中文 (Traditional Chinese): [docs/WHITEPAPER.zh-TW.md](./WHITEPAPER.zh-TW.md)**
@@ -121,9 +122,10 @@ behavior* — contradictions stay visible (D14–D15b).
 
 Veyra is a DSH plugin (compatible DSH releases 0.1.2-rc.1 through 0.2.0-rc.2
 per `package.json`; the README troubleshooting entry states the published
-range `>=0.1.2-rc.1 <0.3.0-0`; Node `>=22.5.0 <25.0.0` required for
-`node:sqlite`). It has zero runtime dependencies; the shipped module graph is
-pure ESM, roughly 180 kB packed.
+range `>=0.1.2-rc.1 <0.3.0-0`; Node `>=22.12.0 <25.0.0` required for
+`node:sqlite` and for the unflagged `require(esm)` the CBM bridge relies on). It
+has zero runtime dependencies; the shipped module graph is pure ESM, roughly
+180 kB packed.
 
 ### 4.1 The dual-brain model
 
@@ -163,9 +165,8 @@ Four **projections** of one store, not four stores:
    **read-only** `/veyra` surface; verified against mutation attempts, §11.1).
 3. **Agent context** — the recall projection of §7, with disclaimer and
    injection-warning scrubbing.
-4. **Human surfaces** — the read-only WebUI and the five bundled agent skills
-   (`veyra`, `codebase-memory`, `legacy-onboarding`, `memory-review`,
-   `memory-maintenance`).
+4. **Human surfaces** — the read-only WebUI and the four bundled agent skills
+   (`veyra`, `legacy-onboarding`, `memory-review`, `memory-maintenance`).
 
 **Storage identity.** One SQLite+FTS5 database per project under
 `$DSH_HOME/veyra/projects/<p_id>/memory.db` (default `~/.dsh/veyra`;
@@ -537,7 +538,7 @@ paired tasks (the experiment, §11.3).
 | Context projection with disclaimer + injection warning; secret scrubbing | `src/context.mjs`, `src/redact.mjs` |
 | Read-only WebUI; observatory projections | `src/webui.mjs` |
 | Optional code intelligence (external graph binary, degraded mode) | `src/code/` |
-| Five bundled skills | `skills/` |
+| Four bundled skills | `skills/` |
 | 29-test / 45-dimension benchmark harness + complementary suites | `test/`, `docs/BENCHMARK.md` |
 
 ### 12.3 Verified
@@ -612,8 +613,9 @@ gap listings, not promises.
 6. **Human-bound steps** — verification, canonical promotion, contradiction
    resolution, and forgetting of protected records require a human; the
    system deliberately cannot close those loops by itself (P2).
-7. **Host requirement** — DSH plugin; Node ≥ 22.5 (`node:sqlite`). The
-   optional graph layer requires the external CBM binary or degrades.
+7. **Host requirement** — DSH plugin; Node ≥ 22.12 (`node:sqlite`, plus the
+   unflagged `require(esm)` the CBM bridge relies on). The optional graph layer
+   requires the external CBM binary or degrades.
 8. **Advisory memory** — agents may ignore recalled memory (P5); the value
    proposition is therefore *bounded by agent compliance*, which the impact
    experiment (§11.3) is designed to measure.

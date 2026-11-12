@@ -9,7 +9,7 @@ Before editing:
 ```sh
 git status              # must be clean or knowingly dirty
 git log --oneline -5    # current version and recent intent
-node --version          # must satisfy >=22.5.0 <25.0.0
+node --version          # must satisfy >=22.12.0 <25.0.0
 ```
 
 Run the suite once so you know the starting state:

@@ -219,7 +219,13 @@ export function buildShippedFileMap(manifest) {
 function main() {
   const manifest = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8'))
   const fileMap = buildShippedFileMap(manifest)
-  const { violations, checkedFiles, checkedSpecifiers } = checkRuntimeImports(manifest.dependencies ?? {}, fileMap)
+  // An optional peer counts as declared here: the bridge resolves it at runtime
+  // and degrades when it is missing, so a host without it is supported.
+  // `devDependencies` is deliberately not merged — the guard asks what the
+  // shipped package declares, and a dev-only install must not justify a
+  // specifier in `src/`.
+  const declared = { ...(manifest.dependencies ?? {}), ...(manifest.peerDependencies ?? {}) }
+  const { violations, checkedFiles, checkedSpecifiers } = checkRuntimeImports(declared, fileMap)
   if (violations.length > 0) {
     console.error(`dsh runtime-deps: ${violations.length} undeclared runtime import(s) in ${checkedFiles} shipped file(s):`)
     for (const v of violations) {

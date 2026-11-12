@@ -3,8 +3,11 @@
 ## Package manifest
 
 `@lovedolove/veyra`, ESM, `main` and exports point at `src/plugin.mjs`;
-`./client` points at `client.js`. `engines.node` is `>=22.5.0 <25.0.0`
-(`node:sqlite` requires 22.5+).
+`./client` points at `client.js`. `engines.node` is `>=22.12.0 <25.0.0`. The
+floor is set by the bridge: `node:sqlite` needs 22.5+, but unflagged
+`require(esm)` — which `src/cbm-bridge.mjs` relies on to load CBM synchronously
+— only starts at 22.12.0. Below that the bridge would silently stub out while
+`engines` claimed support.
 
 Published file set (`files`): `src`, `skills`, `client.js`,
 `cordis.patch.yml`, `LICENSE`, `README.md`, `CHANGELOG.md`, `THIRD_PARTY.md`.
@@ -13,13 +16,21 @@ part of the public contract.
 
 ## Dependency rules
 
-- Exactly one runtime dependency today: `@lovedolove/dsh-codebase-memory-mcp`.
+- Veyra has no required runtime dependency. `@lovedolove/dsh-codebase-memory-mcp`
+  is an optional peer that `src/cbm-bridge.mjs` resolves at runtime; when it is
+  absent Veyra loads and its memory features run normally. Demoting it does not
+  uninstall it: pnpm installs optional peers by default, and a profile that
+  declares CBM keeps it.
 - Host packages (`@deepseek-ai/cordis`, `@deepseek-ai/dsh-tools`) are optional
   peer dependencies, never regular dependencies.
 - No `bundledDependencies`. Profiles install with pnpm; bundled packages are not
   fetched from the registry and git tarballs cannot carry `node_modules`.
-- Every bare import in a shipped file must be builtin, host-provided, or
-  declared. `scripts/runtime-deps-check.mjs` enforces this and fails closed.
+- Every statically visible bare import in a shipped file must be builtin,
+  host-provided, or declared. `scripts/runtime-deps-check.mjs` enforces this and
+  fails closed. The bridge's specifier is not statically visible — the bridge
+  loads it via `createRequire(…)` with the specifier in a constant — so that one
+  runtime-resolved specifier is asserted by its own test in
+  `test/runtime-deps-check.test.mjs`.
 
 ## Scripts
 

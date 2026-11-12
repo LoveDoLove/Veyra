@@ -36,7 +36,7 @@ outside the user's repository.
 | Layer | Holds | Source of truth | Owner |
 | --- | --- | --- | --- |
 | **Veyra Memory** | Engineering lessons, root causes, decisions, constraints, causal chains (`symptom → rootCause → remedy → verifiedOutcome`), negative and unresolved knowledge | Epistemic state accumulated across sessions | This repository |
-| **Code Intelligence** | AST-level structural facts: symbols, files, call graphs, hierarchies | The live repository | `@lovedolove/dsh-codebase-memory-mcp` + external native daemon |
+| **Code Intelligence** | AST-level structural facts: symbols, files, call graphs, hierarchies | The live repository | Optional peer `@lovedolove/dsh-codebase-memory-mcp` (resolved via `src/cbm-bridge.mjs`) + external native daemon |
 
 They answer different questions and must never be conflated. A memory can be
 marked stale by a structural change; a structural fact is never a memory.

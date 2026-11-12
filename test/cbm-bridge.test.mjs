@@ -1,0 +1,166 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { loadCbmBridge, createDegradedEngine, resolveRepoPath, cbm, cbmLoadFailure, isAbsentFailure } from '../src/cbm-bridge.mjs'
+import { CODE_FRESHNESS } from '../src/types.mjs'
+
+test('bridge exposes the full namespace when the package is installed', () => {
+  const loaded = loadCbmBridge()
+  assert.equal(loaded.available, true)
+  for (const name of ['CodeIntelligenceEngine', 'RepositoryWatcher',
+    'autoStartCodebaseMemory', 'findExe', 'getOrCreateClient', 'createClient',
+    'cbmApply', 'closeAllWatchers', 'resolveSafeRepoPath', 'sanitizeCodeContent']) {
+    assert.equal(typeof loaded[name], 'function', `${name} must be a function`)
+  }
+  assert.ok(Object.isFrozen(loaded))
+})
+
+test('bridge degrades to a frozen unavailable stub when the package cannot resolve', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'veyra-no-cbm-'))
+  try {
+    const loaded = loadCbmBridge({ requireFrom: join(dir, 'noop.mjs') })
+    assert.equal(loaded.available, false)
+    assert.equal(loaded.CodeIntelligenceEngine, null)
+    assert.equal(loaded.RepositoryWatcher, null)
+    assert.equal(loaded.resolveSafeRepoPath, null)
+    assert.equal(loaded.sanitizeCodeContent, null)
+    assert.equal(typeof loaded.closeAllWatchers, 'function')
+    assert.deepEqual(loaded.FRESHNESS_STATUS, CODE_FRESHNESS)
+    assert.ok(Object.isFrozen(loaded))
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('bridge never throws for a corrupt require base', () => {
+  for (const base of ['', '\0bad\0path', '/nonexistent/深入/path.mjs']) {
+    assert.doesNotThrow(() => loadCbmBridge({ requireFrom: base }))
+    assert.equal(loadCbmBridge({ requireFrom: base }).available, false)
+  }
+})
+
+test('upstream FRESHNESS_STATUS agrees with CODE_FRESHNESS', () => {
+  if (!cbm.available) return // parity is only checkable when the package exists
+  assert.deepEqual(cbm.FRESHNESS_STATUS, CODE_FRESHNESS)
+})
+
+test('degraded engine satisfies the complete codeEngine surface', async () => {
+  const engine = createDegradedEngine()
+  assert.equal(engine.isDegraded, true)
+  assert.equal(engine.client.isAvailable, false)
+  const s = await engine.getStatus('/tmp')
+  assert.equal(s.status, 'degraded')
+  assert.equal(s.degraded, true)
+  for (const r of [await engine.searchSymbols('/tmp', {}), await engine.searchCodeText('/tmp', {}),
+    await engine.traceCallPath('/tmp', {}), await engine.indexRepository('/tmp', {})]) {
+    assert.equal(r.ok, false)
+    assert.equal(r.degraded, true)
+  }
+  assert.doesNotThrow(() => engine.dispose())
+})
+
+test('the degraded engine is frozen', () => {
+  // A host that receives the degraded engine must not be able to swap a stub
+  // for a working-looking one, or mutate `isDegraded` back to false and make
+  // the guidance advertise tools that do not exist.
+  assert.ok(Object.isFrozen(createDegradedEngine()))
+})
+
+test('resolveRepoPath returns null when no boundary authority exists', () => {
+  const noBridge = { available: false, resolveSafeRepoPath: null }
+  assert.equal(resolveRepoPath('/repo', '/repo/a.mjs', noBridge), null)
+  const throwing = { available: true, resolveSafeRepoPath: () => { throw new Error('boom') } }
+  assert.equal(resolveRepoPath('/repo', '/repo/a.mjs', throwing), null)
+  const working = { available: true, resolveSafeRepoPath: () => 'a.mjs' }
+  assert.equal(resolveRepoPath('/repo', '/repo/a.mjs', working), 'a.mjs')
+})
+
+test('bridge degrades instead of throwing when an export getter throws', () => {
+  // A package whose main entry exposes a throwing enumerable getter must not
+  // be able to kill plugin load: the export spread runs at module evaluation,
+  // so an escape here would surface as a failed `import`, not a degraded engine.
+  const dir = mkdtempSync(join(tmpdir(), 'veyra-malformed-cbm-'))
+  try {
+    const pkg = join(dir, 'node_modules', '@lovedolove', 'dsh-codebase-memory-mcp')
+    mkdirSync(pkg, { recursive: true })
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({
+      name: '@lovedolove/dsh-codebase-memory-mcp',
+      version: '9.9.9',
+      main: 'index.cjs',
+      exports: { '.': './index.cjs', './discovery': './discovery.cjs' },
+    }))
+    writeFileSync(join(pkg, 'index.cjs'), [
+      "const api = { findExe: () => 'x' }",
+      "Object.defineProperty(api, 'resolveSafeRepoPath', {",
+      "  enumerable: true,",
+      "  get() { throw new Error('malformed export') },",
+      '})',
+      'module.exports = api',
+    ].join('\n'))
+    writeFileSync(join(pkg, 'discovery.cjs'), "module.exports = { resolveSafeRepoPath: () => 'ok' }\n")
+
+    let loaded
+    assert.doesNotThrow(() => { loaded = loadCbmBridge({ requireFrom: join(dir, 'entry.mjs') }) })
+    assert.equal(loaded.available, false)
+    assert.equal(loaded.resolveSafeRepoPath, null)
+    assert.ok(Object.isFrozen(loaded))
+    assert.deepEqual(loaded.FRESHNESS_STATUS, CODE_FRESHNESS)
+    // §13: this is a corrupt install, not an absent one, and the operator can
+    // only tell the two apart if the failure is recorded. The code must be a
+    // real one — plugin.load warns on it precisely because it is not the
+    // "module not found" that means "never installed".
+    assert.ok(cbmLoadFailure, 'a failed load must be recorded')
+    assert.equal(typeof cbmLoadFailure.code, 'string')
+    assert.notEqual(cbmLoadFailure.code, 'ERR_MODULE_NOT_FOUND')
+    assert.match(cbmLoadFailure.message, /malformed export/)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('a missing package is absence; a missing main or dependency is a broken install', () => {
+  // §13 asks for a warning when the package is there but unusable. `require`
+  // reports every one of these as MODULE_NOT_FOUND, so the code cannot decide
+  // it — only the named specifier can. These are the exact message shapes Node
+  // 24 produces, captured from real require failures.
+  const absent = {
+    code: 'MODULE_NOT_FOUND',
+    message: "Cannot find module '@lovedolove/dsh-codebase-memory-mcp'\nRequire stack:\n- /app/entry.mjs",
+  }
+  assert.equal(isAbsentFailure(absent), true, 'a bare specifier that never resolved is a supported absence')
+
+  const absentDiscovery = {
+    code: 'MODULE_NOT_FOUND',
+    message: "Cannot find module '@lovedolove/dsh-codebase-memory-mcp/discovery'\nRequire stack:\n- /app/entry.mjs",
+  }
+  assert.equal(isAbsentFailure(absentDiscovery), true)
+
+  const missingMain = {
+    code: 'MODULE_NOT_FOUND',
+    message: 'Cannot find module \'/app/node_modules/@lovedolove/dsh-codebase-memory-mcp/index.cjs\'. Please verify that the package.json has a valid "main" entry',
+  }
+  assert.equal(isAbsentFailure(missingMain), false, 'an installed package with no main must warn')
+
+  const missingDep = {
+    code: 'MODULE_NOT_FOUND',
+    message: "Cannot find module 'some-missing-dep'\nRequire stack:\n- /app/node_modules/@lovedolove/dsh-codebase-memory-mcp/index.cjs",
+  }
+  assert.equal(isAbsentFailure(missingDep), false, 'a missing dependency must warn')
+
+  assert.equal(isAbsentFailure(null), false, 'no recorded failure is not an absence to warn about')
+  assert.equal(isAbsentFailure({ code: 'CBM_LOAD_FAILED', message: 'Cannot find module nonsense' }), false,
+    'the synthetic code is never absence')
+})
+
+test('the absent-package contract is classified from the live bridge failure', () => {
+  // Same inputs as the unit test above, driven through a real require so a
+  // future Node message change cannot silently reclassify an absent package as
+  // a broken one (which would warn on every clean install).
+  const dir = mkdtempSync(join(tmpdir(), 'veyra-absent-classify-'))
+  try {
+    writeFileSync(join(dir, 'entry.mjs'), '')
+    const loaded = loadCbmBridge({ requireFrom: join(dir, 'entry.mjs') })
+    assert.equal(loaded.available, false)
+    assert.ok(cbmLoadFailure?.code === 'MODULE_NOT_FOUND' || cbmLoadFailure?.code === 'ERR_MODULE_NOT_FOUND',
+      'a missing package throws a module-not-found code')
+    assert.equal(isAbsentFailure(cbmLoadFailure), true, 'a genuinely absent package stays quiet')
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})

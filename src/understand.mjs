@@ -22,7 +22,7 @@ import { scrub } from './redact.mjs'
 import { tokenize } from './text.mjs'
 import { provenanceDimensions } from './ids.mjs'
 import { isAbsolute } from 'node:path'
-import { resolveSafeRepoPath } from '@lovedolove/dsh-codebase-memory-mcp'
+import { resolveRepoPath } from './cbm-bridge.mjs'
 
 const CLAIM_HINTS = [
   /\b(decided|decision|always|never|must not|must\b|should not|root cause|workaround|fix was|the cause|lesson|constraint|regression)\b/i,
@@ -687,11 +687,11 @@ function testOutcomeFrom(tools, files) {
 // trusted on faith.
 function repoRelativeAnchor(workspace, path) {
   if (!workspace || !isAbsolute(path)) return path
-  try {
-    return resolveSafeRepoPath(workspace, path) || null
-  } catch {
-    return null
-  }
+  // Unresolvable (out of bounds, or no bridge) returns null, which
+  // evidenceFrom treats identically: the anchor is dropped and the path stays
+  // in source.files provenance. An anchor we cannot verify is worse than no
+  // anchor, because trust evaluation would later read it as evidence.
+  return resolveRepoPath(workspace, path)
 }
 
 function evidenceFrom(files, symbols, tools, workspace = null) {

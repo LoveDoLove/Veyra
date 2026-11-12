@@ -24,7 +24,8 @@
     "test": "node --test test/*.test.mjs",
     "pack:check": "npm pack --dry-run"
   },
-  "dependencies": {
+  "dependencies": {},
+  "devDependencies": {
     "@lovedolove/dsh-codebase-memory-mcp": "^0.1.6"
   },
   "license": "MIT",
@@ -53,7 +54,7 @@
   },
   "homepage": "https://github.com/LoveDoLove/Veyra#readme",
   "engines": {
-    "node": ">=22.5.0 <25.0.0"
+    "node": ">=22.12.0 <25.0.0"
   },
   "dsh": {
     "bundle": {
@@ -80,15 +81,19 @@
         "0.2.0-rc.2": "compatible",
         "0.2.2-rc.1": "compatible"
       },
-      "nodeVersions": ">=22.5.0 <25.0.0",
+      "nodeVersions": ">=22.12.0 <25.0.0",
       "dshVersions": ">=0.1.2-rc.1 <0.3.0-0"
     }
   },
   "peerDependencies": {
+    "@lovedolove/dsh-codebase-memory-mcp": "^0.1.6",
     "@deepseek-ai/cordis": ">=4.0.1-rc.1 <5.0.0-0",
     "@deepseek-ai/dsh-tools": ">=0.1.2-rc.1 <0.3.0-0"
   },
   "peerDependenciesMeta": {
+    "@lovedolove/dsh-codebase-memory-mcp": {
+      "optional": true
+    },
     "@deepseek-ai/cordis": {
       "optional": true
     },

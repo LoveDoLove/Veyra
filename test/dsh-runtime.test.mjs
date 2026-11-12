@@ -125,7 +125,9 @@ test('Veyra composes against the real DSH host services', { skip }, async () => 
   const fiber = ctx.plugin(veyra, { home: tmpHome, recallLimit: 3 })
 
   const expected = buildToolDefinitions({ veyraHome: tmpHome, fallbackCwd: '/tmp' }).map((d) => d.name).sort()
-  assert.equal(expected.length, 17)
+  // 10 veyra_* + veyra_code_status. The six cbm_* tools belong to the
+  // Codebase Memory plugin, which registers them itself.
+  assert.equal(expected.length, 11)
 
   // Registration is async (tool loading falls back through a dynamic import),
   // so poll for the full seam to come up before asserting. The dedicated
@@ -278,7 +280,7 @@ test('real defineTool output is accepted by the real ToolRuntime', { skip }, asy
   assert.ok(await until(() => typeof ctx.tools?.view === 'function'), 'ToolRuntime did not come up')
 
   const defs = buildToolDefinitions({ veyraHome: tmpHome, fallbackCwd: '/tmp' })
-  assert.equal(defs.length, 17)
+  assert.equal(defs.length, 11) // 10 veyra_* + veyra_code_status; cbm_* belongs to the CBM plugin
   for (const def of defs) {
     const compiled = defineTool(def)
     ctx.tools.register(compiled)

@@ -1,7 +1,7 @@
 /**
  * Veyra — DSH tools.
  *
- * Eight model-facing tools:
+ * Eleven model-facing tools:
  *   veyra_remember  — keep durable engineering knowledge or RAG knowledge
  *   veyra_recall    — unified hybrid search beyond automatic context
  *   veyra_inspect   — read one record with deep provenance, causal facets, relations
@@ -13,6 +13,13 @@
  *                     optionally gate a remedy-consistent cluster into a candidate
  *   veyra_health    — §21: read-only memory-health categories & maintenance
  *                     findings; never mutates authority or records
+ *   veyra_code_status     — freshness of Code Intelligence for a repository;
+ *                           reports degraded when the bridge is absent
+ *   veyra_change_impact   — which memories a code change may affect
+ *   veyra_stale_ledger    — review ledger of memories whose anchors no longer resolve
+ *
+ * The six `cbm_*` tools are not defined here: they belong to the Codebase
+ * Memory plugin, which registers them from its own `apply()`.
  *
  * Registered through `@deepseek-ai/dsh-tools` `defineTool` when the peer
  * is available. Falls back to a duck-typed definition so unit tests and
@@ -29,7 +36,7 @@
  *   supported on type "boolean"
  */
 
-import { AUTHORITIES, CONFIDENCES, KINDS, SCOPES, VALIDATIONS, VALID_AUTHORITIES, VALID_CONFIDENCES, VALID_KINDS, VALID_SCOPES } from './types.mjs'
+import { AUTHORITIES, CODE_FRESHNESS, CONFIDENCES, KINDS, SCOPES, VALIDATIONS, VALID_AUTHORITIES, VALID_CONFIDENCES, VALID_KINDS, VALID_SCOPES } from './types.mjs'
 import { provenanceDimensions, resolveWorkspace } from './ids.mjs'
 
 import { MEMORY_OPERATIONS } from './memory-router.mjs'
@@ -41,9 +48,8 @@ import { forget as lifecycleForget } from './lifecycle.mjs'
 import { detectRecurrence, eligibleForCandidate, recordFeedback, recurrenceCandidate } from './feedback.mjs'
 import { memoryHealth, renderHealth } from './health.mjs'
 import { readGenerationEvidence, summarizeGenerationEvidence, recordExplicitOutcomeLink } from './apply-generation-evidence.mjs'
-import { CodeIntelligenceEngine, FRESHNESS_STATUS, createCbmToolDefinitions } from '@lovedolove/dsh-codebase-memory-mcp'
 import { checkRecordFreshness, checkAnchorFreshness, extractAnchorsFromRecord, findAffectedMemories, buildStaleReviewCandidate } from './code/linking.mjs'
-import { resolveSafeRepoPath } from '@lovedolove/dsh-codebase-memory-mcp/discovery'
+import { createDegradedEngine, isCodeIntelligenceAvailable, resolveRepoPath } from './cbm-bridge.mjs'
 import { classifyRecordTrust, TRUST_CATEGORIES } from './trust.mjs'
 import { annotateContradictions } from './evolve.mjs'
 
@@ -801,7 +807,6 @@ export function buildToolDefinitions(runtime) {
       },
       presentCall: (args) => ({ card: 'generic', title: 'Memory health', kind: 'other', rawInput: `failure threshold ${args.failureThreshold ?? 2}` }),
     },
-    ...createCbmToolDefinitions(runtime),
     {
       name: 'veyra_code_status',
       description: 'Inspect Veyra repository code index status, freshness, and affected memories.',
@@ -836,7 +841,7 @@ export function buildToolDefinitions(runtime) {
       async execute(args, exec) {
         const cwd = resolveWorkspace(exec?.agent) || runtime.fallbackCwd
         const targetRepo = args.repo || cwd
-        const engine = runtime.codeEngine || new CodeIntelligenceEngine()
+        const engine = runtime.codeEngine || createDegradedEngine()
         const status = await engine.getStatus(targetRepo)
 
         const projectStore = storesForRepository(runtime, targetRepo).projectStore
@@ -847,9 +852,9 @@ export function buildToolDefinitions(runtime) {
 
         for (const mem of memories) {
           const f = checkRecordFreshness(mem, targetRepo)
-          if (f.status === FRESHNESS_STATUS.FRESH) freshCount++
-          else if (f.status === FRESHNESS_STATUS.POTENTIALLY_STALE) staleCount++
-          else if (f.status === FRESHNESS_STATUS.INVALID) invalidCount++
+          if (f.status === CODE_FRESHNESS.FRESH) freshCount++
+          else if (f.status === CODE_FRESHNESS.POTENTIALLY_STALE) staleCount++
+          else if (f.status === CODE_FRESHNESS.INVALID) invalidCount++
         }
 
         return {
@@ -1001,7 +1006,7 @@ export function buildToolDefinitions(runtime) {
       async execute(args, exec) {
         const cwd = resolveWorkspace(exec?.agent) || runtime.fallbackCwd
         const targetRepo = args.repo || cwd
-        const engine = runtime.codeEngine || new CodeIntelligenceEngine()
+        const engine = runtime.codeEngine || createDegradedEngine()
         const projectStore = storesForRepository(runtime, targetRepo).projectStore
         const memories = projectStore ? projectStore.list({ limit: 500, includeForgotten: false }) : []
 
@@ -1022,7 +1027,7 @@ export function buildToolDefinitions(runtime) {
         if (!changedFiles) {
           for (const mem of memories) {
             const f = checkRecordFreshness(mem, targetRepo)
-            if (f.status !== FRESHNESS_STATUS.FRESH) {
+            if (f.status !== CODE_FRESHNESS.FRESH) {
               affectedMemories.push({
                 memoryId: mem.id,
                 title: mem.title,
@@ -1058,7 +1063,7 @@ export function buildToolDefinitions(runtime) {
         if (args.createCandidates && projectStore && affectedMemories.length > 0) {
           // We need to get the full memory records for candidate creation
           for (const am of affectedMemories) {
-            if (am.freshness === FRESHNESS_STATUS.POTENTIALLY_STALE || am.freshness === FRESHNESS_STATUS.INVALID) {
+            if (am.freshness === CODE_FRESHNESS.POTENTIALLY_STALE || am.freshness === CODE_FRESHNESS.INVALID) {
               const memRecord = projectStore.get(am.memoryId)
               if (memRecord) {
                 const candidate = buildStaleReviewCandidate(
@@ -1242,10 +1247,19 @@ export function buildToolDefinitions(runtime) {
                 }
                 let safeRel = null
                 let resolveError = null
-                try { safeRel = resolveSafeRepoPath(cwd, anc.path) } catch (e) { resolveError = e instanceof Error ? e.message : String(e) }
+                try { safeRel = resolveRepoPath(cwd, anc.path) } catch (e) { resolveError = e instanceof Error ? e.message : String(e) }
                 const base = { anchor: anc, resolvedPath: safeRel }
                 if (resolveError) return { ...base, status: 'unresolved', reason: `Path resolution unavailable: ${resolveError}` }
-                if (!safeRel) return { ...base, status: 'outside_or_invalid', reason: 'Path outside repository or invalid' }
+                if (!safeRel) {
+                  // A null path means the bridge could not resolve it at all —
+                  // 'outside_or_invalid' would claim a repository verdict the
+                  // resolution never reached. 'unresolved' already exists here
+                  // for exactly this shape, so no new status enters the output.
+                  if (!isCodeIntelligenceAvailable()) {
+                    return { ...base, status: 'unresolved', reason: 'Code intelligence is unavailable; the anchor path could not be resolved' }
+                  }
+                  return { ...base, status: 'outside_or_invalid', reason: 'Path outside repository or invalid' }
+                }
                 try {
                   const af = checkAnchorFreshness(anc, cwd)
                   return { ...base, status: af.status || 'unknown', reason: af.reason || 'unresolved' }

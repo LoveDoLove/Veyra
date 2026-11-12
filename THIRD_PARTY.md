@@ -80,10 +80,11 @@ SOFTWARE.
 
 Veyra's Code Intelligence bridge — repository discovery, the stdio client, engine,
 file watcher, and the `cbm_*` tool definitions — ships in the standalone package
-`@lovedolove/dsh-codebase-memory-mcp`, which Veyra declares as its sole runtime
-npm dependency. The external native daemon (`codebase-memory-mcp`) remains an
-optional runtime component; Code Intelligence degrades when it is absent, and
-the Veyra memory layer is unaffected.
+`@lovedolove/dsh-codebase-memory-mcp`, which Veyra declares as an **optional
+peer** dependency: `src/cbm-bridge.mjs` resolves it at runtime and degrades to a
+frozen stub when it is absent. The external native daemon
+(`codebase-memory-mcp`) remains an optional runtime component; Code Intelligence
+degrades when it is absent, and the Veyra memory layer is unaffected.
 
 - **Project:** [dsh-codebase-memory-mcp](https://github.com/LoveDoLove/dsh-codebase-memory-mcp)
 - **Copyright:** Copyright (c) LoveDoLove
