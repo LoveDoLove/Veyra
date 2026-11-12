@@ -8,9 +8,9 @@ registered there or delegated from there.
 
 | Seam | Registered from | Behavior |
 | --- | --- | --- |
-| `systemPrompt.section` | `registerPrompt` | Static `GUIDANCE_TEXT` — memory is not repository truth |
+| `systemPrompt.section` | `registerPrompt` | Static `GUIDANCE_TEXT` — memory is not repository truth — plus a conditional Code Intelligence block when the bridge can supply one |
 | `systemPrompt.context` | `registerPrompt` | Per-turn automatic recall via `createContextProvider(runtime)` |
-| `ctx.tools.register` | `registerTools` | 11 tools: ten `veyra_*` plus `veyra_code_status` |
+| `ctx.tools.register` | `registerTools` | Veyra defines eleven `veyra_*` tools; the six `cbm_*` tools belong to the Codebase Memory plugin, which registers them from its own `apply()` |
 | `ctx.commands.register` | `registerCommand` | The `/veyra` slash command |
 | `ctx.skills.registerProvider` (fallback `register`) | `registerSkills` | Four bundled skills at rank 600 |
 | `ctx.webServer.register` | `registerWebUi` | `/veyra` HTTP prefix, GET-only |

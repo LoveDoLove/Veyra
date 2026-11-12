@@ -149,6 +149,12 @@ The upstream installer places the binary in `~/.local/bin` on Linux/macOS and `%
 
 Or set `CBM_EXE=/path/to/codebase-memory-mcp` to point to a pre-existing binary.
 
+The tools themselves come from the Codebase Memory plugin, so also add it to your profile:
+
+```sh
+dsh plugin --profile web add @lovedolove/dsh-codebase-memory-mcp
+```
+
 ### When the binary is absent
 
 Code Intelligence enters **degraded mode**: the six `cbm_*` tools are simply not registered, because they belong to the Codebase Memory plugin and that plugin is not loaded, and `veyra_code_status` returns a structured error with installation guidance. All Veyra Memory tools, Observatory, slash commands, and hybrid search continue working without any interruption.
@@ -246,7 +252,7 @@ Neither brain replaces the other.
 **Change intelligence** (always available; degrades to path matching without the binary):
 `veyra_change_impact`
 
-**Code Intelligence tools** (the six `cbm_*` tools belong to the Codebase Memory plugin and only exist when it is installed; `veyra_code_status` degrades gracefully when absent):
+**Code Intelligence tools** (when the Codebase Memory plugin is installed it adds these six; Veyra defines none of them, and `veyra_code_status` degrades gracefully when the plugin is absent):
 `cbm_projects`, `cbm_search`, `cbm_snippet`, `cbm_trace`, `cbm_arch`, `cbm_search_code`, `veyra_code_status`
 
 Load the bundled `veyra` skill for full guidance on when to call each tool and how they interact.

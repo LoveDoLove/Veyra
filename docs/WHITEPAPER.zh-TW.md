@@ -140,8 +140,8 @@ Veyra 是一個 DSH 插件（依 `package.json`，相容 DSH 版本 0.1.2-rc.1 �
    **唯讀**的 `/veyra` 介面；已對抗變更嘗試驗證，§11.1）。
 3. **代理上下文** — §7 的召回投影，附免責聲明
    與注入警告洗滌。
-4. **人機介面** — 唯讀 WebUI 與五個隨附代理技能
-   （`veyra`、`codebase-memory`、`legacy-onboarding`、`memory-review`、
+4. **人機介面** — 唯讀 WebUI 與四個隨附代理技能
+   （`veyra`、`legacy-onboarding`、`memory-review`、
    `memory-maintenance`）。
 
 **儲存身份。** 每專案一個 SQLite+FTS5 資料庫，位於
@@ -454,7 +454,7 @@ dsh-token-saver 的基線在未驗證候選加權狀態下建立。上述驗證*
 | 上下文注入、注入警告、機密洗滌 | `src/context.mjs`、`src/redact.mjs` |
 | WebUI＋觀測台 | `src/webui.mjs` |
 | 可選代碼智慧層 | `src/code/` |
-| 五項技能 | `skills/` |
+| 四項技能 | `skills/` |
 | 29 測試／45 維度架構 | `test/`、`docs/BENCHMARK.md` |
 
 ### 12.3 已驗證

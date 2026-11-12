@@ -81,6 +81,7 @@ the module you are about to change.
 
 | File | Responsibility |
 | --- | --- |
+| `src/cbm-bridge.mjs` | The only place under `src/` that names the CBM specifier. Resolves the package with `createRequire` at module evaluation (no async loader, no retry), re-exports the bound engine surface, records the first load failure in `cbmLoadFailure`, and degrades to a frozen stub when the package cannot load |
 | `src/code/linking.mjs` | Evidence-anchor ↔ code freshness: `checkRecordFreshness`, `findAffectedMemories`, stale review candidates |
 | `src/code/retrieval.mjs` | Unified retrieval pipeline across memory and structural code facts |
 
