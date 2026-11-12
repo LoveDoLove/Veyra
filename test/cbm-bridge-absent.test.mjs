@@ -5,14 +5,22 @@ import { readFileSync } from 'node:fs'
 // The absent-bridge behaviour itself is unit-tested in
 // test/cbm-bridge.test.mjs via resolveRepoPath's injectable namespace. What
 // these tests pin is that the three call sites actually route through it,
-// because a direct `resolveSafeRepoPath` import would silently restore the
-// hard dependency the whole change exists to remove.
+// because a direct `@lovedolove/dsh-codebase-memory-mcp` import would silently
+// restore the hard dependency the whole change exists to remove.
+//
+// This asserts the import edges, not the absence of an identifier: the old
+// `!src.includes('resolveSafeRepoPath')` check looked like a guard but only
+// forbade one spelling, so `const { resolveSafeRepoPath } = await import(...)`
+// or an alias would have passed it while reintroducing the dependency.
 test('the capture and trust path resolve anchors through the bridge', () => {
   for (const file of ['../src/understand.mjs', '../src/trust.mjs', '../src/code/linking.mjs']) {
     const src = readFileSync(new URL(file, import.meta.url), 'utf8')
-    assert.ok(!src.includes('resolveSafeRepoPath'),
-      `${file} must not call resolveSafeRepoPath directly`)
-    assert.ok(src.includes('resolveRepoPath') || src.includes('repoRelativeAnchor'),
+    for (const line of src.split('\n')) {
+      assert.ok(!/from\s+['"]@lovedolove\/dsh-codebase-memory-mcp/.test(line),
+        `${file} must not import the codebase memory package directly: ${line.trim()}`)
+    }
+    // `../cbm-bridge.mjs` for src/code/linking.mjs, `./cbm-bridge.mjs` elsewhere.
+    assert.ok(/from\s+['"]\.\.?\/cbm-bridge\.mjs['"]/.test(src),
       `${file} must resolve paths through the bridge`)
   }
 })
@@ -28,7 +36,11 @@ test('createCodeAnchor still refuses an out-of-repo path', async () => {
 test('exactly one file under src/ names the codebase memory package', async () => {
   const { readdirSync, readFileSync } = await import('node:fs')
   const { join } = await import('node:path')
-  const root = new URL('../src/', import.meta.url).pathname
+  const { fileURLToPath } = await import('node:url')
+  // `fileURLToPath`, not `URL.pathname`: on Windows the pathname keeps a
+  // leading slash and percent-encodes spaces, so `full.slice(root.length)`
+  // would compare mangled prefixes and quietly report no offenders at all.
+  const root = fileURLToPath(new URL('../src/', import.meta.url))
   const offenders = []
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -101,9 +113,9 @@ test('plugin apply completes and registers tools with a degraded engine', async 
   dispose?.()
 })
 
-test('guidance omits the Code Intelligence block when the engine is degraded', async (t) => {
+test('guidance reports Code Intelligence as unavailable when the engine is degraded', async (t) => {
   const { apply } = await import('../src/plugin.mjs')
-  const { GUIDANCE_TEXT } = await import('../src/context.mjs')
+  const { CODE_INTELLIGENCE_UNAVAILABLE_GUIDANCE, GUIDANCE_TEXT } = await import('../src/context.mjs')
   const { testHome } = await import('./helpers/room.mjs')
   const sections = []
   const ctx = {
@@ -126,10 +138,15 @@ test('guidance omits the Code Intelligence block when the engine is degraded', a
 
   const guidance = sections.filter((s) => s.name === 'veyra:guidance')
   assert.equal(guidance.length, 1)
-  // With Code Intelligence unusable, the section is exactly the degraded text:
-  // no extra newline, no partial block, nothing the model could misread as a
-  // usable cbm_* tool surface.
-  assert.equal(guidance[0].text, GUIDANCE_TEXT)
+  // With Code Intelligence unusable, the section is the base policy plus one
+  // explicit line saying so (design spec §6). Silence used to be the choice
+  // here, but a silent section reads as "nothing to say about code": the model
+  // then has no instruction to fall back to its own file tools.
+  assert.equal(
+    guidance[0].text,
+    `${GUIDANCE_TEXT}\n\n${CODE_INTELLIGENCE_UNAVAILABLE_GUIDANCE}`,
+  )
+  // The unavailable line must not advertise the tool surface that is missing.
   assert.ok(!guidance[0].text.includes('Codebase Memory Policy'))
   assert.ok(!guidance[0].text.includes('cbm_trace'))
 
@@ -180,6 +197,52 @@ test('guidance appends the Code Intelligence block when the engine is available'
   assert.ok(guidance[0].text.endsWith(CODE_INTELLIGENCE_GUIDANCE), 'the block is appended last')
 
   dispose?.()
+})
+
+// Anti-fabrication. When Code Intelligence cannot resolve a path, the anchor is
+// NOT "outside the repository" — nobody knows. Reporting INVALID with the
+// out-of-repo reason invented a repository fact the bridge never established,
+// and that fabrication propagated into trust (stale), the recall banner (CODE
+// EVIDENCE INVALID), and retrieval (a 0.35 penalty plus a "memory references
+// code that no longer exists" contradiction). The bridge is bound at module
+// evaluation, so the only way to exercise a genuinely unavailable namespace is
+// to import a copy of src/ that sits outside any node_modules tree: every bare
+// specifier under src/ is either node:* or the dynamic @deepseek-ai/dsh-tools
+// import in tools.mjs, which this path never reaches.
+test('an unavailable bridge reports unverifiable evidence, never a fabricated reason', async (t) => {
+  const { cpSync, mkdtempSync, rmSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { fileURLToPath } = await import('node:url')
+  const root = mkdtempSync(join(tmpdir(), 'veyra-absent-bridge-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const srcCopy = join(root, 'src')
+  cpSync(fileURLToPath(new URL('../src/', import.meta.url)), srcCopy, { recursive: true })
+
+  const bridge = await import(join(srcCopy, 'cbm-bridge.mjs'))
+  assert.equal(bridge.cbm.available, false, 'the copy must degrade for real')
+
+  const { checkAnchorFreshness, checkRecordFreshness } = await import(join(srcCopy, 'code/linking.mjs'))
+  const anchor = { path: 'src/anything.mjs', symbol: 'anything' }
+  const fresh = checkAnchorFreshness(anchor, root)
+  assert.equal(fresh.status, 'invalid')
+  assert.equal(fresh.unverifiable, true, 'an unresolved path must be flagged unverifiable')
+  assert.match(fresh.reason, /code intelligence is unavailable/i)
+  assert.doesNotMatch(fresh.reason, /outside repository or invalid/i,
+    'the out-of-repo reason is a fabricated repository fact when the bridge cannot resolve')
+
+  const record = { title: 'anchored memory', evidence: [{ path: anchor.path, symbol: anchor.symbol }] }
+  const freshness = checkRecordFreshness(record, root)
+  assert.equal(freshness.unverifiable, true, 'the record-level verdict must carry the flag')
+  assert.equal(freshness.anchors.length, 1)
+
+  const { classifyRecordTrust, TRUST_CATEGORIES } = await import(join(srcCopy, 'trust.mjs'))
+  const trust = classifyRecordTrust(record, { workspace: root, freshness })
+  assert.equal(trust.category, TRUST_CATEGORIES.INSUFFICIENT_EVIDENCE,
+    'unverifiable is not stale — there is no evidence the code changed')
+  assert.ok(!trust.reasons.some((r) => /code evidence (invalid|stale)/.test(r)),
+    'no fabricated invalid/stale claim may reach the reasons')
+  assert.ok(trust.evidence.some((e) => e.includes('unverifiable')))
 })
 
 // The skill lives on both sides of this decoupling: Veyra bundled its own copy

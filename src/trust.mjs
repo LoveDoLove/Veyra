@@ -117,7 +117,17 @@ export function classifyRecordTrust(record, options = {}) {
       reason: 'code freshness could not be evaluated against the workspace',
     })
   }
-  if (freshness && freshness.status !== CODE_FRESHNESS.FRESH) {
+  if (freshness?.unverifiable) {
+    // "cannot verify" is not "no longer holds". Reporting STALE here would
+    // assert a code change nothing observed; INSUFFICIENT_EVIDENCE is the
+    // honest category and the one the precedence table already ranks below
+    // contradicted/stale so it never masks a real signal.
+    signals.push({
+      category: TRUST_CATEGORIES.INSUFFICIENT_EVIDENCE,
+      reason: 'code evidence cannot be verified: code intelligence is unavailable',
+    })
+    evidence.push(`freshness: ${freshness.status} (unverifiable)`)
+  } else if (freshness && freshness.status !== CODE_FRESHNESS.FRESH) {
     const details = (freshness.anchors || [])
       .filter((a) => a.status !== CODE_FRESHNESS.FRESH && a.reason)
       .map((a) => a.reason)

@@ -78,14 +78,20 @@ export async function unifiedRetrieve({
           anchorDetails: freshness.anchors,
         }
 
+        // An unverifiable anchor is INVALID on the wire but carries no evidence
+        // that the code changed: it must not be penalised as stale evidence nor
+        // declared a contradiction. Downgrading it would turn "unknown" into
+        // "gone", which is exactly the fabrication this bridge used to make.
+        const unverifiable = freshness.unverifiable === true
+
         // Freshness penalty for ranking if stale or invalid
-        if (freshness.status === CODE_FRESHNESS.POTENTIALLY_STALE) {
+        if (!unverifiable && freshness.status === CODE_FRESHNESS.POTENTIALLY_STALE) {
           enrichedHit.scores = {
             ...enrichedHit.scores,
             freshness_penalty: 0.15,
             composite: Math.max(0, Number((enrichedHit.scores.composite - 0.15).toFixed(4))),
           }
-        } else if (freshness.status === CODE_FRESHNESS.INVALID) {
+        } else if (!unverifiable && freshness.status === CODE_FRESHNESS.INVALID) {
           enrichedHit.scores = {
             ...enrichedHit.scores,
             freshness_penalty: 0.35,
@@ -96,7 +102,7 @@ export async function unifiedRetrieve({
         result.memories.push(enrichedHit)
 
         // Flag discrepancies if evidence is invalid or stale
-        if (freshness.status === CODE_FRESHNESS.INVALID) {
+        if (!unverifiable && freshness.status === CODE_FRESHNESS.INVALID) {
           result.contradictions.push({
             type: 'invalid_code_evidence',
             memoryId: hit.id,

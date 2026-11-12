@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { loadCbmBridge, createDegradedEngine, resolveRepoPath, cbm } from '../src/cbm-bridge.mjs'
+import { loadCbmBridge, createDegradedEngine, resolveRepoPath, cbm, cbmLoadFailure } from '../src/cbm-bridge.mjs'
 import { CODE_FRESHNESS } from '../src/types.mjs'
 
 test('bridge exposes the full namespace when the package is installed', () => {
@@ -59,6 +59,13 @@ test('degraded engine satisfies the complete codeEngine surface', async () => {
   assert.doesNotThrow(() => engine.dispose())
 })
 
+test('the degraded engine is frozen', () => {
+  // A host that receives the degraded engine must not be able to swap a stub
+  // for a working-looking one, or mutate `isDegraded` back to false and make
+  // the guidance advertise tools that do not exist.
+  assert.ok(Object.isFrozen(createDegradedEngine()))
+})
+
 test('resolveRepoPath returns null when no boundary authority exists', () => {
   const noBridge = { available: false, resolveSafeRepoPath: null }
   assert.equal(resolveRepoPath('/repo', '/repo/a.mjs', noBridge), null)
@@ -98,5 +105,13 @@ test('bridge degrades instead of throwing when an export getter throws', () => {
     assert.equal(loaded.resolveSafeRepoPath, null)
     assert.ok(Object.isFrozen(loaded))
     assert.deepEqual(loaded.FRESHNESS_STATUS, CODE_FRESHNESS)
+    // §13: this is a corrupt install, not an absent one, and the operator can
+    // only tell the two apart if the failure is recorded. The code must be a
+    // real one — plugin.load warns on it precisely because it is not the
+    // "module not found" that means "never installed".
+    assert.ok(cbmLoadFailure, 'a failed load must be recorded')
+    assert.equal(typeof cbmLoadFailure.code, 'string')
+    assert.notEqual(cbmLoadFailure.code, 'ERR_MODULE_NOT_FOUND')
+    assert.match(cbmLoadFailure.message, /malformed export/)
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })

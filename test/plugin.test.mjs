@@ -38,7 +38,7 @@ function loadValidateJsonSchemaValue() {
   return null
 }
 import { handleVeyraCommand } from '../src/commands.mjs'
-import { GUIDANCE_TEXT, buildRecallContext, createContextProvider } from '../src/context.mjs'
+import { CODE_INTELLIGENCE_UNAVAILABLE_GUIDANCE, GUIDANCE_TEXT, buildRecallContext, createContextProvider } from '../src/context.mjs'
 import { AUTHORITIES } from '../src/types.mjs'
 import { closeAllStores } from '../src/store.mjs'
 import { centralStore, roomIdFor, roomStore, testRuntime } from './helpers/room.mjs'
@@ -317,7 +317,16 @@ test('Veyra Agent Policy is registered as exactly one static system-prompt secti
   assert.equal(guidance.length, 1, 'exactly one veyra:guidance section — no duplicate injection')
   assert.equal(guidance[0].order, 3050)
   assert.equal(typeof guidance[0].text, 'string', 'policy is static text, assembled by DSH per model step')
-  assert.equal(guidance[0].text, GUIDANCE_TEXT)
+  // The base policy is always present; what follows it depends on whether Code
+  // Intelligence can answer. With the forced-degraded engine it must be the
+  // one-line fallback from spec §6 — never the cbm_* tool block, and never a
+  // silently truncated policy.
+  assert.ok(guidance[0].text.startsWith(GUIDANCE_TEXT),
+    'the static base policy must lead the section verbatim')
+  assert.ok(!guidance[0].text.includes('Codebase Memory Policy'),
+    'a degraded engine must not advertise the Codebase Memory block')
+  assert.ok(guidance[0].text.includes(CODE_INTELLIGENCE_UNAVAILABLE_GUIDANCE),
+    'a degraded engine must say Code Intelligence is unavailable')
   const recalls = ctx._contexts.filter((c) => c.name === 'veyra:recall')
   assert.equal(recalls.length, 1, 'exactly one veyra:recall context')
   dispose?.()

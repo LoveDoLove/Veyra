@@ -16,7 +16,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { sha256Hex } from '../ids.mjs'
-import { resolveRepoPath } from '../cbm-bridge.mjs'
+import { resolveRepoPath, isCodeIntelligenceAvailable } from '../cbm-bridge.mjs'
 import { CODE_FRESHNESS, KINDS, STATUSES, AUTHORITIES, VALIDATIONS, CONFIDENCES, SCOPES } from '../types.mjs'
 import { VALID_STATUSES } from '../types.mjs'
 
@@ -108,6 +108,20 @@ export function checkAnchorFreshness(anchor, repoRoot) {
 
   const safeRel = resolveRepoPath(repoRoot, anchor.path)
   if (!safeRel) {
+    // `null` means the bridge had no boundary authority — NOT that the path
+    // escaped the repository. Claiming "outside repository" here invented a
+    // repository fact nobody established, and that fabrication propagated into
+    // trust (stale), the recall banner (CODE EVIDENCE INVALID) and retrieval (a
+    // penalty plus a "code no longer exists" contradiction). The status stays
+    // INVALID for wire parity — CODE_FRESHNESS is a three-member contract —
+    // while `unverifiable` carries the real answer to every consumer.
+    if (!isCodeIntelligenceAvailable()) {
+      return {
+        status: CODE_FRESHNESS.INVALID,
+        unverifiable: true,
+        reason: 'Code intelligence is unavailable; the anchor path could not be resolved',
+      }
+    }
     return { status: CODE_FRESHNESS.INVALID, reason: 'Path outside repository or invalid' }
   }
 
@@ -165,12 +179,14 @@ export function checkRecordFreshness(record, repoRoot) {
   const evaluated = []
   let hasInvalid = false
   let hasStale = false
+  let hasUnverifiable = false
 
   for (const anc of anchors) {
     const fresh = checkAnchorFreshness(anc, repoRoot)
     evaluated.push({ anchor: anc, ...fresh })
     if (fresh.status === CODE_FRESHNESS.INVALID) hasInvalid = true
     if (fresh.status === CODE_FRESHNESS.POTENTIALLY_STALE) hasStale = true
+    if (fresh.unverifiable === true) hasUnverifiable = true
   }
 
   let status = CODE_FRESHNESS.FRESH
@@ -183,6 +199,11 @@ export function checkRecordFreshness(record, repoRoot) {
   return {
     status,
     anchors: evaluated,
+    // The status precedence is unchanged: unverifiable anchors are still
+    // INVALID on the wire. This flag is what lets consumers distinguish
+    // "the repository says this is gone" from "nobody could check", so it can
+    // never collapse into the stale/invalid claim it is not.
+    ...(hasUnverifiable ? { unverifiable: true } : {}),
   }
 }
 

@@ -21,7 +21,7 @@ import { projectIdFor, resolveVeyraHome, resolveWorkspace } from './ids.mjs'
 import { openProjectStore, openReusableStore } from './store.mjs'
 import { createMemoryServer } from './memory-server.mjs'
 import { MEMORY_OPERATIONS } from './memory-router.mjs'
-import { CODE_INTELLIGENCE_GUIDANCE, DEFAULT_RECALL_CHARS, GUIDANCE_TEXT, createContextProvider, rememberClaimedPrompt, rememberCompactedCheckpoint, recordRepositoryChange } from './context.mjs'
+import { CODE_INTELLIGENCE_GUIDANCE, CODE_INTELLIGENCE_UNAVAILABLE_GUIDANCE, DEFAULT_RECALL_CHARS, GUIDANCE_TEXT, createContextProvider, rememberClaimedPrompt, rememberCompactedCheckpoint, recordRepositoryChange } from './context.mjs'
 import { candidateFromBuffer, newBuffer, observeEvent } from './observe.mjs'
 import { maybeLearn, provenanceAllowsLearning, reviewCandidate, strengthenMemory } from './learn.mjs'
 import { markStale, sweepStale } from './evolve.mjs'
@@ -30,7 +30,7 @@ import { registerTools } from './tools.mjs'
 import { registerCommand } from './commands.mjs'
 import { registerSkills } from './skills.mjs'
 import { registerWebUi } from './webui.mjs'
-import { cbm, createDegradedEngine } from './cbm-bridge.mjs'
+import { CBM_PACKAGE_NAME, cbm, createDegradedEngine, cbmLoadFailure, isCodeIntelligenceAvailable } from './cbm-bridge.mjs'
 import { findAffectedMemories, buildStaleReviewCandidate } from './code/linking.mjs'
 
 // `src/plugin.mjs` is this package's `main`/`exports` target, so these five CBM
@@ -170,6 +170,26 @@ export function apply(ctx, config = {}) {
 
   const runtime = createRuntime(ctx, { ...DEFAULT_CONFIG, ...config })
 
+  // Spec §13: a corrupt install must not look like no install. The bridge
+  // degrades silently by design (module evaluation stays side-effect free), so
+  // the one warning lives here, where a logger exists. Only a failure that is
+  // not a plain absence is news: a missing-module code means the optional peer
+  // was never installed, which is a supported configuration. `runtime.log.warn`
+  // is the logger wrapper that already swallows sink failures, so this can
+  // never break plugin load; there is one call per apply(), no interval/retry.
+  //
+  // The package name comes from the bridge: this file must never spell the
+  // specifier itself (a test asserts exactly one src/ file names it).
+  if (cbmLoadFailure && cbmLoadFailure.code !== 'ERR_MODULE_NOT_FOUND' && cbmLoadFailure.code !== 'MODULE_NOT_FOUND') {
+    try {
+      runtime.log.warn(
+        `[veyra] Codebase Memory failed to load (${cbmLoadFailure.code || 'unknown'}): ${cbmLoadFailure.message}. Code Intelligence is degraded; install or reinstall ${CBM_PACKAGE_NAME} to restore it.`,
+      )
+    } catch {
+      // A broken logger must never break plugin load.
+    }
+  }
+
   // The Memory Server is created once per plugin lifecycle and owns workspace
   // resolution, room routing, migration, and promotion for every consumer
   // (tools, commands, WebUI, automatic recall, automatic learning).
@@ -266,9 +286,17 @@ export function apply(ctx, config = {}) {
     // after createRuntime(), so runtime.codeEngine already exists. The `?.`
     // matters because a host may register the prompt with a runtime that has
     // no engine at all.
-    const guidanceText = cbm.available && runtime.codeEngine?.isDegraded !== true
+    //
+    // `cbm.available` alone is not the test: it records that the optional peer
+    // package resolved, not that the six cbm_* tools exist. They are registered
+    // by the Codebase Memory plugin's own apply(), which DSH gives Veyra no way
+    // to probe — so the block is phrased conditionally and an unusable bridge
+    // emits the §6 fallback line instead of silence.
+    const codeIntelligenceUsable =
+      isCodeIntelligenceAvailable() && runtime.codeEngine?.isDegraded !== true
+    const guidanceText = codeIntelligenceUsable
       ? `${GUIDANCE_TEXT}\n\n${CODE_INTELLIGENCE_GUIDANCE}`
-      : GUIDANCE_TEXT
+      : `${GUIDANCE_TEXT}\n\n${CODE_INTELLIGENCE_UNAVAILABLE_GUIDANCE}`
     try {
       runPromptEffect(() => scope.systemPrompt.section({
         name: 'veyra:guidance',

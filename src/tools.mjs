@@ -49,7 +49,7 @@ import { detectRecurrence, eligibleForCandidate, recordFeedback, recurrenceCandi
 import { memoryHealth, renderHealth } from './health.mjs'
 import { readGenerationEvidence, summarizeGenerationEvidence, recordExplicitOutcomeLink } from './apply-generation-evidence.mjs'
 import { checkRecordFreshness, checkAnchorFreshness, extractAnchorsFromRecord, findAffectedMemories, buildStaleReviewCandidate } from './code/linking.mjs'
-import { cbm, createDegradedEngine, resolveRepoPath } from './cbm-bridge.mjs'
+import { createDegradedEngine, isCodeIntelligenceAvailable, resolveRepoPath } from './cbm-bridge.mjs'
 import { classifyRecordTrust, TRUST_CATEGORIES } from './trust.mjs'
 import { annotateContradictions } from './evolve.mjs'
 
@@ -1250,7 +1250,16 @@ export function buildToolDefinitions(runtime) {
                 try { safeRel = resolveRepoPath(cwd, anc.path) } catch (e) { resolveError = e instanceof Error ? e.message : String(e) }
                 const base = { anchor: anc, resolvedPath: safeRel }
                 if (resolveError) return { ...base, status: 'unresolved', reason: `Path resolution unavailable: ${resolveError}` }
-                if (!safeRel) return { ...base, status: 'outside_or_invalid', reason: 'Path outside repository or invalid' }
+                if (!safeRel) {
+                  // A null path means the bridge could not resolve it at all —
+                  // 'outside_or_invalid' would claim a repository verdict the
+                  // resolution never reached. 'unresolved' already exists here
+                  // for exactly this shape, so no new status enters the output.
+                  if (!isCodeIntelligenceAvailable()) {
+                    return { ...base, status: 'unresolved', reason: 'Code intelligence is unavailable; the anchor path could not be resolved' }
+                  }
+                  return { ...base, status: 'outside_or_invalid', reason: 'Path outside repository or invalid' }
+                }
                 try {
                   const af = checkAnchorFreshness(anc, cwd)
                   return { ...base, status: af.status || 'unknown', reason: af.reason || 'unresolved' }
