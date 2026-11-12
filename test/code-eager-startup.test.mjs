@@ -29,16 +29,21 @@ test('findExe and client factory exports match bridge specification', () => {
   assert.equal(client.isRunning(), false)
 })
 
-test('autoStartCodebaseMemory skips cleanly when executable is missing', async () => {
+test('autoStartCodebaseMemory returns null and warns once when the executable is missing', async () => {
   const client = new CodebaseMemoryClient({ exePath: '/nonexistent/codebase-memory-mcp' })
-  let warned = false
+  const warnings = []
   const log = {
     info: () => {},
-    warn: () => { warned = true },
+    warn: (msg) => { warnings.push(msg) },
   }
   const result = autoStartCodebaseMemory(client, log)
   assert.equal(result, null)
-  assert.equal(warned, false)
+  // CBM 0.1.7 made this warn: staying silent left the user unable to tell "no
+  // daemon because it is broken" from "no daemon because it was never
+  // installed". Asserting the warning is the point — a silent regression here
+  // is exactly the failure mode that change fixed.
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0], /executable not found/)
 })
 
 test('autoStartCodebaseMemory does not duplicate startup when client is already running', async () => {
