@@ -24,7 +24,7 @@ and does not restate the others.
 1. Direct instructions from the user for the current task.
 2. [`AGENTS.md`](../../AGENTS.md) — the guardrails that always apply.
 3. The guide for the topic you are changing.
-4. Product documents (`README.md`, [`GOAL.md`](../../GOAL.md), `docs/WHITEPAPER.md`,
+4. Product documents (`README.md`, [`PRODUCT-EVOLUTION-BLUEPRINT.md`](../PRODUCT-EVOLUTION-BLUEPRINT.md), `docs/WHITEPAPER.md`,
    `CHANGELOG.md`) — context and history, **not** current technical truth.
 
 If a guide and the source code disagree, the source code wins and the guide is
@@ -33,5 +33,5 @@ wrong. Fix the guide in the same change.
 ## Evidence rule
 
 Every technical claim in these guides is grounded in the repository at version
-`0.1.69`. Do not extend them with invented APIs, modules, tests, or workflows.
+`0.3.0`. Do not extend them with invented APIs, modules, tests, or workflows.
 When you change behavior, update the guide that describes it.

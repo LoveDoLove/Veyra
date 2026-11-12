@@ -1,6 +1,6 @@
 # Codebase Map
 
-Where each behavior lives, as of `0.1.69`. The file headers are the
+Where each behavior lives, as of `0.3.0`. The file headers are the
 authoritative description of each module — they state purpose and the reason for
 non-obvious decisions. This map is for navigation, not a substitute for reading
 the module you are about to change.
@@ -11,8 +11,9 @@ the module you are about to change.
 | --- | --- |
 | `AGENTS.md` | Coding agent entry point: rules + routing (this guide set) |
 | `CLAUDE.md` | Pointer to `AGENTS.md` only |
-| `README.md` / `README.zh-TW.md` | User-facing product docs: install, commands, tools, config, troubleshooting |
-| `GOAL.md` | Product direction and the principles the code is built to |
+| `README.md` / `README.zh-CN.md` | Front door: what Veyra is, quick start, capability summary |
+| `docs/reference/` | User-facing reference: memory model, tools, commands, configuration, code intelligence, troubleshooting |
+| `docs/PRODUCT-EVOLUTION-BLUEPRINT.md` | Product direction and the principles the code is built to |
 | `CHANGELOG.md` | Released history, one section per version |
 | `THIRD_PARTY.md` | Third-party attributions |
 | `cordis.patch.yml` | Bundle patch that inserts the `veyra` plugin into a DSH profile |

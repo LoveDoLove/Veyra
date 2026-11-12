@@ -1,515 +1,470 @@
 # Veyra: Engineering Intelligence for Coding Agents
 
-**Technical whitepaper — @lovedolove/veyra v0.1.57**
+[English](WHITEPAPER.md) · [简体中文](WHITEPAPER.zh-CN.md)
 
-Status of claims in this document: every implementation claim is traceable to the
-repository source at the revision stated (v0.1.57, commit 75d74ab, clean tree).
-Verification claims cite the test suite or the dated runtime record named in §11
-and §15. Where a property is designed for but not yet proven in use, it is
-labeled *unproven* in §12 and §13. Nothing in this paper should be read as a
+**Technical whitepaper — `@lovedolove/veyra` v0.3.0**
+
+This edition describes the current release. Every implementation claim is
+traceable to the source tree named in §15. Where a property is designed for but
+not proven in use, it is labelled *unproven* in §12.4 and §13. Nothing here is a
 performance or outcome guarantee beyond the stated evidence.
 
-> **Snapshot note.** This whitepaper is a dated snapshot pinned to v0.1.57
-> (commit 75d74ab). Architecture has since moved on: as of v0.1.65/0.1.66 the
-> Code Intelligence bridge (discovery, client, engine, watcher, `cbm_*` tool
-> definitions) lives in the standalone `@lovedolove/dsh-codebase-memory-mcp`
-> package, which the v0.1.65/0.1.66 revisions declare as their sole runtime npm
-> dependency; from the current release it is declared as an **optional peer**
-> instead — so §4's "zero runtime dependencies" and "~180 kB packed" statements
-> describe the v0.1.57 revision, not the current one. Read the current README for
-> the present architecture; this paper's revision pin and traceability claims
-> remain scoped to v0.1.57.
-
-**繁體中文 (Traditional Chinese): [docs/WHITEPAPER.zh-TW.md](./WHITEPAPER.zh-TW.md)**
+Earlier editions of this paper were pinned to specific commits and cited line
+numbers. That made them precise and unmaintainable at the same time. This
+edition cites files, not lines, and states the release it describes.
 
 ---
 
 ## 1. Executive summary
 
-Coding agents repeatedly re-derive what a project already knows: why a
-particular build flag exists, which fix was tried and rejected, what a
-canonical architectural decision is, and what changed recently. Veyra gives
-them a persistent, per-project **engineering memory** that is:
+Coding agents repeatedly re-derive what a project already knows: why a build
+flag exists, which fix was tried and rejected, what constraint governs a module,
+and what changed since last week. Veyra gives them a persistent,
+workspace-isolated **engineering memory** that is:
 
-- **Grounded** — every record carries evidence anchors into the repository
-  (file paths, notes, URIs), and out-of-repository paths can never become
-  evidence (§6).
-- **Trustable by construction** — an authority ladder
-  (`candidate → derived → canonical`) where only a human, via an explicit
-  tool call, can promote to canonical; similarity of a recalled record to the
-  current task never confers authority (§3, §6).
-- **Change-aware** — freshness and trust are evaluated at read time against
-  repository state, so stale knowledge is demoted, not silently served (§6, §7).
-- **Advisory, not executable** — recalled memory is injected as context with a
-  standing disclaimer that it is not repository truth and not an instruction;
-  the repository remains the single source of truth (§3, §7).
+- **Grounded.** Every record carries evidence anchors into the repository.
+  A path that cannot be resolved is never evidence.
+- **Trustable by construction.** Authority is an explicit ladder
+  (`candidate → derived → canonical`). Only an explicit human action reaches
+  `canonical`. Similarity to the current task never confers authority.
+- **Change-aware.** Freshness and trust are evaluated at read time against the
+  repository, so drifted knowledge is demoted instead of silently served.
+- **Advisory.** Recalled memory arrives as context with a standing notice that
+  it is not repository truth and not an instruction.
 
-Veyra ships as a DSH (DeepSeek Harness) plugin: pure ESM, zero runtime
-dependencies, one SQLite+FTS5 database per project under $DSH_HOME, optional
-structural code intelligence through an external graph binary, and a bounded,
-read-only web surface. It is evaluated by a 29-test, 45-dimension benchmark
-harness that re-asserts its own result table on every run, plus runtime,
-isolation/security, and end-to-end suites.
+Veyra ships as a DeepSeek Harness plugin: pure ESM, no required runtime
+dependency, one SQLite + FTS5 database per DSH workspace, and an optional
+structural code-intelligence layer supplied by a separate plugin.
 
-The paper deliberately separates four layers of claim throughout:
-**design goals** (§12.1), **implemented** (§12.2), **verified** (§12.3), and
-**unproven** (§12.4). Two real projects have exercised the system end to end —
-SmartTrip (a web application, 10-level end-to-end verification passed) and
-dsh-token-saver (legacy onboarding of 85 records, one auto-recall quality
-defect found and root-caused). The measurement question *"does Veyra improve
-agent task outcomes?"* remains explicitly open: the paired-task impact
-experiment is frozen and reproducible but not yet run (§11.3).
+The paper separates four layers of claim: **design goals** (§12.1),
+**implemented** (§12.2), **verified** (§12.3), and **unproven** (§12.4). The
+measurement question *"does Veyra improve agent task outcomes?"* is answered
+honestly: it has not been measured yet (§11.4, §13).
 
 ---
 
-## 2. Background: the problem
+## 2. The problem
 
-A coding agent's context window is a working set, not a store. Across sessions
-it loses:
+A context window is a working set, not a store. Across sessions an agent loses:
 
-1. **Architecture rationale** — *why* the project picked Postgres over a
-   graph database, which fix pattern was rejected and for what symptom.
-2. **Troubleshooting history** — the root cause of a previously fixed bug and
-   the remedy that actually worked (and the ones that did not).
-3. **Constraints** — "must support Node 22", "no new dependencies",
-   "do not touch module X".
+1. **Architecture rationale** — why this database, why this boundary, which
+   approach was rejected and for what symptom.
+2. **Troubleshooting history** — the root cause of a fixed bug, the remedy that
+   worked, and the ones that did not.
+3. **Constraints** — "must support Node 22", "no new dependencies", "do not
+   touch this module until the migration lands".
 4. **Freshness** — which of the above still hold after the code changed.
 
-Existing mitigations each fail part of this:
-conversation history is per-session and ungrounded; documentation drifts from
-code (the SmartTrip store surfaced two real drift cases: a removed feature
-still advertised in docs, and a doc claim contradicting measured egress
-behavior, §11.1); ad-hoc markdown knowledge files have no lifecycle, no
-authority model, and no read-time trust evaluation.
+Existing mitigations each fail part of this. Conversation history is
+per-session and ungrounded. Documentation drifts from code. A folder of markdown
+notes has no lifecycle, no authority model, and no read-time trust evaluation.
 
-Veyra's position: engineering memory is a **first-class, per-project,
-evidence-anchored, versioned store** with explicit authority, validation, and
-freshness axes — projected into the agent's context only through a bounded,
-gated recall path, and always re-checked against the repository at read time.
+Veyra's position: engineering memory is a first-class, per-workspace,
+evidence-anchored store with explicit authority, validation, and freshness axes,
+projected into agent context only through a bounded, gated recall path, and
+re-checked against the repository on every read.
 
 ---
 
-## 3. Design principles and core invariants
+## 3. Design principles
 
-Veyra's behavior is organized around one trust chain:
+Veyra is organized around one trust chain:
 
-    Repository Truth + Engineering Memory
-        → Applicability & Freshness
-        → Trust
-        → Agent Context
+```
+Repository Truth + Engineering Memory
+    → Applicability and Freshness
+    → Trust
+    → Agent Context
+```
 
-Memory is useful to an agent only when it is *trustworthy in this repository
-state, for this task*, and even then it arrives as **context, not
-instruction**. The five invariants below are load-bearing: each has a named
-mechanism, and each is protected by a test dimension (column D of §12.3).
+Memory is useful only when it is trustworthy *in this repository state, for this
+task*, and even then it arrives as context, not instruction.
 
-| # | Invariant | Statement | Mechanism | Guard |
-|---|-----------|-----------|-----------|-------|
-| P1 | **Observe ≠ Store** | Seeing something happen is not the same as it being true. The observe pipeline records *candidates only*; the noise filter drops non-technical text; the capture gate keeps only technical facets. | `src/observe.mjs:42` `isNoiseText`, `src/observe.mjs:174` `candidateFromBuffer` | D2 (0 false memories from 4 noise probes), D3 |
-| P2 | **Candidate ≠ Truth** | Low-authority records are never auto-recalled and never promoted automatically. The write gate defers automatic learning behind provenance; canonical authority is reachable only through an explicit, human-issued `veyra_promote`. | `src/learn.mjs:239` `learningGuards` (DEFER `provenance-gated` at :242, `canonical-requires-explicit-promotion` at :256); every verdict is then tallied by `writeGate` :498 via `recordWriteGateVerdict` :348; recall gate `isRecallEligible` in `src/types.mjs` (excludes candidate and observation kinds; requires authority derived or canonical) | D31 (0 automatic→canonical attempts), D31b (1 explicit promotion), D4/D5 |
-| P3 | **Similarity ≠ Authority** | A record that textually matches the query well still carries whatever authority it actually has. Authority, validation, confidence, and evidence strength score *independently* of lexical or semantic similarity; similarity contributes to ranking only, and low-similarity is a floor, never a veto — high-similarity likewise never promotes. | Scoring functions in `src/retrieve.mjs`: `evidenceStrength` :25, `validationTier` :60, `authorityTier` :78, `confidenceScore` :93, `lexicalScore` :146, `semanticSimilarity` :210; records with <4 shared tokens are never suppressed on that basis (:794) | D12/D13 (causal verified outranks suspected 0.567; no causal false signal), D14–D15b |
-| P4 | **Similarity ≠ Applicability** | A record can be textually near-relevant yet inapplicable to the current toolchain, task, or time window. Applicability is judged from structured context keys and temporal bounds, not from the query match; the default scope term measures scope proximity, not applicability. | `src/retrieve.mjs`: `scopeProximity` :87, `contextCompatibility` :476, `temporalBounds` :414, `temporalState` :434; `src/retrieve.mjs:512` RRF fusion (K=60, weight 0.06) | D10 (6/6), D11 (4/4) |
-| P5 | **Memory ≠ Executable Instruction** | Recalled memory enters the agent's context annotated as remembered experience: "not repository truth; verify against the codebase; similarity is not authority." It can be ignored at cost to the agent's task quality; it is never a command. The plugin itself performs no writes to the user's repository. | Context builder `src/context.mjs:790` `buildRecallContext` (empty string only when zero records; fail-closed on recall errors), injection warning at render (`src/context.mjs:313`, scrubbed via `src/redact.mjs`); hostile injection signals (`ignore_previous`, role overrides) are *detected and flagged*, not obeyed (D30/D30b) | D30, D30b |
+| # | Invariant | What it rules out | Mechanism |
+| --- | --- | --- | --- |
+| P1 | **Observe ≠ Store** | Recording that something happened as if it were true | The observe pipeline produces candidates only; a noise filter and a capture gate keep technical facets |
+| P2 | **Candidate ≠ Truth** | Low-authority records being recalled or promoted silently | The write gate defers automatic learning behind provenance; `canonical` requires an explicit promotion |
+| P3 | **Similarity ≠ Authority** | A good lexical match raising a record's standing | Authority, validation, confidence, and evidence strength score independently of similarity |
+| P4 | **Similarity ≠ Applicability** | A near-relevant record being treated as applicable | Applicability comes from structured context keys and temporal bounds |
+| P5 | **Memory ≠ Instruction** | Recalled text being obeyed as a command | The context builder prefixes every recall block with a not-repository-truth notice |
 
-A sixth principle, **Repository Truth**, underlies all five: no stored
-record outranks the repository, trust is re-derived at every read (§6), and
-the system is engineered so that *hiding contradictions is a rejected
-behavior* — contradictions stay visible (D14–D15b).
+A sixth principle underlies all five: **Repository Truth**. No stored record
+outranks the repository, trust is re-derived on every read, and hiding a
+contradiction is a rejected behaviour.
 
 ---
 
-## 4. System architecture
-
-Veyra is a DSH plugin (compatible DSH releases 0.1.2-rc.1 through 0.2.0-rc.2
-per `package.json`; the README troubleshooting entry states the published
-range `>=0.1.2-rc.1 <0.3.0-0`; Node `>=22.12.0 <25.0.0` required for
-`node:sqlite` and for the unflagged `require(esm)` the CBM bridge relies on). It
-has zero runtime dependencies; the shipped module graph is pure ESM, roughly
-180 kB packed.
+## 4. Architecture
 
 ### 4.1 The dual-brain model
 
-    ```mermaid
-    graph TB
-        AGENT["Coding agent session<br/>system-prompt context: remembered, advisory"]
-        subgraph PLUG["VEYRA PLUGIN (DSH)"]
-            OBS["observe → capture gate<br/>→ write gate (DEFERs) → SQLite store"]
-            RET["retrieve (hybrid + RRF + 1-hop graph)<br/>→ context projection"]
-            LIFE["lifecycle: protect / invalidate / supersede<br/>/ forget / tombstone"]
-            TRUST["trust (read-time classification) · redact · security"]
-        end
-        STORE["Per-project store<br/>$DSH_HOME/veyra/projects/&lt;p_id&gt;/memory.db (+ FTS5)"]
-        CBM["codebase-memory-mcp binary (external)<br/>absent → degraded mode; memory layer intact"]
-        AGENT -- "recall (gated, bounded)" --> RET
-        AGENT -- "observe / learn" --> OBS
-        OBS --> STORE
-        RET --> STORE
-        TRUST --> STORE
-        RET -. "stdio JSON-RPC (optional)" .-> CBM
-    ```
+Veyra connects two layers that answer different questions.
 
-Four **projections** of one store, not four stores:
+| Layer | Holds | Source of truth |
+| --- | --- | --- |
+| **Veyra Memory** | Lessons, root causes, decisions, constraints, causal chains, with evidence anchors, validation, and authority | Accumulated, evidence-backed epistemic state |
+| **Code Intelligence** | Symbols, files, call graphs, class hierarchies | The live repository AST |
 
-1. **Hybrid search** — lexical (FTS5) + semantic (Jaccard token overlap)
-   channels fused by reciprocal-rank fusion (`src/retrieve.mjs:532`).
-2. **Local graph** — a derived SQLite projection over the memory rows and
-   their relations column; nodes are record ids, edges are
-   `{type, targetId}` with types exactly
-   `updates | extends | derives | contradicts | supersedes`
-   (`src/types.mjs`; `src/graph.mjs` `localGraph`). It is *not* a
-   second source of truth; an edge inherits trust from its endpoint records
-   (`trusted === isRecallEligible`). Bounded by default: 1-hop expansion,
-   caps of 40 nodes / 80 edges (`GRAPH_LIMITS`, hops=1, maxHops=2). The
-   WebUI landing page serves the same contract as an overview projection
-   (`src/webui.mjs:189` `handleVeyraHttp`, registered at :236 — a
-   **read-only** `/veyra` surface; verified against mutation attempts, §11.1).
-3. **Agent context** — the recall projection of §7, with disclaimer and
-   injection-warning scrubbing.
-4. **Human surfaces** — the read-only WebUI and the four bundled agent skills
-   (`veyra`, `legacy-onboarding`, `memory-review`, `memory-maintenance`).
+They are not interchangeable. A record saying "the login function was refactored
+to use JWTs" is an engineering lesson. The call graph of `login()` today is
+structural truth. Code Intelligence can mark a memory *potentially stale*. It
+never overwrites memory, and memory never overrides code.
 
-**Storage identity.** One SQLite+FTS5 database per project under
-`$DSH_HOME/veyra/projects/<p_id>/memory.db` (default `~/.dsh/veyra`;
-overridable with `VEYRA_HOME`). The project id `p_<16hex>` is derived from
-`sha256(gitRoot|remote)` (`src/store.mjs` `projectIdFor`); record ids are
-`vey_<hash>_<suffix>`. Nothing is written into the user's repository.
-Indexes: `memory`, `memory_fts`, `memory_search_fts`. Deduplication is
-by content hash at write time (store-level early return).
+### 4.2 The memory server
 
-**Optional code intelligence.** `src/code/` (`client`, `engine`,
-`discovery`, `linking`, `watcher`) speaks JSON-RPC 2.0 over stdio to an
-external native graph binary (env `CBM_EXE` or PATH). When the binary is
-absent the layer degrades: every memory-layer function remains fully
-operational; structural queries simply do not exist.
+One server instance per plugin lifecycle owns:
 
-**Configuration.** `recallLimit` (default 5, `src/types.mjs:82`
-`DEFAULT_RECALL_LIMIT`; `src/config.mjs:26` `normalizeRecallLimit` maps
-undefined/null/empty to the default and honors an explicit 0),
-`includeReusable`, `observe`, `learn`, `codebaseWatch`, `home`.
+- a workspace resolver,
+- a memory router,
+- one private **Memory Room** per DSH workspace,
+- one shared **Central Memories** store,
+- a governed promotion path between them.
 
----
+It runs no daemon, no timer, and no background job. Every failure path degrades
+to an empty result rather than an exception inside the agent loop.
 
-## 5. Memory lifecycle
+### 4.3 Data flow
 
-Records carry six kinds, three authority levels, five validations, and
-lifecycle actions. The full diagram:
+```
+  DSH host — Cordis plugin (src/plugin.mjs)
+  session events ──► observe ──► observation ──► write gate ──► derived memory
+                                                        │
+                                          promotion (explicit only)
+                                                        ▼
+                                               Central Memories
 
-    ```mermaid
-    graph TD
-        EVT["agent events"] -->|observeEvent| NOISE["noise filter (isNoiseText)<br/>+ capture gate"]
-        NOISE --> C["candidate<br/>auto-captured; never auto-recalled<br/>write gate learningGuards: DEFERs"]
-        C -->|"veyra_promote to derived<br/>marks 'useful learned memory'"| D["derived — auto-recall eligible<br/>validation: unverified → reviewed → verified<br/>(human review steps only)"]
-        D -->|"veyra_promote explicit: true<br/>the ONLY path; never automatic"| K["canonical — project truth<br/>recall-eligible; failure-immune at verified"]
-    ```
+  ┌───────────────────────────────────────────────────────────────┐
+  │  Memory Server  $DSH_HOME/veyra/   (node:sqlite + FTS5)       │
+  │  rooms/<roomId>/memory.db   ·   central/memory.db             │
+  └───────────────────────────────────────────────────────────────┘
+        read-only projections
+  ┌──────────────┬──────────────┬──────────────┬─────────────────┐
+  ▼              ▼              ▼              ▼
+  hybrid recall  local graph    agent context  human surfaces
+  tools          src/graph.mjs  system prompt  /veyra, Observatory
+                                (fail-closed)  Network Graph
+```
 
-Kinds (orthogonal to authority): `observation`, `memory`, `knowledge`,
-`evidence`, `negative` (a known-failed approach: title is the hypothesis,
-body is the rejection reason), `unresolved` (an open investigation: title is
-the question, body is the known clues).
+The local graph is a derived projection, not a second store.
 
-Lifecycle actions (`src/lifecycle.mjs`): `protectionOf` :101,
-`protect` :120, `unprotect` :136, `invalidate` :155, `supersede` :180,
-`forget` :217 (soft — the record stays inspectable and leaves recall; the
-reason is preserved in lifecycle history; protected records require
-override + reason), `tombstone` :234.
+### 4.4 Runtime shape
 
-Evolution (`src/evolve.mjs`): `markStale` / `sweepStale` detect records
-whose evidence no longer holds against repository state; stale records leave
-the recall pool (D18: 0 stale records recalled) but are *kept visible* as
-stale, never deleted silently.
+| Property | Value |
+| --- | --- |
+| Package | `@lovedolove/veyra`, 275 kB packed, 52 files |
+| Module system | Pure ESM |
+| Required runtime dependencies | None |
+| Optional peer | `@lovedolove/dsh-codebase-memory-mcp`, loaded through `src/cbm-bridge.mjs` |
+| Node | `>=22.12.0 <25.0.0` |
+| DSH | `>=0.1.2-rc.1 <0.3.0-0` |
+| Storage | `node:sqlite` + FTS5 |
 
-**Negative and unresolved channels** are first-class, not special cases:
-they participate in recall so that a query about a failing approach surfaces
-the known-failed attempt first (D4/D4b/D5: negative+unresolved recall 1.0,
-top result the specific deadlock rejection rather than a plausible-looking
-answer; D6: idempotence — repeated asks do not duplicate).
-
-**Feedback loop (§19 of the design, `src/feedback`)**: applying a memory in
-practice and reporting the outcome (`veyra_feedback`) strengthens verified
-records on success and demotes on failure (D21 demotion ladder 1.0). Two
-deliberate asymmetries, both tested:
-
-- **Success never self-verifies** (D22): a verified record that merely
-  "worked" drops to reviewed — verification is a human review step, not an
-  application counter.
-- **Canonical is failure-immune** (D22b): a failure against a canonical
-  record records history but keeps verified status; canonical authority is
-  human-granted and human-withdrawn.
-
-**Recurrence detection (§20, `src/negative`, `veyra_recurrence`)** finds
-the same root cause / symptom / failed remedy across records (or one record
-with repeated application failures); read-only by default. A cluster that
-shares one verified remedy may be elevated to a write-gate candidate (D23–D25
-all 1.0). It never auto-promotes; the promotion decision stays with P2.
-
-**Health (§21, `src/health`)** classifies the store into nine quality
-categories (verified / reviewed / unverified / stale / invalid / contradicted
-/ unresolved / negative / protected) and produces six maintenance findings
-(new contradictions, stale knowledge, unresolved investigations, repeated
-failures, unverified high-value candidates, records needing revalidation) —
-findings are *evidence for explicit review*, never automatic edits.
-The report also carries the write-gate ledger: counts of ACCEPT / MERGE / DROP
-/ DEFER learning decisions and their reasons, recorded by `writeGate` in the
-store's `meta` table. It is accounting, not a finding — a deferred candidate is
-not a memory-quality problem — so it is reported beside `findings` rather than
-counted into them, and it stores no record content.
+The Node floor has two reasons. `node:sqlite` first shipped in 22.5. The bridge
+loads the Codebase Memory package with an unflagged `require(esm)`, which starts
+at 22.12.0. Below that floor the bridge would silently degrade while `engines`
+claimed support, so the manifest tells the truth instead.
 
 ---
 
-## 6. Evidence and the trust mechanism
+## 5. Core concepts
 
-### 6.1 Evidence anchors
+### 5.1 Record
 
-Every record may carry evidence anchors: repository-relative file `path`,
-free-text `note`, or external `uri`. Two hard rules:
+A record is one piece of engineering knowledge with:
 
-- **Out-of-repository paths never become evidence** — an anchor that does not
-  resolve in the project is demoted at read time (D16 broken-evidence
-  demotion), and the noise/capture gate (P1) keeps only technical facets
-  (record vey_1a148b492d3 in the Veyra store documents this P0 repair).
-- **Evidence health is continuously checked** (D19: 5/5) — an invalid anchor
-  visibly flags the record (`CODE EVIDENCE INVALID: anchored file missing or
-  symbol unresolvable`), which is exactly how the auto-recall defect in
-  §11.2 was found and recorded.
+- **identity** — a stable id, a kind, a scope,
+- **content** — title, body, tags, optional causal facets,
+- **evidence** — anchors into the repository, plus notes and URIs,
+- **axes** — authority, validation, confidence,
+- **lifecycle** — status, protection, relationships, history,
+- **provenance** — how it was captured and by what.
 
-### 6.2 Trusted-context classification at read time
+### 5.2 Kinds
 
-Trust is a **function of the read, not a stored column**. At read time
-`src/trust.mjs:95` `classifyRecordTrust` places each record into one of
-five categories (`TRUST_CATEGORIES` at :34):
-`trusted | review_required | stale | contradicted | insufficient_evidence`,
-with an accompanying action vocabulary (`TRUST_ACTIONS` at :43: use as
-context / revalidate / …). The tool `veyra_change_impact` runs this
-classification over the changed files of a diff so an agent sees, before
-relying on recalled knowledge, which of it the change may have invalidated —
-without auto-promoting or auto-demoting anything. Freshness tiers
-(`src/retrieve.mjs:102`) and temporal bounds (`:414`, `:434`) feed the
-same classification.
+| Kind | Meaning |
+| --- | --- |
+| `observation` | What a turn did, before judgement |
+| `memory` | A durable engineering lesson |
+| `knowledge` | Project documentation kept beside memory, searched together |
+| `evidence` | A captured fact with anchors |
+| `negative` | An approach that was tried and rejected |
+| `unresolved` | An open investigation |
 
-**Contradiction policy:** contradictions are detected (D14), kept visible in
-the store and in recall output (D15), and scored precisely (D15b). Hiding or
-silent-merging a contradiction is on the *reject* list of the architecture
-decisions (`docs/architecture-graph.md` §3) — resolving it is a human act
-(supersede/invalidate), never a retrieval act.
+`negative` and `unresolved` are first class. Knowing what failed, and what is
+still unknown, is as valuable to a later agent as knowing what worked.
 
----
+### 5.3 The three axes
 
-## 7. Recall and retrieval
+| Axis | Values | Moved by |
+| --- | --- | --- |
+| Authority | `candidate` → `derived` → `canonical` | Write gate; explicit human action for canonical |
+| Validation | `unverified` → `reviewed` → `verified` | Repeated confirmation across sessions and test outcomes |
+| Confidence | `low` / `medium` / `high` | Evidence strength at capture and learning |
 
-### 7.1 Pipeline
+Only `derived` and `canonical` are recall-eligible. Candidates are stored and
+inspectable but never injected.
 
-    ```mermaid
-    graph TD
-        Q["query (+ optional goal)"]
-        LEX["lexical channel (FTS5)<br/>lexicalScore :146"]
-        SEM["semantic channel (Jaccard token overlap)<br/>semanticSimilarity :210"]
-        FUSE["reciprocal-rank fusion<br/>RRF_K=60, FUSION_WEIGHT=0.06 (:512/:532)"]
-        RANK["rankRecords :561 — per-record factors:<br/>evidenceStrength :25 · validationTier :60 · authorityTier :78<br/>confidenceScore :93 · freshnessTier :102 · scopeProximity :87<br/>relationshipScore :223 · causalRelevance :310<br/>temporalBounds/State :414/:434 · contextCompatibility :476"]
-        GOAL["goal affinity (optional)<br/>goalAffinity :352 at GOAL_WEIGHT 0.7 (:331)<br/>a ranking direction, never an authority"]
-        GRPH["1-hop graph expansion over fused top-K<br/>(GRAPH_LIMITS; caps §4.1)"]
-        GATE["recall gate isRecallEligible (src/types.mjs; applied :970, :1029)<br/>not forgotten · status current · not invalid/stale<br/>NOT candidate · NOT observation<br/>authority ∈ {derived, canonical}"]
-        TAIL["negative/unresolved coverage tail<br/>NEG_COVERAGE_MAX (def :856, value 3)<br/>known-failed approaches surface even when low-ranked"]
-        LIM["limit handling: limit === 0 → [] (:952)<br/>slice at Math.max(0, limit − negTail) (:1014)"]
-        CTX["buildRecallContext :790 → agent context<br/>disclaimer + injection warning scrubbed (src/redact.mjs)<br/>empty string only when zero records; fail-closed on recall errors"]
-        Q --> LEX
-        Q --> SEM
-        LEX --> FUSE
-        SEM --> FUSE
-        FUSE --> RANK
-        RANK --> GOAL
-        GOAL --> GRPH
-        GRPH --> GATE
-        GATE --> TAIL
-        TAIL --> LIM
-        LIM --> CTX
-    ```
+### 5.4 Causal facets
 
-M11 (`docs/m11-recall-intelligence.md`, verified 2026-09-28 at v0.1.32;
-suite grew 337 → 354 tests) fixed the two structural defects found by the
-probe suite: **(a)** metadata-only contamination — records carrying zero
-query signal were composing scores to ~0.80 and beating a true 0.776
-match; such zero-signal composition is now suppressed; **(b)** redundancy —
-three phrasings of one fact collapsed to three distinct facts in one context
-(931 → 724 bytes). Stated non-goals of that milestone: no embeddings, no
-vector store, no reranker, no LLM judge, no graph database, no remote
-service, no migrations — the hybrid-lexical-plus-RRF design is deliberate.
+A record may carry `symptom → rootCause → remedy → verifiedOutcome`. These are
+used by ranking and by merge decisions.
 
-### 7.2 Limit handling (a fixed bug, worth stating)
+The `Root cause:` facet decides whether a new record restates an existing one.
+Whole-claim comparison cannot do this: over a real room, the best pair of
+genuinely duplicate claims scored 0.143, below the conflict floor, because body
+lengths differed by an order of magnitude. Identical root-cause lines score
+1.000, a rewording scores 0.727 to 0.909, and a genuinely different cause scores
+at most 0.278.
 
-At v0.1.14, `recallLimit: 0` was coerced to the default 5 and the retrieval
-path floored the limit to 1, so "recall off" was impossible — this blocked
-the paired-task impact experiment's isolation arm (§11.3) and was frozen as
-an open question in the architecture doc. The product bug is fixed
-(`src/config.mjs:26` honors an explicit 0; `src/retrieve.mjs:952` returns
-an empty list) and D31/D31b plus the regression tests hold it. The *result*
-of the experiment, however, was never measured — see §11.3.
+The rule fails closed: no facet means no cause-duplicate, and a `CONFLICT`
+verdict is never overridden.
+
+### 5.5 Relationships
+
+Records link to each other as `updates`, `extends`, `derives`, `contradicts`, or
+`supersedes`. Links are derived at write time from the diff between the incoming
+record and its nearest neighbours. A contradiction stays visible; resolving it
+is a human act.
+
+### 5.6 Rooms and Central Memories
+
+| Layer | Holds | Path |
+| --- | --- | --- |
+| Memory Room | Everything learned in one DSH workspace | `rooms/<roomId>/memory.db` |
+| Central Memories | Knowledge explicitly promoted out of a room | `central/memory.db` |
+
+A room is a DSH `WorkspaceId`, never a filesystem path. Two workspaces on one
+repository are two rooms. A workspace whose identity cannot be resolved fails
+closed rather than guessing. Promotion is the only way into Central Memories.
+
+The pre-rooms `projects/` and `reusable/` databases are legacy: never read,
+written, migrated, merged, or deleted.
 
 ---
 
-## 8. Bootstrapping existing projects
+## 6. Memory lifecycle
 
-The `legacy-onboarding` skill addresses the cold-start problem: an
-unfamiliar project with no memory baseline. Its contract, in one line each:
-assess the existing baseline; discover the repository; pick a progressive
-investigation depth; extract **only durable engineering knowledge grounded in
-verifiable evidence**; produce a **Project Memory Baseline** that future
-agents recall instead of re-investigating. Every item captured is a
-candidate (P1/P2): it enters recall only after an explicit promotion, and
-its evidence anchors keep it checkable (and auto-demotable when they go
-stale). §11.2 is the live example.
+### 6.1 Capture
 
----
+Veyra observes session events. Only tools that can actually mutate files
+contribute modification evidence. A `read`, a `grep`, or a `glob` is activity,
+never an edit. A path mentioned in prose is not a changed file, and a quoted
+redirect is not a write.
 
-## 9. Security and isolation
+The observation records files, symbols, test outcomes, claim signal, and
+structured causal facets. Symbols require a code shape: an identifier followed
+by an argument list, a block, or an assignment. Prose that happens to contain
+the word `const` produces nothing.
 
-| Property | Mechanism | Guard |
-|---|---|---|
-| Per-project store isolation | one `memory.db` per project id; reusable-scope records shared only behind `includeReusable` (opt-in) | D32: 0 cross-project leaks across 2 queries; test `isolation-security-benchmark` |
-| Secret hygiene | `scrub` / `redact` (`src/redact.mjs`) strip secrets from title, body, tags, evidence, and source columns at write time; a validated tier additionally catches Luhn-valid cards, ISO-13616 IBANs and structurally valid US SSNs | D26: 0 leaks; D26b: bearer/JWT-style tokens scrubbed; `redact-pii`: 12/12 ordinary engineering strings untouched, 8/8 checksum identifiers caught |
-| Injection resistance | recalled content is rendered *as data*: hostile markers (`ignore_previous`, role-override phrasings) are detected at render and a warning is scrubbed in, never executed | D30 detect, D30b 0 false-positives |
-| Corruption fail-closed | a store that fails integrity checks is refused, not repaired or half-read: the literal error "Veyra refuses to open corrupted store" | D27–D29 (flag, exclude, surface, refuse) |
-| WebUI read-only | the `/veyra` surface accepts no mutations (`src/webui.mjs:189`) | SmartTrip level L9, §11.1 |
-| Canonical safety | no automated path — write gate, feedback loop, or recurrence — can reach canonical authority (P2) | D31 (0 attempts under both defer reasons), D31b (explicit works) |
-| No repository writes | the plugin writes only under $DSH_HOME/veyra | architecture invariant, `docs/architecture-graph.md` §3 |
+### 6.2 The write gate
 
----
+The gate reads text, not formatting. The same instruction is judged the same
+whether it arrives as prose, a bullet, a numbered list, or a checkbox item, so a
+checkbox is never a way around it.
 
-## 10. Evaluation methodology
+Verdicts are `accept`, `merge`, `drop`, and `defer`. Every verdict is counted
+with its reason in a ledger that `/veyra health` reports.
 
-**Primary harness:** `test/m15-benchmark.test.mjs` — 29 tests covering
-45 labeled dimensions (D1–D32, with sub-dimensions), documented in
-`docs/BENCHMARK.md`. The harness **re-asserts its own result table on every
-run**: a benchmark regression fails the build rather than silently changing
-a published number. Two accounting policies: a null denominator is reported
-as null (never 0), and the BLINDSPOT policy records *known-uncovered*
-behavior (currently 0 items); today's table carries no blindspot.
+Grounding is required. A `sym:` note is not grounding; a real path, URI, or
+anchor is. This is what stops a symbol-shaped string from setting confidence on
+a record with no anchor.
 
-Headline dimensions (all verified at v0.1.57 by `npm test`):
+### 6.3 Recall
 
-| Dimension | What it measures | Result |
-|---|---|---|
-| D1–D3b | write precision / false memories / dedup / false merges | 1 / 0 / 1 (5/5 restatements produce no new row) / 0 |
-| D4–D6 | negative & unresolved recall, idempotence | 1 / 1 / 1 |
-| D7–D8 | top-1 and MRR over 5 labelled queries | 1 / 1 |
-| D9/D9b | off-topic suppression | 0 / 0 |
-| D10–D11 | applicability, temporal | 6/6, 4/4 |
-| D12–D13 | causal strength ordering, causal false signal | verified(1) > suspected(0.567) / 0 |
-| D14–D15b | contradiction detect / visibility / precision | 1 / 1 / 1 |
-| D16, D18–D19 | broken-evidence demotion, stale leaves recall, evidence health | / 0 / 5/5 |
-| D20 | feedback reliability, 2 successes vs 3 failures over 5 attempts | 0.4 — an **arithmetic identity** of the fixture, not a target value |
-| D21, D22, D22b | demotion ladder / success-never-self-verifies / canonical immunity | 1 / 1 / 1 |
-| D23–D25 | recurrence detect / eligibility / precision | 1 / 1 / 1 |
-| D26, D26b | secret leak / bearer-JWT scrub | 0 / scrubbed |
-| D27–D29 | corruption flag / exclusion / surfacing / corrupt-store refusal | all verified |
-| D30, D30b | injection detect / false-positive | detected / 0 |
-| D31, D31b | automatic→canonical attempts / explicit promotion | 0 / 1 |
-| D32 | cross-project leak | 0 |
+At the start of a turn, the relevant records are retrieved and injected as a
+compact block. Each record carries its trust state. Learning and recall can be
+disabled independently.
 
-**Complementary suites:** `test/isolation-security-benchmark.test.mjs`
-(project isolation + security properties), `test/dsh-runtime.test.mjs`
-(real DSH runtime integration), `test/e2e-workflow.test.mjs` (full
-observe→learn→recall→lifecycle workflow), ten `test/code-*.test.mjs`
-(modules of the optional code-intelligence layer), plus per-milestone suites
-(`m1`–`m14`, e.g. `m11` = recall-intelligence probes, `m3` = RRF
-fusion, `m4` = applicability/temporal, `m5` = causal provenance,
-`m10` = forgetting & protection, `m12` ×3, `m13` = safety hardening,
-`m14` = goal retrieval, `m1-write-gate`, `m2-negative-unresolved`).
-CI runs `npm test` and `npm run pack:check` (packed-size invariant).
+When the same record set is rendered for the third time in a workspace, Veyra
+switches to a compact form: header and warnings only, body and evidence dropped.
+Warnings survive on purpose. A record whose anchored file changed must still
+show its review warning, and a header-only form silenced exactly that.
 
-**Honest caveat on evaluation:** the dimensions are *fixture-based*. They
-prove the *mechanisms* behave as specified over constructed stores; they do
-not measure agent task outcomes, and they are not "wild" benchmarks. §11
-is where real, un-constructed stores meet the system.
+### 6.4 Feedback
+
+`veyra_feedback` reports whether applying a memory worked. Success strengthens
+the record; failure records failure history. An explicit `generationEventId`
+from the recall that surfaced the record attributes the outcome to that
+dispatch.
+
+### 6.5 Maintenance
+
+Lifecycle actions are explicit: protect, unprotect, invalidate, supersede,
+forget, tombstone. The bundled `memory-maintenance` skill applies them on
+request with before/after reporting. A health finding is never authorization by
+itself. The skill also reports `KEEP`, `REVALIDATE` and `DEFER`; those are
+recommendations in a report, not store mutations, and nothing is written for
+them.
 
 ---
 
-## 11. Cross-project validation
+## 7. Evidence and trust
 
-Two production stores exercised Veyra outside its own development loop.
-Both are stated precisely, including what was *not* measured.
+### 7.1 Anchors
 
-### 11.1 SmartTrip (p_6aed36ea45dd7de9) — end-to-end integration
+Evidence anchors point at files, symbols, notes, or URIs. Paths outside the
+repository can never become evidence. Anchors are what make a record checkable
+later, and checkability is what separates memory from rumour.
 
-SmartTrip is a Next.js + Supabase web application. On 2026-09-24 a full
-ten-level end-to-end verification was run against the live store and **all
-levels passed**:
+### 7.2 Read-time classification
 
-L1 plugin installation · L2 profile integration · L3 project-store creation ·
-L4 write path · L5 read/recall · L6 authority model · L7 store isolation ·
-L8 network graph projection · L9 WebUI mutation protection (read-only
-surface held against mutation attempts) · L10 fresh-session persistence.
+Every recalled record is classified against the current repository:
 
-What the store contained and demonstrated (23 records: 16 derived/unverified,
-1 canonical/reviewed, 2 superseded, 1 stale, 2 candidate):
+| Category | Meaning |
+| --- | --- |
+| `trusted` | Anchors resolve; nothing contradicts the record |
+| `review_required` | Usable, but verify before acting |
+| `stale` | An anchored file changed; the claim may no longer hold |
+| `contradicted` | Another record makes an opposing claim |
+| `insufficient_evidence` | The record cannot be checked right now |
 
-- A **real architectural decision** — "D1: Supabase REST, not TCP" — was
-  stored, promoted to canonical by explicit human action, and was recalled
-  both by its exact wording and by a paraphrase. This is the canonical-path
-  proof (P2) in a real store, not a fixture.
-- The store **surfaced genuine documentation drift** in the SmartTrip repo:
-  a removed chat-refine feature still advertised by docs/README/upgrade
-  modal; and a measured Gemini egress region (Asia) contradicting the doc
-  claim (US) — a live example of Repository-Truth over stale documentation.
-- The store also shows the *unverified majority* is normal: 16 of 23 records
-  await application feedback before they may be trusted (the P2 design, not a
-  defect).
+The classification is a projection. It never writes and never changes authority
+or validation.
 
-The run was recorded in Veyra's own store (p_2d599165fe7aa1a7, 430 records)
-as vey_1a0d44d8401 ("What does SmartTrip use for Supabase data access?")
-and vey_1a0d4545572 (the L1–L10 pass report).
+### 7.3 Unverifiable is not stale
 
-### 11.2 dsh-token-saver (p_0fd9252c3955a1c2) — legacy onboarding + a found defect
+When the code-intelligence layer is absent, anchors cannot be resolved at all.
+Veyra reports the freshness as unverifiable and classifies the record as
+`insufficient_evidence`. It does not claim the path was outside the repository,
+and it does not escalate the record to `stale`.
 
-On 2026-10-27 the `legacy-onboarding` skill baselined dsh-token-saver, a
-mature DSH context-engineering plugin: 85 records (66 candidate/unverified,
-16 derived/unverified, 1 derived/reviewed, 1 candidate/stale) —
-architecture overview, stable prompt-cache layout, prompt shaping, context
-pressure and LLM-summary compaction, and the RTK table filter. All are
-*unverified by construction* (§8): the baseline is recall-eligible only after
-explicit promotion; as of this writing it is still candidate-weighted.
+This distinction was a real defect in an earlier release. The old code
+fabricated a reason, and the trust layer escalated the fabricated reason above
+`review_required`. A record was demoted for a fact nobody had checked.
 
-**Defect found in live use (stated plainly):** auto-recall surfaced
-*irrelevant reusable records with stale anchors* into dsh-token-saver
-sessions — for example Cloudflare Workers "Issues" monitoring knowledge and
-wrangler source-map knowledge whose anchors (`wrangler.jsonc`) do not
-resolve in that project, plus a DSH plugin-integration-pattern record with
-missing source files. The evidence-health machinery flagged each
-(`CODE EVIDENCE INVALID`) and the root cause was analyzed and recorded in
-the store ("Veyra auto-recall noise observed in a dsh-token-saver session
-(2026-10) — root cause analyzed"). Two honest qualifications:
+### 7.4 Delivery
 
-- This is a **single observed session population, not a measured noise rate**;
-  the reusable-scope channel is opt-in (`includeReusable`) and the noise
-  came specifically from *reusable* records whose anchors outlived their
-  origin project.
-- **No before/after improvement for dsh-token-saver was measured.** Nothing
-  in this store has been quantitatively A/B tested.
+A `veyra_recall` dispatch records its own evidence: the record refs it returned,
+the rendered size, and a delivery status. Only the tool path can be
+`DELIVERED`. The ambient context provider stays `NOT_VERIFIED` permanently,
+because nothing in DSH proves that a model received the injected text. Veyra
+records presence, not comprehension.
 
-### 11.3 The impact question — explicitly open
+---
 
-The paired-task experiment that would answer *"does Veyra improve coding
-agents?"* is specified and frozen in `docs/experiment-impact.md`: a
-5-task protocol (v0.1.14, commit 1c17f70) with real implementation tasks and
-a controlled "no recall" arm (`recallLimit: 0`). It was **blocked at
-freeze**: `recallLimit: 0` was coerced to 5 and the retrieval path floored
-the limit to 1 (live probe: limit 0 → 1 record, 678-char prompt), so the
-isolation arm leaked — the document forbids every workaround and records:
-*"Architecture open question #2 not updated: no measured paired result."*
+## 8. Recall and retrieval
 
-The underlying product bug has since been fixed (§7.2) — the experiment is
-now *runnable* — **but it has not been re-run, and no measured utility
-statement about task outcomes exists for Veyra.** This is the largest single
-gap between "implemented and verified" and "proven useful" in this paper,
-and it is scheduled rather than assumed (§14).
+### 8.1 Pipeline
 
-### 11.4 Generality, honestly scoped
+One query produces several independent signals:
 
-Both validation stores are DSH-plugin-adjacent projects on the same
-machine; the SmartTrip store is small (23 records) and the dsh-token-saver
-onboarding produced unverified candidates. Neither result generalizes to,
-e.g., an unfamiliar large monorepo, a non-DSH host, or a hostile
-contribution environment. The benchmark (which is fixture-based, §10) and
-these two stores are all the validation this paper claims.
+| Signal | Weight | Source |
+| --- | --- | --- |
+| Relevance | 0.32 | FTS5 BM25 with symbol and path boosts |
+| Evidence | 0.18 | Anchor strength and resolution |
+| Validation | 0.18 | Validation tier |
+| Proximity | 0.14 | Scope and context proximity |
+| Freshness | 0.08 | Read-time code freshness |
+| Confidence | 0.10 | Record confidence |
+| Semantic | 0.10 | Token-level overlap, not embeddings |
+| Relationship | 0.04 | Graph cohesion |
+
+The channels are fused with reciprocal-rank fusion (`RRF_K = 60`, fusion weight
+`0.06`). A `goal` argument adds affinity with weight `0.7`, steering ranking
+toward work in progress. It is a direction, never an authority.
+
+Every result carries a score breakdown, so a ranking can be explained rather
+than trusted.
+
+### 8.2 Determinism
+
+There are no embeddings, no vector store, no reranker, and no remote service.
+This is a design choice, not a gap to be filled: it keeps recall reproducible,
+auditable, and free of network dependencies. The cost is a ceiling on
+paraphrase recall, which is stated in §13.
+
+### 8.3 Limit handling
+
+`recallLimit` bounds how many records are injected per turn. `0` disables
+automatic recall context and nothing else: tools, commands, the Observatory, and
+stored memory keep working. That makes it the switch for comparing behaviour
+with and without ambient memory.
+
+---
+
+## 9. Code Intelligence
+
+The structural layer is optional and split across two independent pieces:
+
+| Piece | Supplies |
+| --- | --- |
+| `@lovedolove/dsh-codebase-memory-mcp` plugin | The six `cbm_*` tools and the bridge |
+| `codebase-memory-mcp` native binary | Indexing and answers |
+
+Veyra declares the plugin package as an optional peer and loads it through
+`src/cbm-bridge.mjs`, the only file in `src/` that names the package. When the
+package is absent, the bridge returns a frozen stub and Veyra continues with
+memory fully functional.
+
+Veyra registers no `cbm_*` tool. That is a deliberate boundary: two plugins
+registering the same tool names is a load-order race, and the failure is silent.
+The tools belong to the plugin that owns the bridge.
+
+Demoting the dependency buys load safety, not removal. pnpm installs optional
+peers by default, and a profile that lists the plugin keeps it.
+
+A package that is present but fails to load is different from a package that is
+absent. Veyra warns once for the first case and stays silent for the second,
+because a clean install should not warn.
+
+---
+
+## 10. Security and isolation
+
+| Concern | Guarantee |
+| --- | --- |
+| Repository writes | None. Veyra never writes into the user's repository |
+| Secrets | Every write path redacts before persistence |
+| Redaction depth | Shape tier plus a validated tier: payment cards (Luhn), IBANs (ISO 13616 mod-97), US SSNs |
+| Workspace isolation | Rooms keyed by `WorkspaceId`, never by path; unresolvable identity fails closed |
+| Cross-workspace leakage | Only explicit promotion reaches Central Memories |
+| Prompt injection in memory | Hostile signals are detected and flagged, never obeyed |
+| Hostile recall content | Scrubbed before rendering |
+| Failure behaviour | Degrade to an empty result; never throw into the agent loop |
+
+The plugin also refuses to be the source of truth for code. That is a security
+property as much as a design one: a memory that could outrank the repository
+would be an injection surface.
+
+---
+
+## 11. Verification
+
+### 11.1 The suite
+
+1171 tests across 13 suites run on Node 22 and 24 in CI, together with a
+runtime-dependency guard and a pack check. The suite covers lifecycle,
+contradiction handling, corruption, isolation, redaction, retrieval ranking,
+context rendering, plugin lifecycle, and the Code Intelligence boundary.
+
+### 11.2 The benchmark
+
+`docs/BENCHMARK.md` reports 29 tests over 45 dimensions, run by
+`test/m15-benchmark.test.mjs` against purpose-built fixtures. The harness prints
+the same table it asserts on, so the document and the run cannot drift apart.
+Every number is a rate where `1` is the safe outcome, and each row carries its
+evidence.
+
+This is mechanism verification. It proves the machinery behaves as specified on
+fixtures. It does not measure task outcomes.
+
+### 11.3 Cross-project exercise
+
+Two real stores exercised the system end to end in 2026-09 and 2026-10: a web
+application project and a legacy repository onboarding. They produced the
+drift cases and the auto-recall noise observation that shaped later work.
+
+Those runs used the pre-rooms, path-keyed storage layout. That layout no longer
+exists, so the runs are **historical evidence about behaviour**, not
+current-state evidence about storage. They are reported as such.
+
+### 11.4 What has not been measured
+
+Whether an agent with Veyra completes real engineering tasks better than one
+without. That requires a paired experiment with matched tasks, isolated arms, and
+a pre-registered metric. The protocol and its blockers are documented in
+`docs/research/`, and prior attempts returned null or inconclusive results that
+are recorded rather than buried.
 
 ---
 
@@ -519,181 +474,138 @@ these two stores are all the validation this paper claims.
 
 A reliable, persistent, change-aware engineering memory for coding agents:
 grounded in repository evidence; authority, validation, freshness, and
-applicability as explicit, independent axes; advisory context injection;
-per-project isolation; no repository writes; deterministic, bounded,
-fail-closed behavior; and eventual *measured* demonstration of utility on
-paired tasks (the experiment, §11.3).
+applicability as independent axes; advisory context injection; per-workspace
+isolation; no repository writes; deterministic, bounded, fail-closed behaviour;
+and eventual *measured* demonstration of utility on paired tasks.
 
 ### 12.2 Implemented
 
 | Capability | Where |
-|---|---|
-| Observe → capture gate → write gate → store pipeline | `src/observe.mjs`, `src/learn.mjs`, `src/store.mjs` |
-| Six record kinds; authority ladder; validations | `src/types.mjs` |
-| Lifecycle: protect / invalidate / supersede / forget / tombstone | `src/lifecycle.mjs` |
-| Evolution: staleness marking and sweeps | `src/evolve.mjs` |
-| Hybrid recall: lexical + semantic + RRF + goal affinity + 1-hop graph + negative tail | `src/retrieve.mjs`, `src/graph.mjs` |
-| Read-time trusted-context classification, change-impact analysis | `src/trust.mjs` |
-| Feedback loop with deliberate asymmetries; recurrence detection; health reports | `src/feedback`, `src/negative`, `src/health` |
-| Context projection with disclaimer + injection warning; secret scrubbing | `src/context.mjs`, `src/redact.mjs` |
-| Read-only WebUI; observatory projections | `src/webui.mjs` |
-| Optional code intelligence (external graph binary, degraded mode) | `src/code/` |
+| --- | --- |
+| Observe → capture gate → write gate → store | `src/observe.mjs`, `src/learn.mjs`, `src/store.mjs` |
+| Six kinds, three axes | `src/types.mjs` |
+| Lifecycle actions and history | `src/lifecycle.mjs` |
+| Staleness marking and evolution | `src/evolve.mjs` |
+| Hybrid recall with score breakdown | `src/retrieve.mjs` |
+| Local graph projection | `src/graph.mjs` |
+| Read-time trust classification | `src/trust.mjs` |
+| Context rendering and compaction | `src/context.mjs` |
+| Feedback, recurrence, health | `src/feedback.mjs`, `src/negative.mjs`, `src/health.mjs` |
+| Redaction | `src/redact.mjs` |
+| Memory server, rooms, routing | `src/memory-server.mjs`, `src/rooms.mjs`, `src/memory-router.mjs` |
+| Code freshness and code retrieval | `src/code/linking.mjs`, `src/code/retrieval.mjs` |
+| Optional-peer bridge | `src/cbm-bridge.mjs` |
+| Observatory, WebUI, Network Graph | `src/observatory.mjs`, `src/webui.mjs` |
 | Four bundled skills | `skills/` |
-| 29-test / 45-dimension benchmark harness + complementary suites | `test/`, `docs/BENCHMARK.md` |
 
 ### 12.3 Verified
 
-- **All §10 dimension results** at v0.1.57 via `npm test` (the harness
-  re-asserts the table; CI enforces it).
-- **Recall-intelligence fixes** (M11, v0.1.32 baseline, suite 337→354):
-  metadata-only contamination suppression and redundancy dedup, probes p1–p15.
-- **Runtime and integration**: `dsh-runtime`, `e2e-workflow`,
-  `isolation-security-benchmark` suites.
-- **SmartTrip L1–L10** (2026-09-24, live store, §11.1) — including canonical
-  promotion, paraphrase recall, WebUI read-onlyness, and cross-session
-  persistence.
-- **Recall-off is real** (`recallLimit: 0` → empty context, §7.2).
+- 1171 tests pass on Node 22 and 24.
+- The runtime-dependency guard passes on every shipped file.
+- The pack check produces a valid 52-file tarball.
+- The 45-dimension benchmark re-asserts its own table.
+- `recallLimit: 0` produces an empty context and nothing else changes.
+- An absent Codebase Memory package loads, degrades, and leaves memory working.
+- A broken install warns once; a clean install stays silent.
+- A degraded layer reports unverifiable evidence instead of a fabricated reason.
+- A cause-duplicate reaches the merge decision, not only the diff.
 
-### 12.4 Unproven (stated, not footnoted)
+### 12.4 Unproven
 
-1. **Task-outcome utility** — no measured paired-task result exists (§11.3).
-2. **Onboarding coverage** — what fraction of a real codebase's durable
-   knowledge a legacy-onboarding pass captures is unmeasured; dsh-token-saver
-   has no before/after (§11.2).
-3. **Auto-recall noise rate** — the reusable-scope noise was observed in one
-   session population; a rate has not been measured.
-4. **Generality beyond DSH-plugin-adjacent stores** — both validation stores
-   are same-host, same-lineage (§11.4).
-5. **Failure asymmetry in the wild** — D22/D22b are fixture-verified
-   properties; their behavior on long-lived real stores (e.g., Veyra's own
-   430-record store) is inferred, not audited.
-6. **Semantic recall beyond lexical+RRF** — by design no embeddings exist
-   (M11 non-goals); whether the lexical-plus-overlap ceiling ever bites in
-   large stores is unmeasured.
-
-### 12.5 Capability gaps versus the prior art
-
-`docs/capability-matrix.md` audits all sixteen reference projects in `GOAL.md`
-§5 at their pinned revisions, one row per capability, each with an
-Adopt/Adapt/Defer/Reject decision. Integrations landed in this pass: the
-record-block recall budget (`src/context.mjs:69`), the write-gate verdict
-ledger (`src/learn.mjs:348`/`:498`), and checksum-validated PII redaction
-(`src/redact.mjs:122`); the deterministic cross-channel RRF
-(`src/retrieve.mjs:539`) and causal relevance (`src/retrieve.mjs:317`) already
-existed and are recorded as Adopt. Remaining deferred gaps: embedding-based
-duplicate/write-disposition bands, a persisted trust verification state, an
-evidence-sufficiency reminder loop, a BM25/vector index, import/export/
-backup/restore, admission-style autonomy readings, richer applicability-
-condition judging (today `src/retrieve.mjs:483` compares only keys both sides
-state and fails open), an append-only provenance ledger, and decayed-temporal
-scoring (still tiered at `src/retrieve.mjs:103`, not exponential). These are
-gap listings, not promises.
+1. **Task-outcome utility.** No measured paired-task result exists.
+2. **Onboarding coverage.** What fraction of a real codebase's durable knowledge
+   a legacy-onboarding pass captures is unmeasured.
+3. **Auto-recall noise rate.** Noise was observed in one session population; a
+   rate has not been measured.
+4. **Generality.** Validation has been on DSH-adjacent projects on one host.
+5. **Long-lived store behaviour.** Failure-asymmetry properties are
+   fixture-verified; their behaviour on a years-old store is inferred.
+6. **Paraphrase ceiling.** Without embeddings, the lexical-plus-overlap ceiling
+   in large stores is unmeasured.
 
 ---
 
 ## 13. Known limitations
 
-1. **Deterministic retrieval only** — lexical + Jaccard-overlap channels; no
-   embeddings, vector store, reranker, LLM judge, or remote service (design
-   choice, M11 non-goals).
-2. **Fixture-based benchmark** — mechanism verification, not outcome
-   measurement (§10, §11.3).
-3. **Evidence granularity** — anchors are file/symbol/URI level; out-of-repo
-   paths are barred from evidence, so web-sourced knowledge carries URI
-   anchors whose resolution is not re-checked at read time (D19 checks the
-   repository side).
-4. **Onboarding volume asymmetry** — a legacy-onboarding pass writes many
-   candidates and few validated records; recall eligibility lags the
-   baseline by an explicit-promotion step by design (dsh-token-saver:
-   66/85 candidate).
-5. **Reusable-scope noise** — cross-project records can be recalled into a
-   project where their anchors no longer resolve; the flags are automatic
-   (evidence health) but suppression quality for reusable records is the
-   open item from §11.2.
-6. **Human-bound steps** — verification, canonical promotion, contradiction
-   resolution, and forgetting of protected records require a human; the
-   system deliberately cannot close those loops by itself (P2).
-7. **Host requirement** — DSH plugin; Node ≥ 22.12 (`node:sqlite`, plus the
-   unflagged `require(esm)` the CBM bridge relies on). The optional graph layer
-   requires the external CBM binary or degrades.
-8. **Advisory memory** — agents may ignore recalled memory (P5); the value
-   proposition is therefore *bounded by agent compliance*, which the impact
-   experiment (§11.3) is designed to measure.
+1. **Deterministic retrieval only.** No embeddings, vector store, reranker, LLM
+   judge, or remote service.
+2. **Fixture-based benchmark.** Mechanism verification, not outcome
+   measurement.
+3. **Anchor granularity.** File, symbol, and URI level. URI anchors are not
+   re-resolved at read time.
+4. **Onboarding asymmetry.** A legacy pass writes many candidates and few
+   validated records; recall eligibility lags by an explicit promotion step.
+5. **Human-bound steps.** Verification, canonical promotion, contradiction
+   resolution, and forgetting protected records require a human by design.
+6. **Host requirement.** A DSH plugin on Node `>=22.12 <25`.
+7. **Advisory memory.** Agents may ignore recalled memory. The value
+   proposition is bounded by compliance, which is why the paired experiment
+   matters.
+8. **Delivery ceiling.** Veyra can prove a dispatch happened. It cannot prove a
+   model read the text.
 
 ---
 
 ## 14. Future direction
 
-The GOAL document's posture: **the core technical foundation is substantially
-complete; the remaining direction is consolidation, not feature sprawl.**
-Specifically, with the architecture's reject/defer list
-(`docs/architecture-graph.md` §3) held as a standing boundary:
+The posture is consolidation, not feature sprawl.
 
-- **Reject (standing):** external graph DBs (Neo4j or otherwise); new node
-  types (file/commit/repo); new UI relation types; a "needs-review"
-  vocabulary; default full-project graphs; **auto-canonical, silent merge,
-  and hiding contradictions** (core invariants); FUSE/SMFS connectors and
-  remote APIs.
-- **Defer (standing):** default 2-hop traversal (only if 1-hop proves
-  measurably thin), edge-level validation/provenance (relations stay
-  `{type, targetId}` and inherit endpoint trust), new MCP tools
-  (`veyra_inspect` already returns relations).
-- **Next concrete step:** run the frozen paired-task impact experiment
-  (§11.3) now that its blocking product bug is fixed; publish the first
-  measured utility numbers or the first honest null result.
-- **Named open items:** close the reusable-scope noise item (§11.2/§13.5);
-  the §12.5 gap list remains an agenda, not a commitment; consolidation of
-  the milestone test suites is a maintenance task, not a feature.
+- **Reject (standing):** external graph databases; new node types; new UI
+  relation types; a "needs-review" vocabulary; default full-project graphs;
+  auto-canonical, silent merge, and hiding contradictions; remote APIs.
+- **Defer (standing):** default two-hop traversal; edge-level
+  validation/provenance; additional MCP tools.
+- **Next concrete step:** run the paired-task impact experiment and publish
+  either the first measured utility numbers or the first honest null result.
+- **Named open items:** the reusable-scope noise item, the paraphrase ceiling,
+  and consolidation of the milestone test suites.
+
+The gap list in `docs/capability-matrix.md` is an agenda, not a promise.
 
 ---
 
 ## 15. Traceability
 
-| Source of a claim in this paper | Location |
-|---|---|
-| Traditional Chinese edition | `docs/WHITEPAPER.zh-TW.md` |
-| Product goal, trust chain, current-state list | `GOAL.md` |
-| Facts baseline, adopt/reject/defer, graph contract, WebUI read-onlyness | `docs/architecture-graph.md` (§3 table; baselines 0.1.12/0.1.14/0.1.18) |
-| 45-dimension benchmark table + harness policy | `docs/BENCHMARK.md`, `test/m15-benchmark.test.mjs` |
-| Recall-intelligence milestone, non-goals, probes p1–p15 | `docs/m11-recall-intelligence.md` (verified 2026-09-28 @ 0.1.32) |
-| Frozen impact-experiment protocol and its blockage | `docs/experiment-impact.md` (5-task freeze at v0.1.14 / 1c17f70) |
-| Capability gaps vs prior art | `docs/capability-matrix.md` (source-verified 2026-11-04 against all 16 reference projects in `GOAL.md` §5) |
-| Retrieval pipeline | `src/retrieve.mjs` (lines cited in §4/§7) |
-| Write gate, provenance defers, verdict ledger | `src/learn.mjs:203/239/242/256/348/498` |
-| Recall gate, record kinds, default limit | `src/types.mjs` (`isRecallEligible`, :82) |
-| Lifecycle actions | `src/lifecycle.mjs:101–234` |
-| Trust classification | `src/trust.mjs:34/43/95` |
-| Context + injection warning | `src/context.mjs:264/313/790` |
-| Redaction | `src/redact.mjs:20` (shape tier), `:122` (validated tier), `:161` (`scrub`) |
-| Observe pipeline | `src/observe.mjs:42/82/174` |
-| Limit handling | `src/config.mjs:26`, `src/retrieve.mjs:952/1014` |
-| Graph projection | `src/graph.mjs` (`localGraph`, GRAPH_LIMITS) |
-| WebUI | `src/webui.mjs:189/236` |
-| Code intelligence | `src/code/` (client/engine/discovery/linking/watcher) |
-| CI | `.github/workflows/`: `npm test`, `npm run pack:check` |
-| SmartTrip live-store record (L1–L10 pass 2026-09-24; drift cases) | Veyra store p_2d599165fe7aa1a7: vey_1a0d44d8401, vey_1a0d4545572; SmartTrip store p_6aed36ea45dd7de9 |
-| dsh-token-saver onboarding (2026-10-27) + auto-recall noise record | store p_0fd9252c3955a1c2 (85 records; root-cause record "auto-recall noise … (2026-10)") |
-
-Revision context: v0.1.57 @ 75d74ab, clean tree at writing time.
+| Claim | Source |
+| --- | --- |
+| Architecture, boundaries, standing rejections | `docs/architecture-graph.md` |
+| Measured benchmark table | `docs/BENCHMARK.md`, `test/m15-benchmark.test.mjs` |
+| Capability gaps versus prior art | `docs/capability-matrix.md` |
+| Product direction and decision criteria | `docs/PRODUCT-EVOLUTION-BLUEPRINT.md` |
+| Paired-experiment protocol and results | `docs/research/` |
+| Write gate, ledger, provenance defers | `src/learn.mjs` |
+| Recall eligibility, kinds, axes | `src/types.mjs` |
+| Retrieval weights and fusion | `src/retrieve.mjs` |
+| Trust classification | `src/trust.mjs` |
+| Context rendering and compaction | `src/context.mjs` |
+| Lifecycle | `src/lifecycle.mjs` |
+| Redaction | `src/redact.mjs` |
+| Observe pipeline and bash-write evidence | `src/observe.mjs` |
+| Causal facets and merge | `src/diff.mjs`, `src/evolve.mjs` |
+| Delivery and outcome evidence | `src/apply-generation-evidence.mjs` |
+| Bridge and degradation | `src/cbm-bridge.mjs` |
+| Plugin lifecycle and host seams | `src/plugin.mjs` |
+| Packaging, CI, publishing | `package.json`, `.github/workflows/` |
 
 ---
 
 ## 16. Glossary
 
-- **Authority ladder** — candidate → derived → canonical; the only
-  auto-recalled authorities are derived and canonical; canonical only via
-  explicit human promotion.
-- **Recall gate (`isRecallEligible`)** — a record may be auto-recalled iff
-  it is not forgotten, has status current, is not invalid or stale, is not
-  a candidate or an observation, and has authority derived or canonical.
-- **RRF** — reciprocal-rank fusion of the lexical and semantic channels
-  (K=60, fusion weight 0.06).
-- **Evidence anchor** — a record's grounding: repository path, note, or URI;
-  out-of-repo paths cannot be evidence.
-- **Trusted-context category** — the five-way read-time classification of
-  §6.2.
-- **DEFER** — the write gate's "not yet" verdict with a reason string
-  (`provenance-gated`, `canonical-requires-explicit-promotion`).
+- **Authority ladder** — `candidate → derived → canonical`. Only derived and
+  canonical are recall-eligible; canonical only by explicit human promotion.
+- **Candidate** — an auto-captured observation. Stored, inspectable, never
+  auto-recalled.
+- **Causal facet** — a structured `symptom`, `rootCause`, `remedy`, or
+  `verifiedOutcome` field on a record.
+- **Central Memories** — the shared store reached only through explicit
+  promotion.
+- **DEFER** — the write gate's "not yet" verdict, with a reason string.
+- **Delivery** — evidence that a recall dispatch happened. Never evidence that a
+  model read it.
+- **Memory Room** — one workspace's private store, keyed by DSH `WorkspaceId`.
+- **RRF** — reciprocal-rank fusion across retrieval channels (`K = 60`).
 - **Tombstone** — the terminal lifecycle marker of a forgotten record.
-- **Degraded mode** — operation with the external code-intelligence binary
-  absent; the memory layer is unaffected.
+- **Unverifiable** — freshness that cannot be checked because the
+  code-intelligence layer is unavailable. Distinct from stale.
+- **Write gate** — the decision point that turns an observation into durable
+  memory, or refuses to.
