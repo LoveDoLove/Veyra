@@ -677,7 +677,7 @@ function testOutcomeAnalysis(tools, files) {
   return { outcome, hadFailure: sawFailure, recovered: sawFailure && recoveredPass && correctiveAfterFailure }
 }
 
-function testOutcomeFrom(tools, files) {
+export function testOutcomeFrom(tools, files) {
   return testOutcomeAnalysis(tools, files).outcome
 }
 

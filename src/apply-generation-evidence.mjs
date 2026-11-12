@@ -14,6 +14,20 @@
  */
 export const APPLY_GENERATION_KEY = 'veyra_apply_generation_v1'
 export const APPLY_OUTCOME_LINK_KEY = 'veyra_apply_outcome_link_v1'
+export const APPLY_AUTO_OUTCOME_KEY = 'veyra_apply_auto_outcome_v1'
+
+// A turn's own test evidence can only *correlate* a delivered record with a
+// pass. `test-passed` is a local observation of runner output, not proof that a
+// model received or applied the memory, so nothing here may strengthen a
+// record's confidence, validation, or authority.
+export const AUTO_OUTCOME = Object.freeze({
+  CONTRADICTED: 'CONTRADICTED',
+  PLAUSIBLE: 'PLAUSIBLE_CORRELATION',
+})
+// AUTO_OUTCOME is keyed CONTRADICTED / PLAUSIBLE but the stored value is
+// PLAUSIBLE_CORRELATION, so membership must test the VALUES, not the keys.
+const AUTO_OUTCOME_VALUES = new Set(Object.values(AUTO_OUTCOME))
+const AUTO_OUTCOME_ENTRY_LIMIT = 64
 
 export const DELIVERY = Object.freeze({ DELIVERED: 'DELIVERED', NOT_VERIFIED: 'NOT_VERIFIED' })
 // Only the tool dispatch can prove a returned payload: `visible` is handed back
@@ -276,4 +290,87 @@ export function recordExplicitOutcomeLink(store, { recordId, outcome, generation
 
 export function readExplicitOutcomeLinks(store) {
   return readLog(store, APPLY_OUTCOME_LINK_KEY, normalizeLinkLog)
+}
+
+function normalizeAutoOutcomeEntry(e) {
+  if (!e || typeof e !== 'object') return null
+  if (!AUTO_OUTCOME_VALUES.has(e.signal)) return null
+  const recordId = boundedText(e.recordId, 128)
+  const eventId = boundedText(e.eventId, 64)
+  const at = boundedText(e.at, 40)
+  if (!recordId || !eventId || !at) return null
+  return {
+    eventId,
+    at,
+    kind: 'veyra.apply.auto_outcome',
+    recordId,
+    signal: e.signal,
+    generationEventId: boundedText(e.generationEventId, 64),
+    attribution: 'turn_test_evidence',
+  }
+}
+
+function normalizeAutoOutcomeLog(value) {
+  const log = emptyLog()
+  if (!value || typeof value !== 'object') return log
+  log.updatedAt = boundedText(value.updatedAt, 40)
+  log.nextSeq = Number.isFinite(value.nextSeq) && value.nextSeq >= 1 ? Math.trunc(value.nextSeq) : 1
+  if (Array.isArray(value.entries)) {
+    for (const e of value.entries.slice(-ENTRY_HARD_LIMIT)) {
+      const n = normalizeAutoOutcomeEntry(e)
+      if (n) log.entries.push(n)
+    }
+  }
+  return log
+}
+
+/**
+ * Record that a turn's test evidence correlated with a delivered recall.
+ *
+ * Non-causal by construction: it writes its own log and never calls
+ * `recordFeedback`, `strengthenMemory`, or `promote`. An unknown signal is
+ * refused rather than coerced.
+ */
+export function recordAutoOutcomeSignal(store, { recordId, generationEventId, signal, at } = {}) {
+  if (!AUTO_OUTCOME_VALUES.has(signal)) return null
+  if (!store || typeof store.getMeta !== 'function' || typeof store.setMeta !== 'function') return null
+  if (typeof recordId !== 'string' || !recordId) return null
+  try {
+    let log
+    try {
+      const raw = store.getMeta(APPLY_AUTO_OUTCOME_KEY)
+      log = raw ? normalizeAutoOutcomeLog(JSON.parse(raw)) : emptyLog()
+    } catch {
+      log = emptyLog()
+    }
+    const seq = log.nextSeq
+    log.nextSeq = seq + 1
+    const prefix = store.scope === 'reusable' ? 'r' : 'p'
+    const when = nowIso(at)
+    log.entries.push({
+      eventId: `vao_${prefix}_${seq.toString(36).padStart(6, '0')}`,
+      at: when,
+      kind: 'veyra.apply.auto_outcome',
+      recordId: recordId.slice(0, 128),
+      signal,
+      generationEventId: boundedText(generationEventId, 64),
+      attribution: 'turn_test_evidence',
+    })
+    log.updatedAt = when
+    while (log.entries.length > AUTO_OUTCOME_ENTRY_LIMIT) log.entries.shift()
+    let json = JSON.stringify(log)
+    while (log.entries.length > 0 && Buffer.byteLength(json, 'utf8') > SERIALIZED_MAX_BYTES) {
+      log.entries.shift()
+      json = JSON.stringify(log)
+    }
+    store.setMeta(APPLY_AUTO_OUTCOME_KEY, json)
+    return log
+  } catch {
+    return null
+  }
+}
+
+export function readAutoOutcomeSignals(store) {
+  const log = readLog(store, APPLY_AUTO_OUTCOME_KEY, normalizeAutoOutcomeLog)
+  return { available: Boolean(log), count: log?.entries.length ?? 0, entries: log?.entries ?? [] }
 }
