@@ -261,7 +261,7 @@ export function composeAgentContext(records, { stores = [], workspace = null, ch
  * nothing that already worked regresses; lifecycle, evidence, and supersession
  * are added as bounded extra lines.
  */
-export function renderAgentContext(composed, { heading = 'Veyra recalled engineering memory', changes = null, budget = DEFAULT_RECALL_CHARS } = {}) {
+export function renderAgentContext(composed, { heading = 'Veyra recalled engineering memory', changes = null, budget = DEFAULT_RECALL_CHARS, compact = false } = {}) {
   if (!Array.isArray(composed) || composed.length === 0) return ''
   const lines = [
     heading,
@@ -381,7 +381,28 @@ export function renderAgentContext(composed, { heading = 'Veyra recalled enginee
     }
     blocks.push({ lines: lines.slice(blockStart), expendable })
   }
-  return joinWithBudget(framing, blocks, budget)
+  // Compact keeps the attribution lines of every record and drops the detail.
+  // `lines[0]` is NOT reliably the header: contradiction banners are pushed
+  // before it, so a contradicted record would lose its id and keep only a
+  // warning about a record the agent can no longer identify.
+  const headerOf = (blockLines) => {
+    const found = blockLines.find((line) => line.startsWith('- ['))
+    return found ?? blockLines[0]
+  }
+  // Every warning line is a reason not to act on the record (contradiction,
+  // untrusted content, stale or unverifiable code evidence, trust category), so
+  // compact must not be the tier that hides one. Only the body, evidence and
+  // causal detail are expendable. Original order is preserved so a warning stays
+  // attached to the record it describes.
+  const isWarning = (line) => line.startsWith('> ⚠️ ') || line.startsWith('  • ⚠️ ')
+  const compactLines = (blockLines) => {
+    const header = headerOf(blockLines)
+    return blockLines.filter((line) => line === header || isWarning(line))
+  }
+  const rendered = compact
+    ? blocks.map((b) => ({ lines: compactLines(b.lines), expendable: [] }))
+    : blocks
+  return joinWithBudget(framing, rendered, budget)
 }
 
 export const GUIDANCE_TEXT = [
@@ -500,6 +521,14 @@ const claimedByAgent = new WeakMap()
 // Task intent extracted from compaction checkpoints or user prompts, keyed by session.
 // Prevents cross-session leakage because each session gets its own entry.
 export const taskIntentCache = new WeakMap()
+
+// A room that keeps recalling the same set every turn is paying the full
+// body/evidence cost for information the agent has already been shown.
+// Keyed by the resolved workspace string because that is what buildRecallContext
+// receives; createContextProvider never sees the record set.
+export const COMPACT_AFTER_REPEATS = 2
+export const RENDER_MEMORY_CAP = 32
+const renderMemory = new Map() // workspace → { key, renders }
 
 /**
  * Short confirmation or continuation tokens that carry no domain task intent.
@@ -948,12 +977,18 @@ export function buildRecallContext({ projectStore: injectedProjectStore = null, 
     if (reusableStore) reusableStore.touch(records.filter((r) => r.scope === 'reusable').map((r) => r.id))
     // M6 Phase-1: compose the engineering-aware view (lifecycle, evidence,
     // inbound supersession) before rendering. Read-time projection only.
+    const renderKey = records.map((r) => r.id).sort().join(',')
+    const prevRender = renderMemory.get(workspace)
+    const renders = prevRender && prevRender.key === renderKey && renderKey ? prevRender.renders + 1 : 1
+    renderMemory.delete(workspace)
+    renderMemory.set(workspace, { key: renderKey, renders })
+    if (renderMemory.size > RENDER_MEMORY_CAP) renderMemory.delete(renderMemory.keys().next().value)
     const rendered = renderAgentContext(composeAgentContext(records, {
       stores: [projectStore, reusableStore],
       workspace,
       changedFiles,
       degraded,
-    }), { changes: changedFiles, budget })
+    }), { changes: changedFiles, budget, compact: renders > COMPACT_AFTER_REPEATS })
     if (_emitGenerationEvidence) {
       emitGenerationEvidence(projectStore, {
         status: rendered && String(rendered).trim() ? 'generated' : 'generated_empty',

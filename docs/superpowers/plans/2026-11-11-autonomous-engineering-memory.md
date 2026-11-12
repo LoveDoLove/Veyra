@@ -632,7 +632,8 @@ test('a repeated set renders compact and keeps every id', (t) => {
   const first = f.render()
   f.render()
   const third = f.render()
-  assert.ok(third.length < first.length * 0.5, `expected compaction, got ${third.length} vs ${first.length}`)
+  assert.ok(third.length < first.length * 0.75, `expected compaction, got ${third.length} vs ${first.length}`)
+  assert.ok(!third.includes('Detail sentence.'), 'compaction must drop the body')
   for (const id of idsOf(first)) assert.ok(third.includes(id), `compacted output dropped ${id}`)
 })
 
@@ -677,14 +678,24 @@ test('a contradicted record keeps its id in the compact form', (t) => {
   const home = testHome(t)
   const workspace = '/repo/compact-f'
   const store = roomStore(home, workspace)
-  seed(store)
-  store.put({
-    title: 'Writer lock ordering inverted',
-    body: 'Root cause: the writer lock ordering is inverted.',
+  const now = new Date().toISOString()
+  const base = {
     kind: 'memory', authority: 'derived', validation: 'unverified',
     confidence: 'medium', status: 'current', scope: 'project',
-    tags: [], relations: [], evidence: [{ path: 'src/lock.mjs' }], source: {},
-    contradictionBanners: ['This memory contradicts [vey_zzz] on lock ordering.'],
+    tags: [], evidence: [{ path: 'src/lock.mjs' }], source: {},
+    createdAt: now, updatedAt: now, lastRecalledAt: null, forgotten: false,
+  }
+  // Banners are DERIVED from a stored `contradicts` relation, never read from a
+  // stored field, so the fixture has to create the relation itself.
+  store.put({
+    ...base, id: 'vey_aaa', title: 'Writer lock ordering inverted',
+    body: 'Root cause: the writer lock ordering is inverted.',
+    relations: [{ type: 'contradicts', targetId: 'vey_bbb' }],
+  })
+  store.put({
+    ...base, id: 'vey_bbb', title: 'Writer lock ordering is fine',
+    body: 'Root cause: the writer lock ordering is correct.',
+    relations: [{ type: 'contradicts', targetId: 'vey_aaa' }],
   })
   const render = () => buildRecallContext({
     projectStore: store, workspace, query: '', changedFiles: ['src/a.mjs'], limit: 6,
@@ -738,18 +749,31 @@ const headerOf = (lines) => {
   const found = lines.find((line) => line.startsWith('- ['))
   return found ?? lines[0]
 }
+// Every warning line is a reason not to act on the record (contradiction,
+// untrusted content, stale or unverifiable code evidence, trust category), so
+// compact must not be the tier that hides one.
+const isWarning = (line) => line.startsWith('> ⚠️ ') || line.startsWith('  • ⚠️ ')
+const compactLines = (blockLines) => {
+  const header = headerOf(blockLines)
+  return blockLines.filter((line) => line === header || isWarning(line))
+}
 const rendered = compact
-  ? blocks.map((b) => ({ lines: [...b.lines.filter((line) => line.startsWith('> ⚠️ ')), headerOf(b.lines)], expendable: [] }))
+  ? blocks.map((b) => ({ lines: compactLines(b.lines), expendable: [] }))
   : blocks
 return joinWithBudget(framing, rendered, budget)
 ```
 
 `headerOf` selects the real header `- [${rec.id}] (${scope}/${auth}…) ${rec.title}`
 by prefix rather than by index, falling back to `lines[0]` only if no header
-exists. The compact block keeps the record's contradiction banners (they are
-attribution, and dropping them would hide a known conflict) plus that one header,
-so ids, authority, validation, confidence and contradiction state all survive
-while body, evidence and causal facets drop.
+exists. The compact block keeps every warning line plus that one header, so ids,
+authority, validation, confidence, contradiction state, and every "do not trust
+this" signal survive while body, evidence and causal facets drop.
+
+Warnings are not optional here. `test/phase3-change-context.test.mjs` asserts
+that a record whose anchored file changed renders `⚠️ trust: REVIEW_REQUIRED`,
+and that record set is identical across the poll loop, so a header-only compact
+form silences the change-context warning it was built alongside. Order is
+preserved so each warning stays attached to the record it describes.
 
 Note that `joinWithBudget`'s own trimmed tier is NOT a substitute for this: it
 drops `expendable` offsets but deliberately keeps `evidence:` lines, so a record
