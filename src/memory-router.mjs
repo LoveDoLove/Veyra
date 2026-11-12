@@ -26,6 +26,7 @@ export const MEMORY_OPERATIONS = Object.freeze({
   FORGET: 'forget',
   PROMOTE: 'promote',
   HEALTH: 'health',
+  RECORD_DELIVERY: 'record.delivery',
 })
 
 export const MEMORY_TARGETS = Object.freeze({
@@ -59,6 +60,7 @@ const RULES = Object.freeze({
   [MEMORY_OPERATIONS.FORGET]: { workspace: 'write', central: 'none' },
   [MEMORY_OPERATIONS.PROMOTE]: { workspace: 'read', central: 'write' },
   [MEMORY_OPERATIONS.HEALTH]: { workspace: 'read', central: 'read' },
+  [MEMORY_OPERATIONS.RECORD_DELIVERY]: { workspace: 'write', central: 'none' },
 })
 
 function deny(reason, detail = {}) {

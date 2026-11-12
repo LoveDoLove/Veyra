@@ -4,8 +4,9 @@
  * Records recall context generation completion as:
  *   generated | generated_empty | generation_error
  *
- * Stage A truth labels (always):
- *   delivery.status = NOT_VERIFIED (no supported DSH admission evidence)
+ * Stage A truth labels:
+ *   delivery.status = DELIVERED only for a tool dispatch that returned a payload;
+ *                     NOT_VERIFIED everywhere else, including the context provider
  *   used.status     = NOT_VERIFIED (no supported attribution evidence)
  *
  * No prompt interception, no raw query/content/secrets, no invented Host APIs.
@@ -13,6 +14,12 @@
  */
 export const APPLY_GENERATION_KEY = 'veyra_apply_generation_v1'
 export const APPLY_OUTCOME_LINK_KEY = 'veyra_apply_outcome_link_v1'
+
+export const DELIVERY = Object.freeze({ DELIVERED: 'DELIVERED', NOT_VERIFIED: 'NOT_VERIFIED' })
+// Only the tool dispatch can prove a returned payload: `visible` is handed back
+// to the model-facing call. The context provider has no such surface, so it is
+// deliberately NOT in this set — its entries stay NOT_VERIFIED forever.
+const DELIVERABLE_SOURCES = new Set(['tool'])
 
 const ENTRY_LIMIT = 64
 const ENTRY_HARD_LIMIT = 128
@@ -62,7 +69,13 @@ function normalizeEntry(e) {
     recordRefs: Array.isArray(e.recordRefs) ? e.recordRefs.filter((x) => typeof x === 'string' && x).slice(0, RECORD_REFS_MAX) : [],
     recordRefsTruncated: e.recordRefsTruncated === true,
     renderedChars: Number.isFinite(e.renderedChars) && e.renderedChars >= 0 ? Math.trunc(e.renderedChars) : 0,
-    delivery: notVerified('delivery'),
+    delivery: e.delivery?.status === DELIVERY.DELIVERED
+      ? {
+        status: DELIVERY.DELIVERED,
+        source: boundedText(e.delivery.source, 48) || 'tool-dispatch',
+        detail: boundedText(e.delivery.detail, 96) || '',
+      }
+      : notVerified('delivery'),
     used: notVerified('used'),
   }
   if (Number.isFinite(e.charBudget) && e.charBudget >= 0) out.charBudget = Math.trunc(e.charBudget)
@@ -132,9 +145,12 @@ function appendEntry(store, key, makeEntry) {
 
 export function recordGenerationEvidence(store, {
   status, queryClass = 'unknown', resultCount = 0, recordRefs = [],
-  renderedChars = 0, charBudget, errorClass, at, scope, source,
+  renderedChars = 0, charBudget, errorClass, at, scope, source, delivery,
 } = {}) {
   const normalizedStatus = ['generated', 'generated_empty', 'generation_error'].includes(status) ? status : 'generation_error'
+  const resolvedDelivery = delivery && delivery.status === DELIVERY.DELIVERED && DELIVERABLE_SOURCES.has(source)
+    ? { status: DELIVERY.DELIVERED, source: delivery.source || source, detail: 'returned to the model-facing dispatch; model receipt not provable' }
+    : notVerified('delivery')
   return appendEntry(store, APPLY_GENERATION_KEY, ({ seq, prefix }) => {
     const when = nowIso(at)
     const refs = Array.isArray(recordRefs) ? recordRefs.filter((x) => typeof x === 'string' && x) : []
@@ -150,7 +166,7 @@ export function recordGenerationEvidence(store, {
       recordRefs: refs.slice(0, RECORD_REFS_MAX),
       recordRefsTruncated: refs.length > RECORD_REFS_MAX,
       renderedChars: Number.isFinite(renderedChars) && renderedChars >= 0 ? Math.trunc(renderedChars) : 0,
-      delivery: notVerified('delivery'),
+      delivery: resolvedDelivery,
       used: notVerified('used'),
     }
     if (Number.isFinite(charBudget) && charBudget >= 0) entry.charBudget = Math.trunc(charBudget)
@@ -168,12 +184,16 @@ export function summarizeGenerationEvidence(log) {
   if (!log || !Array.isArray(log.entries) || log.entries.length === 0) return null
   const byStatus = { generated: 0, generated_empty: 0, generation_error: 0 }
   for (const e of log.entries) if (byStatus[e.status] !== undefined) byStatus[e.status]++
+  const delivered = log.entries.filter((e) => e.delivery?.status === DELIVERY.DELIVERED)
   return {
     available: true,
     count: log.entries.length,
     updatedAt: log.updatedAt || null,
     byStatus,
-    delivery: notVerified('delivery'),
+    // An aggregate label may only claim delivery when a retained entry proves one.
+    delivery: delivered.length
+      ? { status: DELIVERY.DELIVERED, source: delivered[0].delivery.source || 'tool-dispatch', count: delivered.length }
+      : notVerified('delivery'),
     used: notVerified('used'),
     recent: log.entries.slice(-5).map((e) => ({
       eventId: e.eventId, at: e.at, status: e.status, queryClass: e.queryClass,
