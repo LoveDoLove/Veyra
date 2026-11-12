@@ -83,7 +83,7 @@ verification commands, and failure handling:
 
 ## Versioning
 
-- The project is on a pre-1.0 `0.2.x` line; APIs and the command surface may
+- The project is on a pre-1.0 `0.3.x` line; APIs and the command surface may
   still change between minor versions.
 - `CHANGELOG.md` has one section per released version, newest first, with
   `### Fixed` / `### Added` style headings. A behavior change that ships needs an
@@ -132,6 +132,6 @@ before any re-staging. A tag is never re-pushed to "retry" a release.
 
 ## Documentation parity
 
-User-visible changes belong in `README.md` (and `README.zh-TW.md`) plus the
+User-visible changes belong in `README.md` (and `README.zh-CN.md`), `docs/reference/`, plus the
 changelog. If a behavior described in these agent guides changes, update the
 guide in the same commit — a stale guide is a defect, not a backlog item.

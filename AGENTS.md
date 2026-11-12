@@ -13,10 +13,13 @@ This file holds only **rules** and **routing**. Details live in
 
 | If the task is about… | Read |
 | --- | --- |
+| Finding any document in this repository | [docs index](docs/README.md) |
 | Product direction, evolution priorities, and version decisions | [Product Evolution Blueprint](docs/PRODUCT-EVOLUTION-BLUEPRINT.md) |
 | Reference-project research and capability gap analysis | [Reference Research PRD](docs/REFERENCE-RESEARCH-PRD.md) |
-| Reference-project research, capability comparison, and Veyra gap analysis | [Reference Research PRD](docs/REFERENCE-RESEARCH-PRD.md) |
 | What Veyra is, its scope, layers, data flow, boundaries | [architecture](docs/agent-guides/architecture.md) |
+| The user-facing product surface: commands, tools, config, storage | [reference/](docs/reference/) — `commands.md`, `tools.md`, `configuration.md` |
+| The memory model as users and agents experience it | [memory model](docs/reference/memory-model.md) |
+| Vision, design principles, and the honest claim layers | [whitepaper](docs/WHITEPAPER.md) |
 | Finding the file that owns a behavior | [codebase map](docs/agent-guides/codebase-map.md) |
 | Design decisions, boundaries, when to add a module/dependency/field | [engineering principles](docs/agent-guides/engineering-principles.md) |
 | Memory authority, trust, isolation, redaction, fail-closed rules | [safety and invariants](docs/agent-guides/safety-and-invariants.md) |

@@ -77,7 +77,7 @@ task did not ask for.
 
 ## 7. Documentation parity
 
-If you changed a behavior described in `README.md`, `GOAL.md`, a bundled skill's
+If you changed a behavior described in `README.md`, `docs/reference/`, a bundled skill's
 `SKILL.md`, or one of these guides, update that description in the same change.
 Frontmatter in `skills/*/SKILL.md` is the source of truth; `src/skills.mjs` must
 match it.
