@@ -1,4 +1,8 @@
-## [Unreleased]
+## [0.3.0] - 2026-11-12
+
+Two changesets. Codebase Memory becomes an optional plugin Veyra loads through a bridge, which is breaking for a host that relied on Veyra to provide `cbm_*`. The autonomous memory loop then closes: capture stops inventing evidence, a recall dispatch becomes observable, repeated recall gets cheaper, and a restated root cause merges.
+
+The memory changes are verified mechanically. Nothing here claims a model-level effect; that needs the paired experiment, not this release.
 
 ### Changed
 
@@ -8,6 +12,25 @@
 - **CBM is declared as an optional peer, not a dependency.** `dependencies` is empty; `@lovedolove/dsh-codebase-memory-mcp` is in `peerDependencies` with `peerDependenciesMeta.optional = true`, and in `devDependencies` for CI. This buys **load safety, not removal**: pnpm installs optional peers by default, and a DSH profile that already declares CBM keeps it installed. Nothing is uninstalled by this change, and Code Intelligence keeps working wherever CBM is present.
 - **Minimum Node raised to `>=22.12.0 <25.0.0` (from `>=22.5.0`).** The bridge loads CBM with an unflagged `require(esm)`, which starts at Node 22.12.0; below that floor the bridge would silently degrade to the stub while `engines` claimed support. `node:sqlite` (22.5) still sets the lower bound for the memory layer.
 - Documentation and `AGENTS.md` now describe this shape: CBM as an optional plugin-backed peer that Veyra loads through the bridge, not a runtime dependency Veyra imports throughout `src/`.
+
+- **Repeated recall gets cheaper.** The third and later renders of an identical record set keep each record's header and every warning line, and drop body, evidence and causal detail. Warnings survive on purpose: a record whose anchored file changed must still show `⚠️ trust: REVIEW_REQUIRED`, and a header-only form silenced exactly that.
+- **Restated root causes merge.** The write gate compares the `Root cause:` facet instead of the whole claim, because whole-claim similarity over the live room topped out at 0.143, well under the 0.35 conflict floor. Identical causes score 1.000, a rewording 0.727-0.909, different causes at most 0.278. `CONFLICT` is never overridden, and a record with no facet never matches.
+- **`bash` writes are modification evidence.** `>`, `>>`, `tee` and `sed -i` targets count as changed files. A redirect inside quotes does not, because a path that was merely mentioned must never become evidence.
+- `devDependencies` pin `@lovedolove/dsh-codebase-memory-mcp` at `^0.1.10`, the baseline the tests assert. The peer range stays `^0.1.6`, because Veyra works with either; only the missing-executable warning is version-dependent.
+
+### Added
+
+- **`veyra_recall` reports the dispatch it performed.** Every tool call returns a `generationEventId`, and its generation evidence entry records `delivery: DELIVERED` with `source: tool-dispatch`. Only the tool path can be `DELIVERED`: the ambient context provider stays `NOT_VERIFIED`, because nothing in DSH proves a model received the text.
+- **`veyra_feedback` can name the recall it judges.** A `generationEventId` parameter links an outcome to the dispatch that surfaced the record, and the result reports `attribution: explicit_linked` or `none`. An id that is not in the retained log links nothing.
+- **Turn end records a non-causal outcome signal** (`veyra_apply_auto_outcome_v1`). A turn whose own runner output passes records `PLAUSIBLE_CORRELATION` against the last delivered record set; a failing run records `CONTRADICTED`. The signal never touches confidence, validation, or authority: a local test observation is not a model receipt.
+- `test/eval-autonomy-cycle.mjs` reports the loop end to end: delivery coverage, merge rate, distinct recall sets, prose symbol leaks, and characters per turn. It is a test harness, not shipped code.
+
+### Fixed
+
+- **Prose no longer produces symbol evidence.** `extractSymbols` requires a code shape after the identifier, so a sentence such as "the const body line" yields nothing. Symbol-only evidence had been setting `confidence: medium` on records with no real anchor.
+- **Symbol-only evidence is not grounding.** A `sym:` note no longer satisfies the write gate's grounding check. A real path, uri or anchor is required, or a note that is not a symbol reference.
+- **An unavailable Code Intelligence layer no longer fabricates a freshness reason.** A record whose path cannot be resolved because the bridge is absent now reports `unverifiable` and classifies as insufficient evidence, instead of claiming the path was outside the repository and escalating to stale.
+- **A broken Codebase Memory install warns once.** A missing package stays silent; a package that is present but fails to load warns through the plugin log. That is the difference a user needs to see, and the two cases were previously indistinguishable.
 
 ## [0.2.1] - 2026-11-11
 
