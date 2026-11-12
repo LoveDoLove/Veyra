@@ -68,9 +68,12 @@ export const WRITE_GATES = Object.freeze({
 
 export function hasGrounding(candidate) {
   const evidence = candidate?.evidence || []
-  if (evidence.some((item) => item && (item.path || item.uri || item.anchor || item.note))) {
-    return true
-  }
+  // A symbol note only says a name appeared; it is not a location and not a
+  // result. Counting it as ground is what gave prose records `medium`.
+  const located = evidence.some((item) => item && (item.path || item.uri || item.anchor))
+  if (located) return true
+  const signalled = evidence.some((item) => typeof item?.note === 'string' && item.note && !/^sym:/.test(item.note))
+  if (signalled) return true
   const files = candidate?.source?.files || []
   return files.length > 0
 }
