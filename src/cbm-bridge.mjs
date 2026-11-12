@@ -65,6 +65,13 @@ const unavailable = () => Object.freeze({
  */
 export let cbmLoadFailure = null
 
+// The two specifiers this bridge requires, for absence detection below. A
+// missing *bare* specifier means the optional peer was never installed, which
+// is a supported configuration. A missing path into an installed package (its
+// `main`, or a dependency of it) means the install is broken, and §13 wants
+// that surfaced.
+const ABSENCE_NAMES = new Set([SPECIFIER, DISCOVERY_SPECIFIER])
+
 const recordFailure = (err, message) => {
   // A thrown `Error` usually carries no `code`, and a load failure with no code
   // at all would be indistinguishable from "nothing was recorded". The synthetic
@@ -78,6 +85,27 @@ const recordFailure = (err, message) => {
     code,
     message: err instanceof Error ? err.message : String(err ?? message),
   }
+}
+
+// `require` reports a missing package and a broken package with the same
+// MODULE_NOT_FOUND code, so the code alone cannot tell them apart. The message
+// names what failed: the bare specifier for a package that is simply not there,
+// an absolute path (a missing `main`) or a third-party name (a missing
+// dependency) for an install that exists and is broken.
+const MODULE_NOT_FOUND_MESSAGE = /^Cannot find module '([^']+)'/
+
+/**
+ * Whether a recorded load failure means "the optional peer was never installed".
+ *
+ * Only that case is quiet: §13 wants a broken install surfaced, and the specs
+ * the operator can act on (missing `main`, missing dependency) are exactly the
+ * ones where the package directory is there.
+ */
+export function isAbsentFailure(failure = cbmLoadFailure) {
+  if (!failure) return false
+  if (failure.code !== 'MODULE_NOT_FOUND' && failure.code !== 'ERR_MODULE_NOT_FOUND') return false
+  const name = MODULE_NOT_FOUND_MESSAGE.exec(failure.message)?.[1]
+  return Boolean(name && ABSENCE_NAMES.has(name))
 }
 
 export function loadCbmBridge({ requireFrom = import.meta.url } = {}) {

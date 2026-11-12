@@ -254,3 +254,61 @@ test('Veyra no longer bundles a codebase-memory skill', async () => {
   assert.equal(BUNDLED_SKILL_DEFINITIONS.some((s) => s.name === 'codebase-memory'), false)
   assert.equal(BUNDLED_SKILL_DEFINITIONS.length, 4)
 })
+
+// §13's whole point is the operator actually seeing the warning, so pin the
+// call site and not just the classifier: one warn per apply() for a broken
+// install, silence for a plain absence. `loadCbmBridge` is the injectable seam
+// (`cbmLoadFailure` is a live binding), and the real load at the end restores
+// the module to the state every later test in this process expects.
+test('apply warns once for a broken install and stays quiet for an absent package', async (t) => {
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { apply } = await import('../src/plugin.mjs')
+  const { loadCbmBridge } = await import('../src/cbm-bridge.mjs')
+  const { testHome } = await import('./helpers/room.mjs')
+
+  const runApply = (home) => {
+    const warns = []
+    const ctx = {
+      tools: { register: () => {} },
+      commands: { register: () => {} },
+      skills: { register: () => {}, registerProvider: () => () => {} },
+      systemPrompt: { section: () => {}, context: () => {} },
+      on: () => () => {},
+      effect: (factory) => factory(),
+      logger: { info: () => {}, warn: (msg) => warns.push(String(msg)), debug: () => {}, error: () => {} },
+    }
+    const dispose = apply(ctx, { home, observe: false, codebaseMemoryBin: '/nonexistent/cbm-binary-for-test' })
+    return { warns: warns.filter((w) => w.includes('Codebase Memory failed to load')), dispose }
+  }
+
+  const broken = mkdtempSync(join(tmpdir(), 'veyra-warn-broken-'))
+  const absent = mkdtempSync(join(tmpdir(), 'veyra-warn-absent-'))
+  try {
+    // An installed package whose `main` is missing: the broken install §13 is
+    // about. Node reports it as MODULE_NOT_FOUND, same as a missing package.
+    const pkg = join(broken, 'node_modules', '@lovedolove', 'dsh-codebase-memory-mcp')
+    mkdirSync(pkg, { recursive: true })
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({
+      name: '@lovedolove/dsh-codebase-memory-mcp', version: '9.9.9', main: 'index.cjs',
+    }))
+    writeFileSync(join(broken, 'entry.mjs'), '')
+    writeFileSync(join(absent, 'entry.mjs'), '')
+
+    loadCbmBridge({ requireFrom: join(broken, 'entry.mjs') })
+    const brokenRun = runApply(testHome(t))
+    brokenRun.dispose?.()
+    assert.equal(brokenRun.warns.length, 1, 'a broken install must warn exactly once per apply')
+    assert.match(brokenRun.warns[0], /failed to load/)
+
+    loadCbmBridge({ requireFrom: join(absent, 'entry.mjs') })
+    const absentRun = runApply(testHome(t))
+    absentRun.dispose?.()
+    assert.deepEqual(absentRun.warns, [], 'an absent optional peer is a supported configuration, not news')
+  } finally {
+    loadCbmBridge() // restore the real namespace for the rest of this process
+    rmSync(broken, { recursive: true, force: true })
+    rmSync(absent, { recursive: true, force: true })
+  }
+})

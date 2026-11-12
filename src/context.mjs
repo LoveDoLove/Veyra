@@ -483,8 +483,14 @@ export const CODE_INTELLIGENCE_GUIDANCE = [
 // in one line instead of staying silent. Silence read as "nothing to say about
 // code", which left the model with no instruction to fall back to its own file
 // tools. Deliberately names no cbm_* tool — there is nothing to advertise.
+//
+// It states that Code Intelligence is unavailable, not that the package is
+// uninstalled: the gate also trips when the package is present and its native
+// binary is missing, and the Codebase Memory plugin registers its six tools in
+// that case regardless. Only the capability is known here, so only the
+// capability is claimed.
 export const CODE_INTELLIGENCE_UNAVAILABLE_GUIDANCE =
-  'Code Intelligence is not installed in this profile: the cbm_* tools are unavailable, so use your own file search, read, and grep tools instead.'
+  'Code Intelligence is unavailable in this profile: the cbm_* tools cannot be used, so use your own file search, read, and grep tools instead.'
 
 // Claimed inbox text is gone from inbox and not yet on deriveMessages()
 // when systemPrompt.assemble runs (preStep claims, then assembles).

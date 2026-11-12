@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { loadCbmBridge, createDegradedEngine, resolveRepoPath, cbm, cbmLoadFailure } from '../src/cbm-bridge.mjs'
+import { loadCbmBridge, createDegradedEngine, resolveRepoPath, cbm, cbmLoadFailure, isAbsentFailure } from '../src/cbm-bridge.mjs'
 import { CODE_FRESHNESS } from '../src/types.mjs'
 
 test('bridge exposes the full namespace when the package is installed', () => {
@@ -113,5 +113,54 @@ test('bridge degrades instead of throwing when an export getter throws', () => {
     assert.equal(typeof cbmLoadFailure.code, 'string')
     assert.notEqual(cbmLoadFailure.code, 'ERR_MODULE_NOT_FOUND')
     assert.match(cbmLoadFailure.message, /malformed export/)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('a missing package is absence; a missing main or dependency is a broken install', () => {
+  // §13 asks for a warning when the package is there but unusable. `require`
+  // reports every one of these as MODULE_NOT_FOUND, so the code cannot decide
+  // it — only the named specifier can. These are the exact message shapes Node
+  // 24 produces, captured from real require failures.
+  const absent = {
+    code: 'MODULE_NOT_FOUND',
+    message: "Cannot find module '@lovedolove/dsh-codebase-memory-mcp'\nRequire stack:\n- /app/entry.mjs",
+  }
+  assert.equal(isAbsentFailure(absent), true, 'a bare specifier that never resolved is a supported absence')
+
+  const absentDiscovery = {
+    code: 'MODULE_NOT_FOUND',
+    message: "Cannot find module '@lovedolove/dsh-codebase-memory-mcp/discovery'\nRequire stack:\n- /app/entry.mjs",
+  }
+  assert.equal(isAbsentFailure(absentDiscovery), true)
+
+  const missingMain = {
+    code: 'MODULE_NOT_FOUND',
+    message: 'Cannot find module \'/app/node_modules/@lovedolove/dsh-codebase-memory-mcp/index.cjs\'. Please verify that the package.json has a valid "main" entry',
+  }
+  assert.equal(isAbsentFailure(missingMain), false, 'an installed package with no main must warn')
+
+  const missingDep = {
+    code: 'MODULE_NOT_FOUND',
+    message: "Cannot find module 'some-missing-dep'\nRequire stack:\n- /app/node_modules/@lovedolove/dsh-codebase-memory-mcp/index.cjs",
+  }
+  assert.equal(isAbsentFailure(missingDep), false, 'a missing dependency must warn')
+
+  assert.equal(isAbsentFailure(null), false, 'no recorded failure is not an absence to warn about')
+  assert.equal(isAbsentFailure({ code: 'CBM_LOAD_FAILED', message: 'Cannot find module nonsense' }), false,
+    'the synthetic code is never absence')
+})
+
+test('the absent-package contract is classified from the live bridge failure', () => {
+  // Same inputs as the unit test above, driven through a real require so a
+  // future Node message change cannot silently reclassify an absent package as
+  // a broken one (which would warn on every clean install).
+  const dir = mkdtempSync(join(tmpdir(), 'veyra-absent-classify-'))
+  try {
+    writeFileSync(join(dir, 'entry.mjs'), '')
+    const loaded = loadCbmBridge({ requireFrom: join(dir, 'entry.mjs') })
+    assert.equal(loaded.available, false)
+    assert.ok(cbmLoadFailure?.code === 'MODULE_NOT_FOUND' || cbmLoadFailure?.code === 'ERR_MODULE_NOT_FOUND',
+      'a missing package throws a module-not-found code')
+    assert.equal(isAbsentFailure(cbmLoadFailure), true, 'a genuinely absent package stays quiet')
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })

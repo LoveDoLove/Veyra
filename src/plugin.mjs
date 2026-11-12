@@ -30,7 +30,7 @@ import { registerTools } from './tools.mjs'
 import { registerCommand } from './commands.mjs'
 import { registerSkills } from './skills.mjs'
 import { registerWebUi } from './webui.mjs'
-import { CBM_PACKAGE_NAME, cbm, createDegradedEngine, cbmLoadFailure, isCodeIntelligenceAvailable } from './cbm-bridge.mjs'
+import { CBM_PACKAGE_NAME, cbm, createDegradedEngine, cbmLoadFailure, isAbsentFailure, isCodeIntelligenceAvailable } from './cbm-bridge.mjs'
 import { findAffectedMemories, buildStaleReviewCandidate } from './code/linking.mjs'
 
 // `src/plugin.mjs` is this package's `main`/`exports` target, so these five CBM
@@ -173,14 +173,18 @@ export function apply(ctx, config = {}) {
   // Spec §13: a corrupt install must not look like no install. The bridge
   // degrades silently by design (module evaluation stays side-effect free), so
   // the one warning lives here, where a logger exists. Only a failure that is
-  // not a plain absence is news: a missing-module code means the optional peer
-  // was never installed, which is a supported configuration. `runtime.log.warn`
-  // is the logger wrapper that already swallows sink failures, so this can
-  // never break plugin load; there is one call per apply(), no interval/retry.
+  // not a plain absence is news, and the two are not distinguishable by the
+  // error code — `require` reports a missing package, a package whose `main` is
+  // missing, and a package whose dependency is missing all as MODULE_NOT_FOUND.
+  // `isAbsentFailure` compares the named specifier instead, so the broken
+  // install §13 exists to surface is not suppressed along with the absent one.
+  // `runtime.log.warn` is the logger wrapper that already swallows sink
+  // failures, so this can never break plugin load; there is one call per
+  // apply(), no interval/retry.
   //
   // The package name comes from the bridge: this file must never spell the
   // specifier itself (a test asserts exactly one src/ file names it).
-  if (cbmLoadFailure && cbmLoadFailure.code !== 'ERR_MODULE_NOT_FOUND' && cbmLoadFailure.code !== 'MODULE_NOT_FOUND') {
+  if (cbmLoadFailure && !isAbsentFailure(cbmLoadFailure)) {
     try {
       runtime.log.warn(
         `[veyra] Codebase Memory failed to load (${cbmLoadFailure.code || 'unknown'}): ${cbmLoadFailure.message}. Code Intelligence is degraded; install or reinstall ${CBM_PACKAGE_NAME} to restore it.`,
