@@ -11,7 +11,7 @@
 [![node](https://img.shields.io/badge/node-%3E%3D22.12%20%3C25-16a34a)](package.json)
 [![license](https://img.shields.io/badge/license-MIT-16a34a)](LICENSE)
 
-[DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness) 的插件。纯 ESM。无守护进程。无 API 密钥。打包后 275 kB。
+[DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness) 的插件。纯 ESM。无守护进程。无 API 密钥。打包后 263.1 kB。
 
 ---
 
@@ -121,6 +121,10 @@ dsh plugin --profile web add @lovedolove/veyra
 | [故障排查](docs/reference/troubleshooting.md) | 症状、原因、修复 |
 | [基准测试](docs/BENCHMARK.md) | 已测量的 45 维基准测试装置，以及每个数字的含义 |
 | [架构图](docs/architecture-graph.md) | 契约、已拒绝的方案，以及长期有效的设计边界 |
+| [CHANGELOG.md](CHANGELOG.md) | 每个已发布版本，以及其中改了什么 |
+| [检索有效性](RETRIEVAL-EFFECTIVENESS-GOAL.md) | 目标、实验，以及检索工作证明了什么的记录 |
+| [贡献指南](CONTRIBUTING.md) | 如何报告、提议、验证和提交一项改动 |
+| [安全策略](SECURITY.md) | 支持的版本、存储了什么、脱敏了什么、威胁模型 |
 | [AGENTS.md](AGENTS.md) | 为开发 Veyra 本身的智能体提供的入口 |
 
 ## 要求
@@ -136,7 +140,7 @@ dsh plugin --profile web add @lovedolove/veyra
 
 ## 测量了什么，没测量什么
 
-已测量：记忆循环能够闭合。一次召回分发是可观测的，重复召回是有界的，重述的根因会合并，捕获不再凭空造证据。测试套件有 1171 个测试，基准测试装置在每次运行时重新断言自己的表格。
+已测量：记忆循环能够闭合。一次召回分发是可观测的，重复召回是有界的，重述的根因会合并，捕获不再凭空造证据。测试套件有 1173 个测试，基准测试装置在每次运行时重新断言自己的表格。
 
 未测量：带 Veyra 的智能体是否比不带的更快或更好地完成真实任务。这需要配对实验，仓库如实说明这一点，而不是暗示相反。白皮书把设计目标、已实现行为、已验证行为和未证实主张分放在不同章节。
 

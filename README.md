@@ -14,7 +14,7 @@ No manual bookmarking. No re-deriving the same root cause next week.
 [![license](https://img.shields.io/badge/license-MIT-16a34a)](LICENSE)
 
 A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness).
-Pure ESM. No daemon. No API keys. 275 kB packed.
+Pure ESM. No daemon. No API keys. 263.1 kB packed.
 
 ---
 
@@ -135,6 +135,10 @@ Similarity is not authority, so a good match never promotes a record.
 | [Troubleshooting](docs/reference/troubleshooting.md) | Symptom, cause, fix |
 | [Benchmark](docs/BENCHMARK.md) | The measured 45-dimension harness and what each number means |
 | [Architecture graph](docs/architecture-graph.md) | Contracts, rejections, and the standing design boundary |
+| [CHANGELOG.md](CHANGELOG.md) | Every released version and what changed in it |
+| [Retrieval effectiveness](RETRIEVAL-EFFECTIVENESS-GOAL.md) | The goal, the experiment, and the record of what the retrieval work proved |
+| [Contributing](CONTRIBUTING.md) | How to report, propose, verify, and land a change |
+| [Security policy](SECURITY.md) | Supported versions, what is stored, what is redacted, the threat model |
 | [AGENTS.md](AGENTS.md) | Entry point for agents working on Veyra itself |
 
 ## Requirements
@@ -153,7 +157,7 @@ surface.
 
 Measured: the memory loop closes. A recall dispatch is observable, repeated
 recall is bounded, a restated root cause merges, and capture stops inventing
-evidence. The suite is 1171 tests, and the benchmark harness re-asserts its own
+evidence. The suite is 1173 tests, and the benchmark harness re-asserts its own
 table on every run.
 
 Not measured: whether an agent with Veyra completes real tasks faster or better

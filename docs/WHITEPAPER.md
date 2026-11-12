@@ -151,7 +151,7 @@ The local graph is a derived projection, not a second store.
 
 | Property | Value |
 | --- | --- |
-| Package | `@lovedolove/veyra`, 275 kB packed, 52 files |
+| Package | `@lovedolove/veyra`, 263.1 kB packed, 52 files |
 | Module system | Pure ESM |
 | Required runtime dependencies | None |
 | Optional peer | `@lovedolove/dsh-codebase-memory-mcp`, loaded through `src/cbm-bridge.mjs` |
@@ -432,7 +432,7 @@ would be an injection surface.
 
 ### 11.1 The suite
 
-1171 tests across 13 suites run on Node 22 and 24 in CI, together with a
+1173 tests across 13 suites run on Node 22 and 24 in CI, together with a
 runtime-dependency guard and a pack check. The suite covers lifecycle,
 contradiction handling, corruption, isolation, redaction, retrieval ranking,
 context rendering, plugin lifecycle, and the Code Intelligence boundary.
@@ -500,7 +500,7 @@ and eventual *measured* demonstration of utility on paired tasks.
 
 ### 12.3 Verified
 
-- 1171 tests pass on Node 22 and 24.
+- 1173 tests pass on Node 22 and 24.
 - The runtime-dependency guard passes on every shipped file.
 - The pack check produces a valid 52-file tarball.
 - The 45-dimension benchmark re-asserts its own table.

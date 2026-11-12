@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/LoveDoLove/Veyra/security/advisories/new
+    about: Report a security problem privately. Do not open a public issue.
+  - name: Question or usage help
+    url: https://github.com/LoveDoLove/Veyra/blob/main/docs/reference/troubleshooting.md
+    about: Start with the troubleshooting guide, then open a discussion if it does not cover your case.

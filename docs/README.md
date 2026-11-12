@@ -69,6 +69,19 @@ For agents and humans working on Veyra itself. The rules and routing live in
 | [agent-guides/cbm-integration.md](./agent-guides/cbm-integration.md) | The optional Code Intelligence peer and the bridge |
 | [agent-guides/release-and-packaging.md](./agent-guides/release-and-packaging.md) | Packaging, CI, npm staged publishing, versioning |
 
+## Project policy and history
+
+Repository-level documents that live at the root because GitHub and npm
+conventions expect them there.
+
+| Document | Covers |
+| --- | --- |
+| [../CONTRIBUTING.md](../CONTRIBUTING.md) | How to report, propose, verify, and land a change |
+| [../SECURITY.md](../SECURITY.md) | Supported versions, storage, redaction, threat model, disclosure route |
+| [../CHANGELOG.md](../CHANGELOG.md) | Every released version and what changed in it |
+| [../RETRIEVAL-EFFECTIVENESS-GOAL.md](../RETRIEVAL-EFFECTIVENESS-GOAL.md) | The retrieval effectiveness goal, its experiments, and its results |
+| [../THIRD_PARTY.md](../THIRD_PARTY.md) | Bundled and peer dependencies with their licenses |
+
 ## Design records
 
 `docs/superpowers/` holds the design specs and implementation plans for work
