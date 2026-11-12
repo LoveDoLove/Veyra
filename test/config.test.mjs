@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Config, normalizeRecallLimit } from '../src/config.mjs'
 import { DEFAULT_RECALL_LIMIT } from '../src/types.mjs'
+import { loadDshPackage } from './helpers/dsh.mjs'
 
 function resolve(input) {
   const result = Config['~standard'].validate(input)
@@ -45,6 +46,28 @@ test('Config schema: defaults, 0 survives, negatives rejected, extras passthroug
   assert.throws(() => resolve({ recallLimit: 1.5 }), /multiple of 1/)
   assert.throws(() => resolve({ recallLimit: 'x' }), /expected number/)
   assert.throws(() => resolve({ includeReusable: 'yes' }), /expected boolean/)
+})
+
+test('Config carries the native Schemastery brand the Host gate requires', async () => {
+  // `isNativeConfigSchema` (dsh-app-boot) is the gate that decides whether the
+  // Host projects this Config into the Settings UI schema or degrades the entry
+  // to `status: 'unsupported'`. Pin against the real exported predicate so a
+  // future refactor cannot silently drop the brand.
+  const boot = await loadDshPackage('@deepseek-ai/dsh-app-boot')
+  const nativeConfigSchema = boot?.isNativeConfigSchema
+  if (typeof nativeConfigSchema !== 'function') {
+    // No DSH checkout available: still assert the brand shape itself.
+    assert.equal(Reflect.get(Config, Symbol.for('schemastery')), true)
+    return
+  }
+  assert.equal(nativeConfigSchema(Config), true, 'root Config must pass isNativeConfigSchema')
+  for (const [name, node] of Object.entries(Config.dict)) {
+    assert.equal(nativeConfigSchema(node), true, `Config.dict.${name} must pass isNativeConfigSchema`)
+  }
+  // Negative control: the brand is what the gate reads, not the shape alone.
+  const unbranded = { ...Config, dict: {} }
+  delete unbranded[Symbol.for('schemastery')]
+  assert.equal(nativeConfigSchema(unbranded), false, 'without the brand the gate must reject')
 })
 
 test('Config toJSON envelope rehydrates as a volatile Settings form when schemastery is available', () => {

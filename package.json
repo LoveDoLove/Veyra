@@ -54,7 +54,8 @@
   },
   "homepage": "https://github.com/LoveDoLove/Veyra#readme",
   "engines": {
-    "node": ">=22.12.0 <25.0.0"
+    "node": ">=22.12.0 <25.0.0",
+    "dsh": ">=0.1.2-rc.1 <0.3.0-0"
   },
   "dsh": {
     "bundle": {
@@ -63,26 +64,9 @@
     "client": {
       "platform": "web",
       "inject": [
-        "@deepseek-ai/dsh-client-ui-slots",
         "@deepseek-ai/dsh-client-ui-sidebar-right",
         "@deepseek-ai/dsh-api-workspace-controller"
       ]
-    },
-    "compatibility": {
-      "dshReleases": {
-        "0.1.2-rc.1": "compatible",
-        "0.1.3-alpha.1": "compatible",
-        "0.1.3-alpha.2": "compatible",
-        "0.1.5-alpha.1": "compatible",
-        "0.1.5-rc.2": "compatible",
-        "0.1.5-rc.3": "compatible",
-        "0.1.7-rc.2": "compatible",
-        "0.2.0-rc.1": "compatible",
-        "0.2.0-rc.2": "compatible",
-        "0.2.2-rc.1": "compatible"
-      },
-      "nodeVersions": ">=22.12.0 <25.0.0",
-      "dshVersions": ">=0.1.2-rc.1 <0.3.0-0"
     }
   },
   "peerDependencies": {

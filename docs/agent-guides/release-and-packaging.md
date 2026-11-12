@@ -90,8 +90,11 @@ verification commands, and failure handling:
   entry.
 - The version appears in `package.json`, the changelog heading, and the git tag.
   They must agree — the publish workflow refuses to proceed otherwise.
-- The DSH compatibility block in `package.json` (`dshReleases`, `dshVersions`,
-  `nodeVersions`) must be updated when a new DSH release is verified.
+- DSH version support lives in `engines.dsh` in `package.json`. That is the
+  only field the Host gates on: when it is present it decides alone, and
+  `@deepseek-ai/dsh*` peer ranges are consulted only when it is absent. There is
+  no `dsh.compatibility` block — DSH has no reader for one, so declaring it
+  gates nothing. Update `engines.dsh` when a new DSH release is verified;
   `test/compatibility.test.mjs` checks the manifest.
 
 ## Release checklist

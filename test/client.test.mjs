@@ -50,11 +50,13 @@ function makeReact(state) {
   }
 }
 
-function makeWorkspacesFace({ activeSessionId = '', items = [], snapshot } = {}) {
+function makeWorkspacesFace({ items = [], snapshot } = {}) {
   let snap = snapshot || { items, archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null }
   const listeners = new Set()
+  // Shape mirrors the real IWorkspaces face: only `list` (plus imperative
+  // methods). There is no `active` member on the real service, so the fake must
+  // not grow one either.
   return {
-    active: activeSessionId ? { sessionId: activeSessionId } : null,
     list: {
       getSnapshot: () => snap,
       subscribe: (fn) => { listeners.add(fn); return () => listeners.delete(fn) },
@@ -65,7 +67,6 @@ function makeWorkspacesFace({ activeSessionId = '', items = [], snapshot } = {})
 }
 
 function setup({
-  activeSessionId = '',
   workspaceItems = null,
   workspacesFace = null,
   deferSidebarTabs = false,
@@ -76,8 +77,8 @@ function setup({
     stateIdx: 0, seed: {}, cleanups: [], disposers: [],
     slotInjected: [], slotRegistered: [], tabDefs: [], ctxInjects: [], rootSlotInjected: [],
   }
-  const face = workspacesFace || (activeSessionId || workspaceItems
-    ? makeWorkspacesFace({ activeSessionId, items: workspaceItems || [] })
+  const face = workspacesFace || (workspaceItems !== null
+    ? makeWorkspacesFace({ items: workspaceItems })
     : null)
   const scopeBase = {
     slots: {
@@ -144,14 +145,20 @@ test('client bundle exports/inject: Settings UI removed, Network Graph tab remai
   assert.equal(typeof mod.__resolveActiveWorkspaceCwd, 'function', 'Task 36 resolver seam')
 })
 
-test('package.json dsh.client.inject has no stale settings dependency (activation regression)', () => {
+test('package.json dsh.client.inject names only real client-plugin rows (activation regression)', () => {
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
   assert.ok(!pkg.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-settings'))
+  // Deps are package-name edges between dsh.client rows, so every entry must be a
+  // package that itself declares dsh.client. `dsh-client-ui-slots` is a baseline
+  // module (resolved by the frontend module map), not a client-plugin row, so it
+  // can never satisfy the edge.
   assert.deepStrictEqual(pkg.dsh.client.inject, [
-    '@deepseek-ai/dsh-client-ui-slots',
     '@deepseek-ai/dsh-client-ui-sidebar-right',
     '@deepseek-ai/dsh-api-workspace-controller',
   ])
+  for (const dep of pkg.dsh.client.inject) {
+    assert.match(dep, /^@deepseek-ai\/dsh-/, `${dep} must be a bare DSH package name`)
+  }
 })
 
 test('DSH 0.2.2-rc.1 registration: Network Graph tab deferred; bottom-left footer button removed (Task 35.7)', () => {
@@ -179,12 +186,11 @@ test('DSH 0.2.2-rc.1 registration: Network Graph tab deferred; bottom-left foote
 test('Task 36: Network Graph iframe uses authoritative workspace cwd, not sessionId proof', () => {
   const cwdA = '/home/test/workspace-a'
   const { state } = setup({
-    activeSessionId: 's42',
     workspaceItems: [
       { workspaceId: 'ws-a', path: cwdA, title: 'A', sessionIds: ['s42'] },
     ],
   })
-  const tree = renderTabBody(state)
+  const tree = renderTabBody(state, { sessionId: 's42' })
   const iframe = findNode(tree, (n) => n.type === 'iframe')
   assert.ok(iframe, 'tab body renders an iframe when authoritative cwd resolved')
   assert.match(iframe.props.src, /\/veyra\?mode=sidebar&cwd=/)
@@ -193,36 +199,33 @@ test('Task 36: Network Graph iframe uses authoritative workspace cwd, not sessio
 })
 
 test('Task 36: missing workspace context fails closed with explicit unavailable state (no fallback iframe)', () => {
-  const { state } = setup({ activeSessionId: 's42', workspaceItems: [] })
-  const tree = renderTabBody(state)
+  const { state } = setup({ workspaceItems: [] })
+  const tree = renderTabBody(state, { sessionId: 's42' })
   const iframe = findNode(tree, (n) => n.type === 'iframe')
   assert.equal(iframe, null, 'no iframe when workspace cwd cannot be resolved')
   const unavailable = findNode(tree, (n) => n.props && n.props.className === 'veyra-graph-unavailable')
   assert.ok(unavailable, 'explicit unavailable state rendered')
 })
 
-test('Task 36: sessionId alone is never trusted as workspace proof', () => {
-  const { mod } = setup()
-  // Session maps to workspace B, but attacker-controlled caller should not be able
-  // to select workspace A data by passing sessionId; resolver uses workspace list
-  // mapping only and returns workspace B's path for that active session.
-  const cwd = mod.__resolveActiveWorkspaceCwd({
-    active: { sessionId: 's-b' },
-    list: {
-      getSnapshot: () => ({
-        items: [
-          { workspaceId: 'ws-a', path: '/work/a', sessionIds: ['s-a'] },
-          { workspaceId: 'ws-b', path: '/work/b', sessionIds: ['s-b'] },
-        ],
-      }),
-    },
+test('Task 36: no active-workspace accessor exists, so the prop-less path fails closed', () => {
+  const { mod } = setup({
+    workspaceItems: [{ workspaceId: 'ws-a', path: '/work/a', sessionIds: ['s-a'] }],
   })
-  assert.equal(cwd, '/work/b')
-  // Unknown session => no cwd (fail closed), even if other workspaces exist.
+  // IWorkspaces exposes no active session: a face-shaped argument changes nothing.
+  assert.equal(mod.__resolveActiveWorkspaceCwd(), '')
   assert.equal(mod.__resolveActiveWorkspaceCwd({
-    active: { sessionId: 's-x' },
+    active: { sessionId: 's-a' },
     list: { getSnapshot: () => ({ items: [{ workspaceId: 'ws-a', path: '/work/a', sessionIds: ['s-a'] }] }) },
-  }), '')
+  }), '', 'there is no active-session field to read, so this must stay empty')
+})
+
+test('Task 36: prop-less tab render fails closed even when a workspace row would match', () => {
+  const { state } = setup({
+    workspaceItems: [{ workspaceId: 'ws-a', path: '/project-a', sessionIds: ['sess-a'] }],
+  })
+  const tree = renderTabBody(state)
+  assert.equal(findNode(tree, (n) => n.type === 'iframe'), null, 'no cwd can be resolved without the sessionId prop')
+  assert.ok(findNode(tree, (n) => n.props && n.props.className === 'veyra-graph-unavailable'), 'explicit unavailable state rendered')
 })
 
 test('Task 36: resolver selects workspace A/B by authoritative mapping (switch evidence seam)', () => {
@@ -232,9 +235,9 @@ test('Task 36: resolver selects workspace A/B by authoritative mapping (switch e
     { workspaceId: 'ws-b', path: '/project-b', sessionIds: ['sess-b'] },
   ]
   const list = { getSnapshot: () => ({ items }) }
-  assert.equal(mod.__resolveActiveWorkspaceCwd({ active: { sessionId: 'sess-a' }, list }), '/project-a')
-  assert.equal(mod.__resolveActiveWorkspaceCwd({ active: { sessionId: 'sess-b' }, list }), '/project-b')
-  assert.equal(mod.__resolveActiveWorkspaceCwd({ active: { sessionId: 'sess-a' }, list }), '/project-a')
+  assert.equal(mod.__resolveWorkspaceCwdForSession('sess-a', { list }), '/project-a')
+  assert.equal(mod.__resolveWorkspaceCwdForSession('sess-b', { list }), '/project-b')
+  assert.equal(mod.__resolveWorkspaceCwdForSession('sess-a', { list }), '/project-a')
 })
 
 test('Task 37: each session-scoped tab resolves its OWN workspace cwd from the sessionId prop', () => {
@@ -242,24 +245,23 @@ test('Task 37: each session-scoped tab resolves its OWN workspace cwd from the s
     { workspaceId: 'ws-a', path: '/home/test/workspace-a', sessionIds: ['sess-a'] },
     { workspaceId: 'ws-b', path: '/home/test/workspace-b', sessionIds: ['sess-b'] },
   ]
-  // Row A is the controller-active workspace, but the tab belongs to session B:
-  // the session-scoped keyed seat must render B's graph, not the active one's.
-  const tabB = setup({ activeSessionId: 'sess-a', workspaceItems: items })
+  // Two sessions live in two different workspaces: each session-scoped keyed
+  // seat must render ITS OWN graph, never a neighbour's.
+  const tabB = setup({ workspaceItems: items })
   const iframeB = findNode(renderTabBody(tabB.state, { sessionId: 'sess-b' }), (n) => n.type === 'iframe')
   assert.ok(iframeB, 'session B tab renders an iframe')
   assert.ok(iframeB.props.src.includes(encodeURIComponent('/home/test/workspace-b')), 'session B gets workspace B cwd')
-  assert.ok(!iframeB.props.src.includes(encodeURIComponent('/home/test/workspace-a')), 'session B never borrows the active workspace cwd')
+  assert.ok(!iframeB.props.src.includes(encodeURIComponent('/home/test/workspace-a')), 'session B never borrows another workspace cwd')
   assert.ok(!iframeB.props.src.includes('sess-b'), 'sessionId stays out of the iframe URL')
 
-  const tabA = setup({ activeSessionId: 'sess-b', workspaceItems: items })
+  const tabA = setup({ workspaceItems: items })
   const iframeA = findNode(renderTabBody(tabA.state, { sessionId: 'sess-a' }), (n) => n.type === 'iframe')
   assert.ok(iframeA, 'session A tab renders an iframe')
   assert.ok(iframeA.props.src.includes(encodeURIComponent('/home/test/workspace-a')), 'session A gets workspace A cwd')
 })
 
-test('Task 37: a session no workspace row claims fails closed even when another workspace is active', () => {
+test('Task 37: a session no workspace row claims fails closed', () => {
   const { state } = setup({
-    activeSessionId: 'sess-a',
     workspaceItems: [{ workspaceId: 'ws-a', path: '/home/test/workspace-a', sessionIds: ['sess-a'] }],
   })
   const tree = renderTabBody(state, { sessionId: 'sess-orphan' })
@@ -300,6 +302,10 @@ test('client source has no bottom-left footer button registration or sessionId-a
   assert.ok(!src.includes('graphUrlFor(currentSessionId())'), 'must not build iframe URL from sessionId alone')
   assert.ok(!src.includes('sessionId=${'), 'iframe URL must not carry sessionId as workspace proof')
   assert.ok(src.includes('Workspace context unavailable') || src.includes('workspace context unavailable'), 'must render explicit unavailable state')
+  // Task 36 regression: IWorkspaces has no active-session accessor, so reading
+  // one (or scanning for it) would silently fail closed forever.
+  assert.ok(!src.includes('bestEffortActiveSessionId'), 'must not read a non-existent active-session shape')
+  assert.ok(!/\.active\b(?!Session)/.test(src.replace(/archivedSessionIds|pinnedSessionIds/g, '')), 'must not read a `.active` member off the workspaces face')
   // Still valid: tab registration + /veyra iframe + no broken legacy patterns
   assert.ok(src.includes('sidebarRightTabs'), 'tab registration preserved')
   assert.ok(src.includes('/veyra?mode=sidebar'), 'iframe endpoint preserved')

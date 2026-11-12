@@ -1,3 +1,19 @@
+## [Unreleased]
+
+Contract audit against the official DSH plugin documentation. Every item below removes a declaration the Host never reads, or replaces a guess with the authoritative source; no Veyra feature is dropped.
+
+### Fixed
+
+- **DSH version support now lives in `engines.dsh`, the only field the Host gates on.** The `dsh.compatibility` block (`dshReleases`, `dshVersions`, `nodeVersions`) is gone: `evaluatePluginCompatibility` reads `engines.dsh` and returns alone when it is present, consulting `@deepseek-ai/dsh*` peer ranges only when it is absent — so the old block gated nothing. The same range `>=0.1.2-rc.1 <0.3.0-0` moved to `engines.dsh` unchanged, and `test/compatibility.test.mjs` now pins that precedence with negative controls for both paths.
+- **`Config` carries the native Schemastery brand.** `isNativeConfigSchema` requires `Reflect.get(value, Symbol.for('schemastery')) === true` alongside a string `type` and object `meta`; without the brand the Host reported `status: 'unsupported'` and fell back to loose validation. `src/config.mjs` now marks the root and both field nodes. The brand is a symbol key, so it stays invisible to `toJSON()`/`JSON.stringify` and the zero-dependency design is unchanged.
+- **`Config` reaches the Host through the named export, not `apply.Config`.** `configOf` does `Reflect.get(plugin, 'Config')` on the module namespace, which already exposes the export from `src/config.mjs`; the assignment inside `apply()` was dead weight and is removed.
+- **The graph tab fails closed instead of guessing a workspace.** `resolveActiveWorkspaceCwd` returned a cwd derived from `face.active`, an accessor `IWorkspaces` does not have (`items`/`archivedSessionIds`/`pinnedSessionIds`/`state`/`phase`/`error` only). The tab is always a `session`-scoped keyed seat, so `ui-session`'s `BUILTIN_SOURCE` always supplies `sessionId`; without it the tab now renders its "Workspace context unavailable" state rather than inventing a match.
+
+### Changed
+
+- **`dsh.client.inject` no longer names `@deepseek-ai/dsh-client-ui-slots`.** Inject values are package-name edges between `dsh.client` graph rows, and `ui-slots` is a baseline module of the browser module map that declares no `dsh` field and is not installed — the edge was permanently unsatisfiable and silently skipped. `slots` remains a runtime `inject` name, which is how the shipped `open-in-app` and `message-feedback` plugins use it.
+- **`docs/agent-guides/release-and-packaging.md` records the `engines.dsh` rule** and states that `dsh.compatibility` has no reader.
+
 ## [0.3.0] - 2026-11-12
 
 Two changesets. Codebase Memory becomes an optional plugin Veyra loads through a bridge, which is breaking for a host that relied on Veyra to provide `cbm_*`. The autonomous memory loop then closes: capture stops inventing evidence, a recall dispatch becomes observable, repeated recall gets cheaper, and a restated root cause merges.

@@ -8,6 +8,18 @@
 
 import { DEFAULT_RECALL_LIMIT } from './types.mjs'
 
+/**
+ * Schemastery marks every schema node with this symbol, and the Host's config
+ * projector only accepts a plugin `Config` carrying it (`isNativeConfigSchema`
+ * in dsh-app-boot). Without the mark `dsh --dump-config-schema` reports
+ * "Config is not a native Schemastery schema" and degrades the entry to
+ * `status: 'unsupported'` plus loose validation in the Settings UI. The nodes
+ * below already present the native shape (`type`, `meta`, `dict`), so the brand
+ * is the only missing piece; declaring it keeps the zero-dependency design and
+ * stays invisible to `toJSON()`/`JSON.stringify` because it is a symbol key.
+ */
+const NATIVE = Symbol.for('schemastery')
+
 const RECALL_LIMIT_META = Object.freeze({
   step: 1,
   min: 0,
@@ -35,6 +47,7 @@ function fieldNode(type, meta, uid) {
   return {
     type,
     meta,
+    [NATIVE]: true,
     toJSON() {
       return { uid, refs: { [uid]: { type, meta: { ...meta } } } }
     },
@@ -48,6 +61,7 @@ function issue(message, path) {
 export const Config = {
   type: 'object',
   meta: { default: {} },
+  [NATIVE]: true,
   dict: {
     recallLimit: fieldNode('number', RECALL_LIMIT_META, 5),
     includeReusable: fieldNode('boolean', INCLUDE_REUSABLE_META, 9),

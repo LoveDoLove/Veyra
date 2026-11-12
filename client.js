@@ -61,16 +61,6 @@ window.__ModuleLoader__.load({
       }
     }
 
-    function bestEffortActiveSessionId(face) {
-      // DSH workspace-controller does not expose an "active session" API; Veyra
-      // previously read a best-effort `active.sessionId` shape from the injected
-      // face. Keep that as a non-authoritative hint only for mapping a session to
-      // its workspace row. Never use sessionId as workspace proof and never guess.
-      var active = (face || workspacesFace) && (face || workspacesFace).active
-      var sid = active && (active.sessionId || (active.session && active.session.sessionId) || active.id)
-      return typeof sid === 'string' && sid ? sid : ''
-    }
-
     function listWorkspaceItems(face) {
       var f = face || workspacesFace
       var list = f && f.list
@@ -99,8 +89,13 @@ window.__ModuleLoader__.load({
       return cwdFromItems(listWorkspaceItems(face), sessionId)
     }
 
-    function resolveActiveWorkspaceCwd(face) {
-      return cwdFromItems(listWorkspaceItems(face), bestEffortActiveSessionId(face || workspacesFace))
+    // The tab is always a 'session'-scoped keyed seat, so ui-session's
+    // BUILTIN_SOURCE always hands it a sessionId prop. IWorkspaces exposes no
+    // active-session accessor (its snapshot is items/archivedSessionIds/
+    // pinnedSessionIds/state/phase/error), so there is nothing authoritative to
+    // fall back to: without the prop the tab fails closed rather than guessing.
+    function resolveActiveWorkspaceCwd() {
+      return ''
     }
 
     function graphUrlFor(cwd) {
@@ -155,7 +150,7 @@ window.__ModuleLoader__.load({
     function resolveCwd(sessionId) {
       return sessionId
         ? resolveWorkspaceCwdForSession(sessionId, workspacesFace)
-        : resolveActiveWorkspaceCwd(workspacesFace)
+        : resolveActiveWorkspaceCwd()
     }
 
     function NetworkGraphTabBody(props) {

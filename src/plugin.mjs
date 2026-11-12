@@ -165,11 +165,6 @@ function createRuntime(ctx, config = {}) {
  * @param {object} [config]
  */
 export function apply(ctx, config = {}) {
-  // Attach Config to the apply function so Cordis registry wires it into
-  // runtime.Config. Advanced YAML/config APIs still accept recallLimit and
-  // includeReusable through this schema; the dedicated Settings UI is removed.
-  apply.Config = Config
-
   const runtime = createRuntime(ctx, { ...DEFAULT_CONFIG, ...config })
 
   // Spec §13: a corrupt install must not look like no install. The bridge
@@ -551,9 +546,16 @@ export function apply(ctx, config = {}) {
     closeAllStores()
   }
 
+  // The load-bearing teardown. `ctx.effect` calls this callback and collects the
+  // function it returns as the disposer, so `cleanup` runs on unload.
   ctx.effect?.(() => cleanup)
 
   runtime.log.info(`[veyra] plugin loaded (home=${runtime.veyraHome})`)
+  // Test-support only: the suite calls `apply(...)` directly and never goes
+  // through Cordis, so those call sites use this returned disposer. In
+  // production Cordis invokes the plugin with `new` and runs
+  // `instance[symbols.init]?.()`, so a `return` value here is discarded — the
+  // ctx.effect above is what actually tears the plugin down.
   return () => {
     cleanup()
   }

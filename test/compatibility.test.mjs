@@ -5,7 +5,7 @@ import { buildToolDefinitions, toRawOutputSchema } from '../src/tools.mjs'
 import { findDshRoot, loadDshPackage, resolveDshPackage } from './helpers/dsh.mjs'
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
-const COMPAT = pkg.dsh.compatibility
+const DSH_RANGE = pkg.engines?.dsh
 const PEER_RANGE = pkg.peerDependencies?.['@deepseek-ai/dsh-tools']
 
 // --- DSH's own evaluation rule (dsh-app-boot evaluatePluginCompatibility):
@@ -77,7 +77,8 @@ const dsh = findDshRoot()
 
 test('declared ranges admit 0.2.0-rc.2 under DSH\'s prerelease evaluation rule', () => {
   assert.equal(typeof PEER_RANGE, 'string', 'peerDependencies["@deepseek-ai/dsh-tools"] must exist')
-  for (const [label, range] of [['peer @deepseek-ai/dsh-tools', PEER_RANGE], ['dsh.compatibility.dshVersions', COMPAT.dshVersions]]) {
+  assert.equal(typeof DSH_RANGE, 'string', 'engines.dsh must declare the supported DSH range')
+  for (const [label, range] of [['peer @deepseek-ai/dsh-tools', PEER_RANGE], ['engines.dsh', DSH_RANGE]]) {
     for (const admitted of ['0.2.0-rc.2', '0.2.0-rc.1', '0.2.0', '0.1.7-rc.2', '0.1.2-rc.1']) {
       assert.ok(satisfiesIncludePrerelease(admitted, range), `${label} ${range} must admit ${admitted}`)
     }
@@ -87,13 +88,12 @@ test('declared ranges admit 0.2.0-rc.2 under DSH\'s prerelease evaluation rule',
   }
 })
 
-test('release matrix records 0.2.0-rc.2 without dropping earlier releases', () => {
-  const releases = COMPAT.dshReleases
-  assert.equal(releases['0.2.0-rc.2'], 'compatible')
-  assert.equal(releases['0.2.0-rc.1'], 'compatible')
-  assert.equal(releases['0.1.7-rc.2'], 'compatible')
-  assert.ok(Object.keys(releases).length >= 8)
-  assert.match(COMPAT.nodeVersions, /^>=\d/)
+test('manifest declares no unsupported compatibility fields', () => {
+  // DSH reads `engines.dsh`, or peerDependencies when that is absent; it never
+  // reads `dsh.compatibility` (no consumer exists in the harness or the runtime).
+  // Declaring it created a compatibility matrix that silently never gated anything.
+  assert.equal(pkg.dsh.compatibility, undefined, 'dsh.compatibility has no DSH consumer')
+  assert.match(pkg.engines.node, /^>=\d/)
 })
 
 // --- Real gate: DSH's own evaluatePluginCompatibility against an installed DSH.
@@ -106,21 +106,29 @@ test('real DSH compatibility gate accepts the Veyra manifest', { skip: gateSkip 
   assert.equal(typeof boot.evaluatePluginCompatibility, 'function')
   const runtime = boot.getDshRuntimeVersion()
   assert.equal(runtime, dsh.version, 'resolved runtime version must match the installed dsh package')
-  assert.ok(satisfiesIncludePrerelease(runtime, COMPAT.dshVersions), `declared dshVersions must cover the runtime ${runtime}`)
+  assert.ok(satisfiesIncludePrerelease(runtime, DSH_RANGE), `declared engines.dsh must cover the runtime ${runtime}`)
 
   const issue = boot.evaluatePluginCompatibility(pkg, {}, runtime)
   assert.equal(issue, undefined, issue ? boot.pluginCompatibilityWarning(issue) : 'gate accepted the manifest')
 
-  // Negative control: the pre-fix peer range must still be rejected by the gate,
-  // so this test proves it can fail instead of passing vacuously.
-  const stale = {
-    ...pkg,
-    peerDependencies: { ...pkg.peerDependencies, '@deepseek-ai/dsh-tools': '>=0.1.2-rc.1 <0.2.0-0' },
-  }
-  const denied = boot.evaluatePluginCompatibility(stale, {}, runtime)
-  assert.ok(denied, 'the old <0.2.0-0 peer range must still be denied by the gate')
+  // Negative controls: prove the gate can fail rather than passing vacuously.
+  // `engines.dsh` decides ALONE when present, so both controls must target it.
+  const staleEngines = { ...pkg, engines: { ...pkg.engines, dsh: '>=0.1.2-rc.1 <0.2.0-0' } }
+  const denied = boot.evaluatePluginCompatibility(staleEngines, {}, runtime)
+  assert.ok(denied, 'the old <0.2.0-0 range must still be denied by engines.dsh')
+  assert.deepEqual(denied.requirements, { 'engines.dsh': '>=0.1.2-rc.1 <0.2.0-0' })
   assert.equal(denied.exempted, false)
   assert.equal(denied.runtimeVersion, runtime)
+
+  // Peer fallback only applies when engines.dsh is absent.
+  const peerOnly = { ...pkg, engines: { node: pkg.engines.node } }
+  const stalePeer = {
+    ...peerOnly,
+    peerDependencies: { ...pkg.peerDependencies, '@deepseek-ai/dsh-tools': '>=0.1.2-rc.1 <0.2.0-0' },
+  }
+  const peerDenied = boot.evaluatePluginCompatibility(stalePeer, {}, runtime)
+  assert.ok(peerDenied, 'the old <0.2.0-0 peer range must be denied when engines.dsh is absent')
+  assert.deepEqual(peerDenied.requirements, { '@deepseek-ai/dsh-tools': '>=0.1.2-rc.1 <0.2.0-0' })
 })
 
 // --- Tool seam: every declared tool must compile under the real defineTool.
