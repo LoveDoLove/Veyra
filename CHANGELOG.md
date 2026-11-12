@@ -1,6 +1,8 @@
 ## [Unreleased]
 
-Contract audit against the official DSH plugin documentation. Every item below removes a declaration the Host never reads, or replaces a guess with the authoritative source; no Veyra feature is dropped.
+## [0.3.1] - 2026-11-12
+
+Two changesets. A contract audit against the official DSH plugin documentation removes every declaration the Host never reads, or replaces a guess with the authoritative source; no Veyra feature is dropped. The documentation set then gains the front doors it was missing, so a first-time contributor or a security reporter has a route from the README to the rules that actually govern a change.
 
 ### Fixed
 
@@ -13,6 +15,14 @@ Contract audit against the official DSH plugin documentation. Every item below r
 
 - **`dsh.client.inject` no longer names `@deepseek-ai/dsh-client-ui-slots`.** Inject values are package-name edges between `dsh.client` graph rows, and `ui-slots` is a baseline module of the browser module map that declares no `dsh` field and is not installed — the edge was permanently unsatisfiable and silently skipped. `slots` remains a runtime `inject` name, which is how the shipped `open-in-app` and `message-feedback` plugins use it.
 - **`docs/agent-guides/release-and-packaging.md` records the `engines.dsh` rule** and states that `dsh.compatibility` has no reader.
+- **`README.md`, `README.zh-CN.md`, and `docs/README.md` index the new files**, and `docs/README.md` gained a "Project policy and history" section for the root-level documents that GitHub and npm conventions expect at the root.
+- **Four measured figures corrected** against `npm test` and `npm run pack:check`: 1171 to 1173 tests, and 275 kB to 263.8 kB packed (measured, 52 files). A stale number in a project that sells evidence is a defect.
+
+### Added
+
+- **`SECURITY.md`.** Supported versions, the exact storage layout under `$DSH_HOME/veyra/`, what the redaction pass does and does not cover (eight patterns, three of them validator-gated so an ordinary number survives unchanged), the threat model with explicit in-scope and out-of-scope lists, and a single disclosure route: GitHub private vulnerability reporting, which is now enabled on the repository.
+- **`CONTRIBUTING.md`.** A front door that routes to `AGENTS.md` and to the development-workflow and testing-and-verification guides rather than restating them, states the real verify commands, and records the commit and documentation-parity rules.
+- **Issue and pull request templates.** `.github/ISSUE_TEMPLATE/` holds a bug report that asks for the DSH and Node versions plus `/veyra` and `/veyra health` output, a feature request that asks for the problem before the solution, and a `config.yml` that disables blank issues and routes security reports to the private advisory form and usage questions to the troubleshooting guide. `.github/pull_request_template.md` asks for the real test counts and includes the documentation-parity checklist item.
 
 ## [0.3.0] - 2026-11-12
 

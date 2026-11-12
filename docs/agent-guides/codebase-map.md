@@ -1,6 +1,6 @@
 # Codebase Map
 
-Where each behavior lives, as of `0.3.0`. The file headers are the
+Where each behavior lives, as of `0.3.1`. The file headers are the
 authoritative description of each module — they state purpose and the reason for
 non-obvious decisions. This map is for navigation, not a substitute for reading
 the module you are about to change.

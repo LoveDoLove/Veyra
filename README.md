@@ -14,7 +14,7 @@ No manual bookmarking. No re-deriving the same root cause next week.
 [![license](https://img.shields.io/badge/license-MIT-16a34a)](LICENSE)
 
 A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness).
-Pure ESM. No daemon. No API keys. 263.1 kB packed.
+Pure ESM. No daemon. No API keys. 263.8 kB packed.
 
 ---
 

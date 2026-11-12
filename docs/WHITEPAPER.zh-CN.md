@@ -2,7 +2,7 @@
 
 [English](WHITEPAPER.md) · [简体中文](WHITEPAPER.zh-CN.md)
 
-**技术白皮书 — `@lovedolove/veyra` v0.3.0**
+**技术白皮书 — `@lovedolove/veyra` v0.3.1**
 
 本版描述当前发布版本。每一条实现声明都可追溯到 §15 中列明的源码树。某项特性若为设计目标但尚未在实际使用中得到证明，则在 §12.4 和 §13 中标注为*未验证*。除所述证据外，本文不构成任何性能或结果保证。
 
@@ -118,7 +118,7 @@ Veyra 连接两个回答不同问题的层。
 
 | 属性 | 值 |
 | --- | --- |
-| 包 | `@lovedolove/veyra`，打包 263.1 kB，52 个文件 |
+| 包 | `@lovedolove/veyra`，打包 263.8 kB，52 个文件 |
 | 模块系统 | 纯 ESM |
 | 必需运行时依赖 | 无 |
 | 可选 peer | `@lovedolove/dsh-codebase-memory-mcp`，通过 `src/cbm-bridge.mjs` 加载 |

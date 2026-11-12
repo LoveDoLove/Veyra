@@ -33,5 +33,5 @@ wrong. Fix the guide in the same change.
 ## Evidence rule
 
 Every technical claim in these guides is grounded in the repository at version
-`0.3.0`. Do not extend them with invented APIs, modules, tests, or workflows.
+`0.3.1`. Do not extend them with invented APIs, modules, tests, or workflows.
 When you change behavior, update the guide that describes it.

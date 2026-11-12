@@ -2,7 +2,7 @@
 
 [English](WHITEPAPER.md) · [简体中文](WHITEPAPER.zh-CN.md)
 
-**Technical whitepaper — `@lovedolove/veyra` v0.3.0**
+**Technical whitepaper — `@lovedolove/veyra` v0.3.1**
 
 This edition describes the current release. Every implementation claim is
 traceable to the source tree named in §15. Where a property is designed for but
@@ -151,7 +151,7 @@ The local graph is a derived projection, not a second store.
 
 | Property | Value |
 | --- | --- |
-| Package | `@lovedolove/veyra`, 263.1 kB packed, 52 files |
+| Package | `@lovedolove/veyra`, 263.8 kB packed, 52 files |
 | Module system | Pure ESM |
 | Required runtime dependencies | None |
 | Optional peer | `@lovedolove/dsh-codebase-memory-mcp`, loaded through `src/cbm-bridge.mjs` |

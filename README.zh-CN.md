@@ -11,7 +11,7 @@
 [![node](https://img.shields.io/badge/node-%3E%3D22.12%20%3C25-16a34a)](package.json)
 [![license](https://img.shields.io/badge/license-MIT-16a34a)](LICENSE)
 
-[DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness) 的插件。纯 ESM。无守护进程。无 API 密钥。打包后 263.1 kB。
+[DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness) 的插件。纯 ESM。无守护进程。无 API 密钥。打包后 263.8 kB。
 
 ---
 
