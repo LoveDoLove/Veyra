@@ -4,8 +4,9 @@
  * Records recall context generation completion as:
  *   generated | generated_empty | generation_error
  *
- * Stage A truth labels (always):
- *   delivery.status = NOT_VERIFIED (no supported DSH admission evidence)
+ * Stage A truth labels:
+ *   delivery.status = DELIVERED only for a tool dispatch that returned a payload;
+ *                     NOT_VERIFIED everywhere else, including the context provider
  *   used.status     = NOT_VERIFIED (no supported attribution evidence)
  *
  * No prompt interception, no raw query/content/secrets, no invented Host APIs.
@@ -13,6 +14,26 @@
  */
 export const APPLY_GENERATION_KEY = 'veyra_apply_generation_v1'
 export const APPLY_OUTCOME_LINK_KEY = 'veyra_apply_outcome_link_v1'
+export const APPLY_AUTO_OUTCOME_KEY = 'veyra_apply_auto_outcome_v1'
+
+// A turn's own test evidence can only *correlate* a delivered record with a
+// pass. `test-passed` is a local observation of runner output, not proof that a
+// model received or applied the memory, so nothing here may strengthen a
+// record's confidence, validation, or authority.
+export const AUTO_OUTCOME = Object.freeze({
+  CONTRADICTED: 'CONTRADICTED',
+  PLAUSIBLE: 'PLAUSIBLE_CORRELATION',
+})
+// AUTO_OUTCOME is keyed CONTRADICTED / PLAUSIBLE but the stored value is
+// PLAUSIBLE_CORRELATION, so membership must test the VALUES, not the keys.
+const AUTO_OUTCOME_VALUES = new Set(Object.values(AUTO_OUTCOME))
+const AUTO_OUTCOME_ENTRY_LIMIT = 64
+
+export const DELIVERY = Object.freeze({ DELIVERED: 'DELIVERED', NOT_VERIFIED: 'NOT_VERIFIED' })
+// Only the tool dispatch can prove a returned payload: `visible` is handed back
+// to the model-facing call. The context provider has no such surface, so it is
+// deliberately NOT in this set — its entries stay NOT_VERIFIED forever.
+const DELIVERABLE_SOURCES = new Set(['tool'])
 
 const ENTRY_LIMIT = 64
 const ENTRY_HARD_LIMIT = 128
@@ -62,7 +83,13 @@ function normalizeEntry(e) {
     recordRefs: Array.isArray(e.recordRefs) ? e.recordRefs.filter((x) => typeof x === 'string' && x).slice(0, RECORD_REFS_MAX) : [],
     recordRefsTruncated: e.recordRefsTruncated === true,
     renderedChars: Number.isFinite(e.renderedChars) && e.renderedChars >= 0 ? Math.trunc(e.renderedChars) : 0,
-    delivery: notVerified('delivery'),
+    delivery: e.delivery?.status === DELIVERY.DELIVERED
+      ? {
+        status: DELIVERY.DELIVERED,
+        source: boundedText(e.delivery.source, 48) || 'tool-dispatch',
+        detail: boundedText(e.delivery.detail, 96) || '',
+      }
+      : notVerified('delivery'),
     used: notVerified('used'),
   }
   if (Number.isFinite(e.charBudget) && e.charBudget >= 0) out.charBudget = Math.trunc(e.charBudget)
@@ -132,9 +159,12 @@ function appendEntry(store, key, makeEntry) {
 
 export function recordGenerationEvidence(store, {
   status, queryClass = 'unknown', resultCount = 0, recordRefs = [],
-  renderedChars = 0, charBudget, errorClass, at, scope, source,
+  renderedChars = 0, charBudget, errorClass, at, scope, source, delivery,
 } = {}) {
   const normalizedStatus = ['generated', 'generated_empty', 'generation_error'].includes(status) ? status : 'generation_error'
+  const resolvedDelivery = delivery && delivery.status === DELIVERY.DELIVERED && DELIVERABLE_SOURCES.has(source)
+    ? { status: DELIVERY.DELIVERED, source: delivery.source || source, detail: 'returned to the model-facing dispatch; model receipt not provable' }
+    : notVerified('delivery')
   return appendEntry(store, APPLY_GENERATION_KEY, ({ seq, prefix }) => {
     const when = nowIso(at)
     const refs = Array.isArray(recordRefs) ? recordRefs.filter((x) => typeof x === 'string' && x) : []
@@ -150,7 +180,7 @@ export function recordGenerationEvidence(store, {
       recordRefs: refs.slice(0, RECORD_REFS_MAX),
       recordRefsTruncated: refs.length > RECORD_REFS_MAX,
       renderedChars: Number.isFinite(renderedChars) && renderedChars >= 0 ? Math.trunc(renderedChars) : 0,
-      delivery: notVerified('delivery'),
+      delivery: resolvedDelivery,
       used: notVerified('used'),
     }
     if (Number.isFinite(charBudget) && charBudget >= 0) entry.charBudget = Math.trunc(charBudget)
@@ -168,12 +198,16 @@ export function summarizeGenerationEvidence(log) {
   if (!log || !Array.isArray(log.entries) || log.entries.length === 0) return null
   const byStatus = { generated: 0, generated_empty: 0, generation_error: 0 }
   for (const e of log.entries) if (byStatus[e.status] !== undefined) byStatus[e.status]++
+  const delivered = log.entries.filter((e) => e.delivery?.status === DELIVERY.DELIVERED)
   return {
     available: true,
     count: log.entries.length,
     updatedAt: log.updatedAt || null,
     byStatus,
-    delivery: notVerified('delivery'),
+    // An aggregate label may only claim delivery when a retained entry proves one.
+    delivery: delivered.length
+      ? { status: DELIVERY.DELIVERED, source: delivered[0].delivery.source || 'tool-dispatch', count: delivered.length }
+      : notVerified('delivery'),
     used: notVerified('used'),
     recent: log.entries.slice(-5).map((e) => ({
       eventId: e.eventId, at: e.at, status: e.status, queryClass: e.queryClass,
@@ -256,4 +290,87 @@ export function recordExplicitOutcomeLink(store, { recordId, outcome, generation
 
 export function readExplicitOutcomeLinks(store) {
   return readLog(store, APPLY_OUTCOME_LINK_KEY, normalizeLinkLog)
+}
+
+function normalizeAutoOutcomeEntry(e) {
+  if (!e || typeof e !== 'object') return null
+  if (!AUTO_OUTCOME_VALUES.has(e.signal)) return null
+  const recordId = boundedText(e.recordId, 128)
+  const eventId = boundedText(e.eventId, 64)
+  const at = boundedText(e.at, 40)
+  if (!recordId || !eventId || !at) return null
+  return {
+    eventId,
+    at,
+    kind: 'veyra.apply.auto_outcome',
+    recordId,
+    signal: e.signal,
+    generationEventId: boundedText(e.generationEventId, 64),
+    attribution: 'turn_test_evidence',
+  }
+}
+
+function normalizeAutoOutcomeLog(value) {
+  const log = emptyLog()
+  if (!value || typeof value !== 'object') return log
+  log.updatedAt = boundedText(value.updatedAt, 40)
+  log.nextSeq = Number.isFinite(value.nextSeq) && value.nextSeq >= 1 ? Math.trunc(value.nextSeq) : 1
+  if (Array.isArray(value.entries)) {
+    for (const e of value.entries.slice(-ENTRY_HARD_LIMIT)) {
+      const n = normalizeAutoOutcomeEntry(e)
+      if (n) log.entries.push(n)
+    }
+  }
+  return log
+}
+
+/**
+ * Record that a turn's test evidence correlated with a delivered recall.
+ *
+ * Non-causal by construction: it writes its own log and never calls
+ * `recordFeedback`, `strengthenMemory`, or `promote`. An unknown signal is
+ * refused rather than coerced.
+ */
+export function recordAutoOutcomeSignal(store, { recordId, generationEventId, signal, at } = {}) {
+  if (!AUTO_OUTCOME_VALUES.has(signal)) return null
+  if (!store || typeof store.getMeta !== 'function' || typeof store.setMeta !== 'function') return null
+  if (typeof recordId !== 'string' || !recordId) return null
+  try {
+    let log
+    try {
+      const raw = store.getMeta(APPLY_AUTO_OUTCOME_KEY)
+      log = raw ? normalizeAutoOutcomeLog(JSON.parse(raw)) : emptyLog()
+    } catch {
+      log = emptyLog()
+    }
+    const seq = log.nextSeq
+    log.nextSeq = seq + 1
+    const prefix = store.scope === 'reusable' ? 'r' : 'p'
+    const when = nowIso(at)
+    log.entries.push({
+      eventId: `vao_${prefix}_${seq.toString(36).padStart(6, '0')}`,
+      at: when,
+      kind: 'veyra.apply.auto_outcome',
+      recordId: recordId.slice(0, 128),
+      signal,
+      generationEventId: boundedText(generationEventId, 64),
+      attribution: 'turn_test_evidence',
+    })
+    log.updatedAt = when
+    while (log.entries.length > AUTO_OUTCOME_ENTRY_LIMIT) log.entries.shift()
+    let json = JSON.stringify(log)
+    while (log.entries.length > 0 && Buffer.byteLength(json, 'utf8') > SERIALIZED_MAX_BYTES) {
+      log.entries.shift()
+      json = JSON.stringify(log)
+    }
+    store.setMeta(APPLY_AUTO_OUTCOME_KEY, json)
+    return log
+  } catch {
+    return null
+  }
+}
+
+export function readAutoOutcomeSignals(store) {
+  const log = readLog(store, APPLY_AUTO_OUTCOME_KEY, normalizeAutoOutcomeLog)
+  return { available: Boolean(log), count: log?.entries.length ?? 0, entries: log?.entries ?? [] }
 }

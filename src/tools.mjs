@@ -47,7 +47,7 @@ import { promote, readWriteGateLedger, readWriteGateTrace, remember } from './le
 import { forget as lifecycleForget } from './lifecycle.mjs'
 import { detectRecurrence, eligibleForCandidate, recordFeedback, recurrenceCandidate } from './feedback.mjs'
 import { memoryHealth, renderHealth } from './health.mjs'
-import { readGenerationEvidence, summarizeGenerationEvidence, recordExplicitOutcomeLink } from './apply-generation-evidence.mjs'
+import { DELIVERY, readGenerationEvidence, summarizeGenerationEvidence, recordExplicitOutcomeLink, recordGenerationEvidence } from './apply-generation-evidence.mjs'
 import { checkRecordFreshness, checkAnchorFreshness, extractAnchorsFromRecord, findAffectedMemories, buildStaleReviewCandidate } from './code/linking.mjs'
 import { createDegradedEngine, isCodeIntelligenceAvailable, resolveRepoPath } from './cbm-bridge.mjs'
 import { classifyRecordTrust, TRUST_CATEGORIES } from './trust.mjs'
@@ -402,6 +402,7 @@ export function buildToolDefinitions(runtime) {
             ok: { type: 'boolean' },
             count: { type: 'number' },
             items: { type: 'array', items: RECORD_SCHEMA },
+            generationEventId: { type: 'string', description: 'Id of the generation evidence entry for this dispatch. Pass it to veyra_feedback to attribute the outcome to this recall.' },
             disclaimer: { type: 'string' },
           },
         },
@@ -452,10 +453,31 @@ export function buildToolDefinitions(runtime) {
           || Number(r.scores?.semantic) >= RELEVANCE_SEM_FLOOR)
         const visible = queryText && !hasSignal ? [] : items
         projectStore.touch(visible.filter((r) => r.scope !== SCOPES.REUSABLE).map((r) => r.id))
+        // A tool dispatch is the one surface where the payload is provably handed
+        // back, so this entry can say DELIVERED. `used` stays NOT_VERIFIED: only an
+        // explicit outcome link can attribute application.
+        let generationEventId = null
+        try {
+          const writeStores = runtime.memoryServer?.storesFor?.(exec?.agent, MEMORY_OPERATIONS.RECORD_DELIVERY)
+          if (writeStores?.ok && writeStores.projectStore) {
+            const emitted = recordGenerationEvidence(writeStores.projectStore, {
+              status: visible.length ? 'generated' : 'generated_empty',
+              source: 'tool',
+              queryClass: 'explicit_query',
+              resultCount: visible.length,
+              recordRefs: visible.map((r) => r.id).filter(Boolean),
+              renderedChars: JSON.stringify(visible).length,
+              delivery: { status: DELIVERY.DELIVERED, source: 'tool-dispatch' },
+            })
+            // recordGenerationEvidence returns the capped log, not the entry.
+            generationEventId = emitted?.entries?.at(-1)?.eventId ?? null
+          }
+        } catch { /* telemetry never breaks a recall */ }
         return {
           ok: true,
           count: visible.length,
           items: visible.map(recordView),
+          generationEventId,
           disclaimer: 'Recalled memory is not repository truth. Verify before acting.',
         }
       },
@@ -645,6 +667,10 @@ export function buildToolDefinitions(runtime) {
         id: { type: 'string', required: true, description: 'Record id that was applied.' },
         outcome: { type: 'string', enum: ['success', 'failure'], required: true, description: 'success or failure of the application.' },
         note: { type: 'string', description: 'Short outcome note, e.g. "tests failed: writer timeout".' },
+        generationEventId: {
+          type: 'string',
+          description: 'The generationEventId returned by the veyra_recall call that surfaced this record. Enables explicit attribution.',
+        },
       },
       output: {
         schema: {
@@ -656,6 +682,7 @@ export function buildToolDefinitions(runtime) {
             record: RECORD_SCHEMA,
             feedback: { type: 'object', additionalProperties: true },
             previous: { type: 'object', additionalProperties: true },
+            attribution: { type: 'string', enum: ['explicit_linked', 'none'] },
           },
         },
         render: (_args, value) => {
@@ -687,6 +714,7 @@ export function buildToolDefinitions(runtime) {
           record: recordView(res.record),
           feedback: res.feedback,
           previous: res.previous,
+          attribution: outcomeLink ? 'explicit_linked' : 'none',
         }
       },
       presentCall: (args) => ({ card: 'generic', title: 'Feedback', kind: 'other', rawInput: `${args.outcome}: ${args.id}` }),

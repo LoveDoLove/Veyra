@@ -120,7 +120,7 @@ test('P1-T9 normal feedback without linkage remains valid', () => {
   store.close()
 })
 
-test('P1-T10/T11 reporting: delivery/used always NOT_VERIFIED', async () => {
+test('P1-T10/T11 reporting: context path delivery/used stay NOT_VERIFIED', async () => {
   const { store } = mk()
   const mod = await import('../src/apply-generation-evidence.mjs')
   mod.recordGenerationEvidence(store, { status: 'generated_empty', queryClass: 'empty', resultCount: 0, recordRefs: [], renderedChars: 0 })

@@ -1,6 +1,6 @@
 # Autonomous Engineering Memory Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Make Veyra capture only evidence-backed engineering knowledge and prove, per turn, that recalled memory actually reached the agent — without adding a manual step for the agent.
 
@@ -12,11 +12,11 @@
 
 ## Global Constraints
 
-- Baseline before any task: `node --test test/*.test.mjs` → `# tests 1113 / pass 1113 / fail 0`. Every task ends at 1113 + its own added tests, zero failures.
+- Baseline before any task: measured `node --test test/*.test.mjs` → `# tests 1132 / pass 1132 / fail 0` (this plan was drafted against 1113; main had moved on). Every task ends at 1132 + its own added tests, zero failures. Measured ladder: 1132 → 1136 → 1140 → 1146 → 1149 → 1151 → 1157 → 1164 → 1169 → 1171.
 - Never write outside the workspace room: storage stays under `$DSH_HOME/veyra/rooms/<roomId>/`, keyed by `WorkspaceId`, never by path (`src/rooms.mjs`).
 - `canonical` is assigned only by explicit user action; `assertAuthorityTransition` must keep refusing otherwise.
 - Every persistence path goes through `src/redact.mjs`; no task adds a bypass.
-- `isLifecycleEligible`/`isRecallEligible` (`src/types.mjs:97,122`) are not modified.
+- `isLifecycleEligible`/`isRecallEligible` (`src/types.mjs:108,133`) are not modified.
 - Observation and recall failures degrade; they never throw into the agent loop. New turn-stop work stays inside `try/catch`.
 - No test may touch the live DSH home or `http://127.0.0.1:3080`; all fixtures use `os.tmpdir()`.
 - No new npm dependency. No retrieval-scoring re-tuning. No embedding or vector store.
@@ -42,7 +42,7 @@
 - Consumes: nothing new.
 - Produces: `extractSymbols(text: string): string[]` — unchanged signature and return type; now returns only identifiers followed by a code shape. `CODE_SHAPE_AFTER` is a new module-level `RegExp`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `test/symbol-evidence.test.mjs`:
 
@@ -72,7 +72,7 @@ test('live garbage title yields no symbols', () => {
 })
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `node --test test/symbol-evidence.test.mjs`
 Expected: exactly 2 of 4 tests fail (measured):
@@ -84,7 +84,7 @@ The other two already pass today and are regression guards, not driver tests:
 symbols` (that title has no `SYMBOL_RE` match at all). If you see any other
 failure count, stop — the fixture drifted, not the code.
 
-- [ ] **Step 3: Implement the guard**
+- [x] **Step 3: Implement the guard**
 
 In `src/understand.mjs`, next to `SYMBOL_RE` (:71), add:
 
@@ -102,14 +102,14 @@ const rest = text.slice(match.index + match[0].length)
 if (rest === '' || CODE_SHAPE_AFTER.test(rest)) found.push(match[1])
 ```
 
-- [ ] **Step 4: Run to pass, then the full suite**
+- [x] **Step 4: Run to pass, then the full suite**
 
 Run: `node --test test/symbol-evidence.test.mjs` → 4 pass.
 Run: `node --test test/brain.test.mjs test/code-commands.test.mjs test/code-linking.test.mjs test/code-tools.test.mjs test/health-learning.test.mjs test/title-generation-regression.test.mjs`
 Expected: all pass, including `test/brain.test.mjs:34` (`sym:lockWriter`) and `:37`.
-Run: `node --test test/*.test.mjs` → 1117 pass, 0 fail.
+Run: `node --test test/*.test.mjs` → 1136 pass, 0 fail (measured; baseline is 1132, not the 1113 this plan was written against).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/understand.mjs test/symbol-evidence.test.mjs
@@ -136,7 +136,7 @@ fixture is `test/health-learning.test.mjs:97-103`; run that file together with
 `test/learn-safety.test.mjs` and `test/m6-feedback-recurrence.test.mjs` before
 accepting the change.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `test/grounding-integrity.test.mjs`:
 
@@ -162,12 +162,12 @@ test('path plus symbol is grounding', () => {
 })
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `node --test test/grounding-integrity.test.mjs`
 Expected: `symbol-only evidence is not grounding` fails with `actual: true`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Replace the body of `hasGrounding` (`src/learn.mjs:69`):
 
@@ -185,14 +185,14 @@ export function hasGrounding(candidate) {
 }
 ```
 
-- [ ] **Step 4: Run to pass, then the suite**
+- [x] **Step 4: Run to pass, then the suite**
 
 Run: `node --test test/grounding-integrity.test.mjs` → 4 pass.
 Run: `node --test test/learn-safety.test.mjs test/health-learning.test.mjs test/m6-feedback-recurrence.test.mjs`
 Expected: all pass unchanged — those fixtures ground via `path: 'src/x.mjs'` / `path: 'src/store.mjs'`.
-Run: `node --test test/*.test.mjs` → 1121 pass, 0 fail.
+Run: `node --test test/*.test.mjs` → 1140 pass, 0 fail (measured).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/learn.mjs test/grounding-integrity.test.mjs
@@ -211,7 +211,7 @@ git commit -m "fix: stop treating symbol-only evidence as grounding"
 - Consumes: `summarizeArgs` already retains `command` (`src/observe.mjs:170`).
 - Produces: `collectFiles(files: Set<string>, args: object): void` — same signature, now also adds paths from `args.command`. `commandWritePaths(command: string): string[]` is a new module-private helper. `mutatesFiles` stays module-private.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `test/bash-write-evidence.test.mjs`:
 
@@ -256,12 +256,12 @@ test('a read-only bash command records nothing', () => {
 })
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `node --test test/bash-write-evidence.test.mjs`
 Expected: the first three tests fail with `files` empty; the last two already pass.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Next to `mutatesFiles` (`src/observe.mjs:58`) add:
 
@@ -332,13 +332,13 @@ if (typeof args?.command === 'string') {
 }
 ```
 
-- [ ] **Step 4: Run to pass, then the suite**
+- [x] **Step 4: Run to pass, then the suite**
 
-Run: `node --test test/bash-write-evidence.test.mjs` → 5 pass.
+Run: `node --test test/bash-write-evidence.test.mjs` → 6 pass (5 planned + 1 for quoted-redirect evidence).
 Run: `node --test test/observe.test.mjs test/brain.test.mjs test/turn-stopping-learning.test.mjs`
-Run: `node --test test/*.test.mjs` → 1126 pass, 0 fail.
+Run: `node --test test/*.test.mjs` → 1146 pass, 0 fail (measured).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/observe.mjs test/bash-write-evidence.test.mjs
@@ -359,7 +359,7 @@ git commit -m "feat: count bash writes as file modification evidence"
 - Consumes: `recordGenerationEvidence(store, payload)`; `server.storesFor(agent, operation)`.
 - Produces: `DELIVERY = { DELIVERED: 'DELIVERED', NOT_VERIFIED: 'NOT_VERIFIED' }` exported from `src/apply-generation-evidence.mjs`; `recordGenerationEvidence` accepts `delivery` and `source` overrides; `MEMORY_OPERATIONS.RECORD_DELIVERY = 'record.delivery'`; `veyra_recall` result gains `generationEventId: string | null`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `test/recall-delivery.test.mjs`:
 
@@ -392,12 +392,12 @@ test('the default stays NOT_VERIFIED', async (t) => {
 })
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `node --test test/recall-delivery.test.mjs`
 Expected: first test fails — `entry.delivery.status` is `'NOT_VERIFIED'` because `normalizeEntry` (:65) hardcodes it.
 
-- [ ] **Step 3: Implement the evidence side**
+- [x] **Step 3: Implement the evidence side**
 
 In `src/apply-generation-evidence.mjs`, add next to `notVerified` (:35):
 
@@ -451,11 +451,11 @@ delivery: delivered.length
 
 Leave its `used` line at `notVerified('used')`. This is the label `veyra_code_status` reports through `summarizeGenerationEvidence(readGenerationEvidence(projectStore))` (`src/tools.mjs:798`), so without this edit Task 4 would record `DELIVERED` and still report `NOT_VERIFIED` everywhere a user can look.
 
-- [ ] **Step 4: Implement the write authorization**
+- [x] **Step 4: Implement the write authorization**
 
 In `src/memory-router.mjs`, add to `MEMORY_OPERATIONS` (`:18`): `RECORD_DELIVERY: 'record.delivery'`, and to `RULES` (`:51`): `[MEMORY_OPERATIONS.RECORD_DELIVERY]: { workspace: 'write', central: 'none' }`.
 
-- [ ] **Step 5: Wire it in the recall tool**
+- [x] **Step 5: Wire it in the recall tool**
 
 At the end of `veyra_recall`'s execute (`src/tools.mjs:445`, after the `touch`), before `return`:
 
@@ -481,7 +481,7 @@ try {
 
 Add `generationEventId` to the returned object.
 
-- [ ] **Step 6: Update the pinned expectations**
+- [x] **Step 6: Update the pinned expectations**
 
 In `test/apply-generation-evidence.test.mjs`, the context-provider assertions at `:54-55`, `:71-72`, `:128-132` stay `NOT_VERIFIED` — do not change them. Rename the test at `:123` to `P1-T10/T11 reporting: context path delivery/used stay NOT_VERIFIED`, and add:
 
@@ -489,13 +489,13 @@ In `test/apply-generation-evidence.test.mjs`, the context-provider assertions at
 test('tool dispatch is DELIVERED, context path is not', async (t) => { /* asserts both labels side by side */ })
 ```
 
-- [ ] **Step 7: Run to pass, then the suite**
+- [x] **Step 7: Run to pass, then the suite**
 
 Run: `node --test test/recall-delivery.test.mjs test/apply-generation-evidence.test.mjs` → all pass.
 Run: `node --test test/router*.test.mjs test/tools.test.mjs` — if a router test enumerates `RULES` exhaustively, add the new row there too.
-Run: `node --test test/*.test.mjs` → 1129 pass, 0 fail.
+Run: `node --test test/*.test.mjs` → 1149 pass, 0 fail (measured).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/apply-generation-evidence.mjs src/memory-router.mjs src/tools.mjs test/recall-delivery.test.mjs test/apply-generation-evidence.test.mjs
@@ -514,7 +514,7 @@ git commit -m "feat: record a recall dispatch as delivered evidence"
 - Consumes: `generationEventId` returned by `veyra_recall` (Task 4); `recordExplicitOutcomeLink` (`src/apply-generation-evidence.mjs:214`).
 - Produces: `veyra_feedback` parameters gain `generationEventId?: string`; result gains `attribution: 'explicit_linked' | 'none'`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `test/feedback-attribution.test.mjs`:
 
@@ -541,12 +541,12 @@ test('an unknown generationEventId links nothing but still records feedback', as
 })
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `node --test test/feedback-attribution.test.mjs`
 Expected: `res.attribution` is `undefined` — the parameter is not declared, so `args.generationEventId` never arrives.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In the `veyra_feedback` `parameters` object (`src/tools.mjs:637`), add:
 
@@ -565,13 +565,13 @@ attribution: outcomeLink ? 'explicit_linked' : 'none',
 
 `recordExplicitOutcomeLink` returns `null` unless the id matches an existing `generationEventId` in the log (`src/apply-generation-evidence.mjs:221`), which is what makes the unknown-id case report `none` rather than fabricate a link.
 
-- [ ] **Step 4: Run to pass, then the suite**
+- [x] **Step 4: Run to pass, then the suite**
 
 Run: `node --test test/feedback-attribution.test.mjs` → 2 pass.
 Run: `node --test test/m6-feedback-recurrence.test.mjs test/tools.test.mjs`
-Run: `node --test test/*.test.mjs` → 1131 pass, 0 fail.
+Run: `node --test test/*.test.mjs` → 1151 pass, 0 fail (measured).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/tools.mjs test/feedback-attribution.test.mjs
@@ -590,7 +590,7 @@ git commit -m "feat: let feedback bind to the recall that surfaced the record"
 - Consumes: `renderAgentContext(composed, { heading, changes, budget })`; the resolved `records` and the resolved `workspace` string already present in `buildRecallContext` (`src/context.mjs:852`).
 - Produces: `COMPACT_AFTER_REPEATS = 2` and `RENDER_MEMORY_CAP = 32` exported from `src/context.mjs`; `renderAgentContext` gains option `compact = false`. **`createContextProvider` is not modified** — it never sees `records`, so the decision cannot live there.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `test/recall-compaction.test.mjs`:
 
@@ -632,7 +632,8 @@ test('a repeated set renders compact and keeps every id', (t) => {
   const first = f.render()
   f.render()
   const third = f.render()
-  assert.ok(third.length < first.length * 0.5, `expected compaction, got ${third.length} vs ${first.length}`)
+  assert.ok(third.length < first.length * 0.75, `expected compaction, got ${third.length} vs ${first.length}`)
+  assert.ok(!third.includes('Detail sentence.'), 'compaction must drop the body')
   for (const id of idsOf(first)) assert.ok(third.includes(id), `compacted output dropped ${id}`)
 })
 
@@ -677,14 +678,24 @@ test('a contradicted record keeps its id in the compact form', (t) => {
   const home = testHome(t)
   const workspace = '/repo/compact-f'
   const store = roomStore(home, workspace)
-  seed(store)
-  store.put({
-    title: 'Writer lock ordering inverted',
-    body: 'Root cause: the writer lock ordering is inverted.',
+  const now = new Date().toISOString()
+  const base = {
     kind: 'memory', authority: 'derived', validation: 'unverified',
     confidence: 'medium', status: 'current', scope: 'project',
-    tags: [], relations: [], evidence: [{ path: 'src/lock.mjs' }], source: {},
-    contradictionBanners: ['This memory contradicts [vey_zzz] on lock ordering.'],
+    tags: [], evidence: [{ path: 'src/lock.mjs' }], source: {},
+    createdAt: now, updatedAt: now, lastRecalledAt: null, forgotten: false,
+  }
+  // Banners are DERIVED from a stored `contradicts` relation, never read from a
+  // stored field, so the fixture has to create the relation itself.
+  store.put({
+    ...base, id: 'vey_aaa', title: 'Writer lock ordering inverted',
+    body: 'Root cause: the writer lock ordering is inverted.',
+    relations: [{ type: 'contradicts', targetId: 'vey_bbb' }],
+  })
+  store.put({
+    ...base, id: 'vey_bbb', title: 'Writer lock ordering is fine',
+    body: 'Root cause: the writer lock ordering is correct.',
+    relations: [{ type: 'contradicts', targetId: 'vey_aaa' }],
   })
   const render = () => buildRecallContext({
     projectStore: store, workspace, query: '', changedFiles: ['src/a.mjs'], limit: 6,
@@ -699,12 +710,12 @@ test('a contradicted record keeps its id in the compact form', (t) => {
 })
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `node --test test/recall-compaction.test.mjs`
 Expected: import error — `COMPACT_AFTER_REPEATS` is not exported yet. After adding only the constants it fails on `a repeated set renders compact` because every render is the same length.
 
-- [ ] **Step 3: Implement the module state**
+- [x] **Step 3: Implement the module state**
 
 In `src/context.mjs`, next to `taskIntentCache` (`:476`), add:
 
@@ -718,7 +729,7 @@ export const RENDER_MEMORY_CAP = 32
 const renderMemory = new Map()   // workspace → { key, renders }
 ```
 
-- [ ] **Step 4: Implement the compact rendering**
+- [x] **Step 4: Implement the compact rendering**
 
 In `renderAgentContext` (`:264`), change the signature to accept `compact = false`:
 
@@ -738,25 +749,38 @@ const headerOf = (lines) => {
   const found = lines.find((line) => line.startsWith('- ['))
   return found ?? lines[0]
 }
+// Every warning line is a reason not to act on the record (contradiction,
+// untrusted content, stale or unverifiable code evidence, trust category), so
+// compact must not be the tier that hides one.
+const isWarning = (line) => line.startsWith('> ⚠️ ') || line.startsWith('  • ⚠️ ')
+const compactLines = (blockLines) => {
+  const header = headerOf(blockLines)
+  return blockLines.filter((line) => line === header || isWarning(line))
+}
 const rendered = compact
-  ? blocks.map((b) => ({ lines: [...b.lines.filter((line) => line.startsWith('> ⚠️ ')), headerOf(b.lines)], expendable: [] }))
+  ? blocks.map((b) => ({ lines: compactLines(b.lines), expendable: [] }))
   : blocks
 return joinWithBudget(framing, rendered, budget)
 ```
 
 `headerOf` selects the real header `- [${rec.id}] (${scope}/${auth}…) ${rec.title}`
 by prefix rather than by index, falling back to `lines[0]` only if no header
-exists. The compact block keeps the record's contradiction banners (they are
-attribution, and dropping them would hide a known conflict) plus that one header,
-so ids, authority, validation, confidence and contradiction state all survive
-while body, evidence and causal facets drop.
+exists. The compact block keeps every warning line plus that one header, so ids,
+authority, validation, confidence, contradiction state, and every "do not trust
+this" signal survive while body, evidence and causal facets drop.
+
+Warnings are not optional here. `test/phase3-change-context.test.mjs` asserts
+that a record whose anchored file changed renders `⚠️ trust: REVIEW_REQUIRED`,
+and that record set is identical across the poll loop, so a header-only compact
+form silences the change-context warning it was built alongside. Order is
+preserved so each warning stays attached to the record it describes.
 
 Note that `joinWithBudget`'s own trimmed tier is NOT a substitute for this: it
 drops `expendable` offsets but deliberately keeps `evidence:` lines, so a record
 could still render its evidence without its own header if compact relied on the
 budget tier alone.
 
-- [ ] **Step 5: Decide compactness inside `buildRecallContext`**
+- [x] **Step 5: Decide compactness inside `buildRecallContext`**
 
 In `buildRecallContext` (`:852`), immediately before the `renderAgentContext` call (step 6 of that function):
 
@@ -779,13 +803,13 @@ const rendered = renderAgentContext(composeAgentContext(records, { … }), { cha
 
 Leave `emitGenerationEvidence` untouched — it already records `renderedChars`, which is exactly the number this task moves.
 
-- [ ] **Step 6: Run to pass, then the suite**
+- [x] **Step 6: Run to pass, then the suite**
 
 Run: `node --test test/recall-compaction.test.mjs` → 6 pass.
 Run: `node --test test/context*.test.mjs test/recall-limit-regression.test.mjs test/apply-generation-evidence.test.mjs`
-Run: `node --test test/*.test.mjs` → 1137 pass, 0 fail.
+Run: `node --test test/*.test.mjs` → 1157 pass, 0 fail (measured).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/context.mjs test/recall-compaction.test.mjs
@@ -806,7 +830,7 @@ git commit -m "feat: render an unchanged recall set compactly"
 
 **Why not a whole-claim threshold:** measured over the 21 real pairs in the live room, whole-claim `jaccard` maxes out at **0.143** — below `MIN_CONFLICT_SIM` (0.35). Body-length asymmetry (1149 vs 748 chars, dominated by `Files touched`/`Tools`/`Symbols` lines) crushes similarity, so *no* whole-claim threshold can ever merge the true duplicate pair without also merging unrelated records. Comparing the extracted `Root cause:` facet separates them cleanly: the true pair scores **1.000**, reworded variants **0.727–0.909**, every other pair **≤0.278**.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `test/root-cause-merge.test.mjs`:
 
@@ -854,12 +878,12 @@ test('the threshold is a named constant in a defensible band', () => {
 })
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `node --test test/root-cause-merge.test.mjs`
 Expected: import error — `extractCauseLine` and `CAUSE_FACET_SIM` are not exported.
 
-- [ ] **Step 3: Implement facet extraction**
+- [x] **Step 3: Implement facet extraction**
 
 In `src/diff.mjs`, above `classify` (near `MIN_CONFLICT_SIM` at `:55`):
 
@@ -879,7 +903,7 @@ export function extractCauseLine(record) {
 }
 ```
 
-- [ ] **Step 4: Compare facets in `diffMemory`**
+- [x] **Step 4: Compare facets in `diffMemory`**
 
 In `diffMemory` (`:95`), inside the per-record loop where `similarity` is computed, add the facet comparison and include it in the match object:
 
@@ -908,14 +932,14 @@ const causeDuplicate = matches.some((m) => m.causeSimilarity >= CAUSE_FACET_SIM)
 
 Return `causeDuplicate` in the `diffMemory` result object alongside `suggestion` and `matches`.
 
-- [ ] **Step 5: Run to pass, then the suite**
+- [x] **Step 5: Run to pass, then the suite**
 
-Run: `node --test test/root-cause-merge.test.mjs` → 6 pass.
+Run: `node --test test/root-cause-merge.test.mjs` → 7 pass (6 planned + 1 proving the merge decision, not just the diff).
 Run: `node --test test/brain.test.mjs test/m12-consolidation.test.mjs test/issue3-classifier.test.mjs test/regression-false-positives.test.mjs test/contradiction-integrity.test.mjs test/evolve*.test.mjs test/learn*.test.mjs`
 Expected: all pass. The conflict-first rule keeps `test/issue3-classifier.test.mjs` green, and no existing fixture carries a shared `Root cause:` line, so no verdict changes.
-Run: `node --test test/*.test.mjs` → 1143 pass, 0 fail.
+Run: `node --test test/*.test.mjs` → 1164 pass, 0 fail (measured).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/diff.mjs test/root-cause-merge.test.mjs
@@ -948,7 +972,7 @@ Reusing it keeps failure/recovery semantics in one place. Its wrapper `testOutco
 
 `tests-touched` is **not** a signal. It means test files were in play, not that anything passed; mapping it to `PLAUSIBLE_CORRELATION` would turn "this was test-adjacent" into a false success claim. Only `test-passed` and `test-failed` produce a signal, and `null` produces none.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `test/turn-outcome-signal.test.mjs`, following the `apply()` + `mockCtx()` + `_listeners` harness already used in `test/turn-stopping-learning.test.mjs` (its `prepareWorkspace`, `mockCtx`, and `fakeRegistry(paths)` plumbing are the pattern; the room must resolve or the handler returns before reaching any of this).
 
@@ -995,11 +1019,11 @@ test('no delivered recall means no signal', async (t) => {
 })
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `node --test test/turn-outcome-signal.test.mjs` → `signals` is undefined.
 
-- [ ] **Step 3: Implement the log**
+- [x] **Step 3: Implement the log**
 
 In `src/apply-generation-evidence.mjs`, following the `APPLY_OUTCOME_LINK_KEY` pattern (:15, :214):
 
@@ -1054,7 +1078,7 @@ The same value check guards the writer: reject a `signal` unless `AUTO_OUTCOME_V
 
 Write with the same read-normalize-mutate-store-capped sequence `recordExplicitOutcomeLink` uses (guarding `getMeta`/`setMeta`, `nextSeq`, `store.scope` for the `p`/`r` prefix, `capAndStore`), and read with `readLog(store, APPLY_AUTO_OUTCOME_KEY, normalizeAutoOutcomeLog)` — that helper already returns `null` on an empty or unreadable log.
 
-- [ ] **Step 4: Emit it from the turn-stop handler**
+- [x] **Step 4: Emit it from the turn-stop handler**
 
 In `src/plugin.mjs`, add the import (neither module is imported there today):
 
@@ -1097,13 +1121,13 @@ Note in a comment that `runtime.observe: false` disables this path, which is the
 
 Do not call `recordFeedback`, `strengthenMemory`, or `promote` — this signal is a separate log with its own key, and a correlated pass must never strengthen a record's standing.
 
-- [ ] **Step 5: Run to pass, then the suite**
+- [x] **Step 5: Run to pass, then the suite**
 
 Run: `node --test test/turn-outcome-signal.test.mjs` → 5 pass.
 Run: `node --test test/turn-stopping-learning.test.mjs test/turn-stopping-contradiction.test.mjs test/plugin.test.mjs test/m5-maintenance.test.mjs`
-Run: `node --test test/*.test.mjs` → 1148 pass, 0 fail.
+Run: `node --test test/*.test.mjs` → 1169 pass, 0 fail (measured).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/plugin.mjs src/apply-generation-evidence.mjs src/understand.mjs test/turn-outcome-signal.test.mjs
@@ -1134,7 +1158,7 @@ git commit -m "feat: record a non-causal outcome signal at turn end"
 - `publishEvalResult(result)` with no options THROWS (`resolveEvalOutput` requires both `trackedPath` and `runPath`).
 - `veyra_remember` never writes the write-gate ledger; only `maybeLearn`/`writeGate` does. Measured: two `veyra_remember` calls → ledger still `null`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `test/eval-autonomy-cycle.test.mjs`:
 
@@ -1184,11 +1208,11 @@ test('a fresh room reports zero rather than throwing', async (t) => {
 })
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `node --test test/eval-autonomy-cycle.test.mjs` → cannot resolve `runAutonomyCycle`.
 
-- [ ] **Step 3: Implement the harness**
+- [x] **Step 3: Implement the harness**
 
 Create `test/eval-autonomy-cycle.mjs`. Keep the module importable — the test imports it, so the CLI must be guarded by a main check (this repository has no such idiom yet; introduce it here and nowhere else):
 
@@ -1319,13 +1343,13 @@ Two details that decide whether this works at all:
 - `readGenerationEvidence` and `readWriteGateLedger` both return `null` on a fresh room — every read above is `?.`-guarded and every ratio passes through `ratio()` so a denominator of 0 yields `0`, not `NaN`.
 - The `seed: false` flag exists precisely so the empty-room test really starts empty. Seeding and the `maybeLearn` calls are both gated on it; without the flag, `ledger` would be non-null even at `turns: 0` and the second test's `assert.equal(r.ledger, null)` would fail. Do not remove the flag and do not soften the assertion — a non-null ledger on an unseeded room is a real finding, so report it instead.
 
-- [ ] **Step 4: Run to pass, then the suite**
+- [x] **Step 4: Run to pass, then the suite**
 
 Run: `node --test test/eval-autonomy-cycle.test.mjs` → 2 pass.
 Run: `node test/eval-autonomy-cycle.mjs --output /tmp/eval-autonomy.json` → prints the five metrics; the run artifact lands in `os.tmpdir()`, and the tracked artifact is skipped unless `VEYRA_EVAL_WRITE_TRACKED=1`.
-Run: `node --test test/*.test.mjs` → 1150 pass, 0 fail.
+Run: `node --test test/*.test.mjs` → 1171 pass, 0 fail (measured).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add test/eval-autonomy-cycle.mjs test/eval-autonomy-cycle.test.mjs

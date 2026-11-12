@@ -32,6 +32,8 @@ import { registerSkills } from './skills.mjs'
 import { registerWebUi } from './webui.mjs'
 import { CBM_PACKAGE_NAME, cbm, createDegradedEngine, cbmLoadFailure, isAbsentFailure, isCodeIntelligenceAvailable } from './cbm-bridge.mjs'
 import { findAffectedMemories, buildStaleReviewCandidate } from './code/linking.mjs'
+import { AUTO_OUTCOME, DELIVERY, readGenerationEvidence, recordAutoOutcomeSignal } from './apply-generation-evidence.mjs'
+import { testOutcomeFrom } from './understand.mjs'
 
 // `src/plugin.mjs` is this package's `main`/`exports` target, so these five CBM
 // helpers are part of Veyra's own public module surface. They are bound from the
@@ -433,6 +435,40 @@ export function apply(ctx, config = {}) {
           cwd,
           agent,
         })
+        // Turn-end outcome signal (non-causal). Test evidence from this turn makes
+        // a delivered record *correlated* with a pass, never verified: `test-passed`
+        // is a local observation of runner output, not a model receipt. Nothing here
+        // may touch confidence, validation, or authority.
+        //
+        // This runs before the `if (!candidate) return` guard on purpose. A short
+        // "did it pass?" turn produces no durable observation, so a block placed
+        // after that guard would skip exactly the turns whose test evidence matters.
+        // `runtime.observe: false` disables this path with the rest of the handler.
+        try {
+          const outcome = testOutcomeFrom(buffer.tools, [...buffer.files])
+          const signal = outcome === 'test-passed' ? AUTO_OUTCOME.PLAUSIBLE
+            : outcome === 'test-failed' ? AUTO_OUTCOME.CONTRADICTED
+              : null
+          if (signal) {
+            // readLog returns null when nothing was ever recorded, so a fresh room
+            // has no generation log at all.
+            const delivered = readGenerationEvidence(projectStore)?.entries
+              ?.filter((e) => e.delivery?.status === DELIVERY.DELIVERED)
+              .at(-1)
+            if (delivered) {
+              for (const recordId of delivered.recordRefs.slice(0, 5)) {
+                recordAutoOutcomeSignal(projectStore, {
+                  recordId,
+                  generationEventId: delivered.eventId,
+                  signal,
+                })
+              }
+            }
+          }
+        } catch {
+          // turn-end signal is best-effort and must never break the agent loop
+        }
+
         if (!candidate) return
         const written = projectStore.put(candidate)
         if (runtime.learn && written.created) {

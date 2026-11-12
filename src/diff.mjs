@@ -54,6 +54,20 @@ function recordText(record) {
 
 export const MIN_CONFLICT_SIM = 0.35
 
+// A restated cause is the duplicate that matters: two records stating the same
+// Root cause are one lesson, even when their bodies differ by 400 chars of
+// template lines. Measured on the live room: identical causes score 1.000,
+// rewording scores 0.727-0.909, and different causes score <=0.278, so 0.7
+// separates them with margin on both sides.
+export const CAUSE_FACET_SIM = 0.7
+const CAUSE_LINE = /^\s*Root cause:\s*(.+)$/im
+
+export function extractCauseLine(record) {
+  const text = `${record?.title || ''}\n${record?.body || ''}`
+  const match = text.match(CAUSE_LINE)
+  return match ? match[1].trim() : ''
+}
+
 function classify(tokenSim, newText, existingText, { subjectShared = false } = {}) {
   const isExtension = newText.length > existingText.length + existingText.length / 4
   const polarityMismatch = hasNegation(newText) !== hasNegation(existingText)
@@ -92,12 +106,15 @@ function classify(tokenSim, newText, existingText, { subjectShared = false } = {
  */
 export function diffMemory(incoming, records, { limit = 8 } = {}) {
   const newText = typeof incoming === 'string' ? incoming : recordText(incoming)
+  const incomingCause = typeof incoming === 'string' ? '' : extractCauseLine(incoming)
   const list = Array.isArray(records) ? records : []
   const matches = []
   for (const rec of list) {
     if (!rec || rec.forgotten) continue
     const existingText = recordText(rec)
     const similarity = jaccard(newText, existingText)
+    const recordCause = extractCauseLine(rec)
+    const causeSimilarity = incomingCause && recordCause ? jaccard(incomingCause, recordCause) : 0
     // Zero lexical overlap must not discard the pair outright: an explicit
     // replacement ("switched from X to Y") is defined by differing words.
     // Pairs with no claim text on either side have nothing to relate.
@@ -106,12 +123,20 @@ export function diffMemory(incoming, records, { limit = 8 } = {}) {
       id: rec.id,
       record: rec,
       similarity,
+      causeSimilarity,
       suggestion: classify(similarity, newText, existingText, {
         subjectShared: sharesSubject(incoming, rec),
       }),
     })
   }
   matches.sort((a, b) => b.similarity - a.similarity)
+  // A matching cause outranks additive wording drift: the bodies differ because
+  // one turn touched more files, not because the lesson differs. Conflict is
+  // never overridden, and a record with no facet can never match.
+  for (const m of matches) {
+    if (m.causeSimilarity >= CAUSE_FACET_SIM && m.suggestion !== DIFF.CONFLICT) m.suggestion = DIFF.DUPLICATE
+  }
+  const causeDuplicate = matches.some((m) => m.causeSimilarity >= CAUSE_FACET_SIM)
   const top = matches.slice(0, Math.max(1, limit))
   let suggestion = DIFF.ADD
   if (top.length > 0) {
@@ -121,7 +146,7 @@ export function diffMemory(incoming, records, { limit = 8 } = {}) {
       suggestion = DIFF.CONFLICT
     }
   }
-  return { suggestion, matches: top }
+  return { suggestion, matches: top, causeDuplicate }
 }
 
 export function strongestMatch(diff, kind) {

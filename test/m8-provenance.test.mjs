@@ -468,7 +468,7 @@ test('M8: tools/files/symbols in source never auto-add the "tool" origin', () =>
   // Populated derived metadata + tool-derived evidence notes, but no persisted
   // tool-sourced symptom and both streams non-empty → origins stay stream-based.
   const record = distillBuffer(makeBuffer({
-    user: [USER_TEXT + ' Keep const applyMutex exported.'],
+    user: [USER_TEXT + ' Keep const applyMutex = true exported.'],
     assistant: [ASSISTANT_CLAIM],
     tools: [EDIT_TOOL, ...PASS_TOOLS],
     files: ['src/store.mjs'],

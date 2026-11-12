@@ -69,6 +69,10 @@ const DECISION_HINTS = /\b(decided|decision|always|never|must|should not|do not|
 const CAUSE_HINTS = /\b(root cause|the cause|caused by|because of|why|reason)\b/i
 
 const SYMBOL_RE = /(?:export\s+)?(?:async\s+)?(?:function\*?|class|const|let|var)\s+([A-Za-z_$][\w$]{2,})/g
+// A declaration is only a declaration when a code shape follows the name.
+// `const value` inside a sentence is prose, and prose symbols become `sym:`
+// evidence, which is enough to make a record look grounded (learn.hasGrounding).
+const CODE_SHAPE_AFTER = /^[)\s]*[(){}[\]=:,;]/
 const PATH_RE = /(?:^|[\s`'"(])((?:src|test|tests|lib|app|packages|skills)\/[\w./-]+\.[A-Za-z]{1,8})/g
 
 // m00188: a code span is OPAQUE. Its punctuation is code, not prose, so every
@@ -479,7 +483,10 @@ export function extractSymbols(text) {
   const found = []
   SYMBOL_RE.lastIndex = 0
   let match
-  while ((match = SYMBOL_RE.exec(text))) found.push(match[1])
+  while ((match = SYMBOL_RE.exec(text))) {
+    const rest = text.slice(match.index + match[0].length)
+    if (rest === '' || CODE_SHAPE_AFTER.test(rest)) found.push(match[1])
+  }
   return [...new Set(found)].slice(0, 8)
 }
 
@@ -670,7 +677,7 @@ function testOutcomeAnalysis(tools, files) {
   return { outcome, hadFailure: sawFailure, recovered: sawFailure && recoveredPass && correctiveAfterFailure }
 }
 
-function testOutcomeFrom(tools, files) {
+export function testOutcomeFrom(tools, files) {
   return testOutcomeAnalysis(tools, files).outcome
 }
 
