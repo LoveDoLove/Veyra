@@ -667,6 +667,10 @@ export function buildToolDefinitions(runtime) {
         id: { type: 'string', required: true, description: 'Record id that was applied.' },
         outcome: { type: 'string', enum: ['success', 'failure'], required: true, description: 'success or failure of the application.' },
         note: { type: 'string', description: 'Short outcome note, e.g. "tests failed: writer timeout".' },
+        generationEventId: {
+          type: 'string',
+          description: 'The generationEventId returned by the veyra_recall call that surfaced this record. Enables explicit attribution.',
+        },
       },
       output: {
         schema: {
@@ -678,6 +682,7 @@ export function buildToolDefinitions(runtime) {
             record: RECORD_SCHEMA,
             feedback: { type: 'object', additionalProperties: true },
             previous: { type: 'object', additionalProperties: true },
+            attribution: { type: 'string', enum: ['explicit_linked', 'none'] },
           },
         },
         render: (_args, value) => {
@@ -709,6 +714,7 @@ export function buildToolDefinitions(runtime) {
           record: recordView(res.record),
           feedback: res.feedback,
           previous: res.previous,
+          attribution: outcomeLink ? 'explicit_linked' : 'none',
         }
       },
       presentCall: (args) => ({ card: 'generic', title: 'Feedback', kind: 'other', rawInput: `${args.outcome}: ${args.id}` }),
