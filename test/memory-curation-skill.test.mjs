@@ -1,7 +1,7 @@
 /**
- * Memory-maintenance skill registration and workflow guidance.
+ * Memory-curation skill registration and workflow guidance.
  *
- * Verifies the bundled memory-maintenance skill:
+ * Verifies the bundled veyra-memory-curation skill:
  * - Is registered and loadable
  * - References existing Veyra lifecycle commands (not inventing a second system)
  * - Follows the skill frontmatter convention
@@ -16,11 +16,11 @@ import { memoryHealth } from '../src/health.mjs'
 import { VALIDATIONS, AUTHORITIES, KINDS, STATUSES } from '../src/types.mjs'
 import { openEphemeralStore } from '../src/store.mjs'
 
-test('memory-maintenance skill frontmatter follows convention', () => {
-  const raw = readFileSync(skillFileFor('memory-maintenance'), 'utf8')
-  const parsed = parseSkillMarkdown(raw, 'memory-maintenance')
+test('veyra-memory-curation skill frontmatter follows convention', () => {
+  const raw = readFileSync(skillFileFor('veyra-memory-curation'), 'utf8')
+  const parsed = parseSkillMarkdown(raw, 'veyra-memory-curation')
   
-  assert.equal(parsed.name, 'memory-maintenance')
+  assert.equal(parsed.name, 'veyra-memory-curation')
   assert.match(parsed.name, /^[a-z0-9]+(?:-[a-z0-9]+)*$/)
   assert.ok(parsed.description.length > 20)
   assert.ok(parsed.whenToUse)
@@ -30,8 +30,8 @@ test('memory-maintenance skill frontmatter follows convention', () => {
   assert.match(parsed.whenToUse, /maintenance|health|contradic|stale/i)
 })
 
-test('memory-maintenance references existing lifecycle commands', () => {
-  const raw = readFileSync(skillFileFor('memory-maintenance'), 'utf8')
+test('veyra-memory-curation references existing lifecycle commands', () => {
+  const raw = readFileSync(skillFileFor('veyra-memory-curation'), 'utf8')
   const parsed = parseSkillMarkdown(raw)
   
   // Must reference existing /veyra commands
@@ -52,8 +52,8 @@ test('memory-maintenance references existing lifecycle commands', () => {
   assert.ok(!parsed.content.match(/new.*cleanup|auto.*delete.*all/i), 'must not invent bulk delete')
 })
 
-test('memory-maintenance workflow preserves repository truth principle', () => {
-  const raw = readFileSync(skillFileFor('memory-maintenance'), 'utf8')
+test('veyra-memory-curation workflow preserves repository truth principle', () => {
+  const raw = readFileSync(skillFileFor('veyra-memory-curation'), 'utf8')
   const parsed = parseSkillMarkdown(raw)
   
   // Must verify against repository
@@ -66,8 +66,8 @@ test('memory-maintenance workflow preserves repository truth principle', () => {
   assert.ok(!parsed.content.match(/auto.*promot.*canonical/i), 'no auto-promotion to canonical')
 })
 
-test('memory-maintenance includes KEEP/SUPERSEDE/INVALIDATE/FORGET/DEFER actions', () => {
-  const raw = readFileSync(skillFileFor('memory-maintenance'), 'utf8')
+test('veyra-memory-curation includes KEEP/SUPERSEDE/INVALIDATE/FORGET/DEFER actions', () => {
+  const raw = readFileSync(skillFileFor('veyra-memory-curation'), 'utf8')
   const parsed = parseSkillMarkdown(raw)
   
   // The six core actions from the requirement
@@ -82,8 +82,8 @@ test('memory-maintenance includes KEEP/SUPERSEDE/INVALIDATE/FORGET/DEFER actions
   assert.ok(parsed.content.match(/\|.*Action.*\|.*When.*\|/i) || parsed.content.match(/### \d\. .*action/i))
 })
 
-test('memory-maintenance workflow includes health → inspect → verify → apply → report', () => {
-  const raw = readFileSync(skillFileFor('memory-maintenance'), 'utf8')
+test('veyra-memory-curation workflow includes health → inspect → verify → apply → report', () => {
+  const raw = readFileSync(skillFileFor('veyra-memory-curation'), 'utf8')
   const parsed = parseSkillMarkdown(raw)
   
   // The required workflow steps
@@ -100,8 +100,8 @@ test('memory-maintenance workflow includes health → inspect → verify → app
   assert.ok(hasReportStep, 'must include reporting step')
 })
 
-test('memory-maintenance includes concrete examples', () => {
-  const raw = readFileSync(skillFileFor('memory-maintenance'), 'utf8')
+test('veyra-memory-curation includes concrete examples', () => {
+  const raw = readFileSync(skillFileFor('veyra-memory-curation'), 'utf8')
   const parsed = parseSkillMarkdown(raw)
   
   // Must have scenario examples showing how to apply the workflow
@@ -112,8 +112,8 @@ test('memory-maintenance includes concrete examples', () => {
   assert.ok(parsed.content.match(/repository check:|Repository check:/))
 })
 
-test('regression: memory-maintenance enforces per-run safety limit of at most 10 records and halts', () => {
-  const raw = readFileSync(skillFileFor('memory-maintenance'), 'utf8')
+test('regression: veyra-memory-curation enforces per-run safety limit of at most 10 records and halts', () => {
+  const raw = readFileSync(skillFileFor('veyra-memory-curation'), 'utf8')
   const parsed = parseSkillMarkdown(raw)
 
   // 1. Must define per-run safety limit capped at 10 records
@@ -127,7 +127,7 @@ test('regression: memory-maintenance enforces per-run safety limit of at most 10
 })
 
 test('regression: inspect failure requires DEFER and forbids destructive action', () => {
-  const raw = readFileSync(skillFileFor('memory-maintenance'), 'utf8')
+  const raw = readFileSync(skillFileFor('veyra-memory-curation'), 'utf8')
   const parsed = parseSkillMarkdown(raw)
 
   // 1. Inspect failure must yield DEFER
@@ -137,7 +137,7 @@ test('regression: inspect failure requires DEFER and forbids destructive action'
 })
 
 test('regression: no direct database / raw SQLite fallback when tools fail', () => {
-  const raw = readFileSync(skillFileFor('memory-maintenance'), 'utf8')
+  const raw = readFileSync(skillFileFor('veyra-memory-curation'), 'utf8')
   const parsed = parseSkillMarkdown(raw)
 
   // 1. Must explicitly forbid bypassing tools with direct database access
@@ -232,8 +232,8 @@ test('regression: 200-row health window shift reveals older pre-existing stale r
 })
 
 test('regression: maintenance requires explicit user intent; findings never authorize a run', () => {
-  const raw = readFileSync(skillFileFor('memory-maintenance'), 'utf8')
-  const parsed = parseSkillMarkdown(raw, 'memory-maintenance')
+  const raw = readFileSync(skillFileFor('veyra-memory-curation'), 'utf8')
+  const parsed = parseSkillMarkdown(raw, 'veyra-memory-curation')
 
   // 1. whenToUse must not auto-trigger on accumulated health findings.
   assert.ok(
@@ -248,14 +248,14 @@ test('regression: maintenance requires explicit user intent; findings never auth
     'workflow must gate the run on an explicit user maintenance request',
   )
 
-  // 3. Health findings — including memory-review findings — are not authorization.
+  // 3. Health findings — and findings from a capture pass — are not authorization.
   assert.ok(
     parsed.content.match(/are never\s+themselves authorization/),
     'findings must be stated as never authorization',
   )
   assert.ok(
-    parsed.content.includes('findings surfaced by `memory-review`'),
-    'memory-review findings must be explicitly excluded as an auto-trigger',
+    parsed.content.includes('findings surfaced by `veyra_health`'),
+    'health-report findings must be explicitly excluded as an auto-trigger',
   )
 
   // 4. Existing safety model stays intact.

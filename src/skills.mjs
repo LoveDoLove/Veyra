@@ -44,59 +44,44 @@ export const BUNDLED_SKILL_DEFINITIONS = Object.freeze([
       + 'session continuity.',
   },
   {
-    name: 'legacy-onboarding',
+    name: 'veyra-memory-bootstrap',
     description:
-      'Onboard an unfamiliar, legacy, or not-yet-baselined project into Veyra, or '
-      + 'initialize ("init") Veyra memory for a project on explicit request. '
-      + 'Assesses the existing memory baseline, discovers the repository, chooses a '
-      + 'progressive investigation depth, extracts only durable engineering knowledge '
-      + 'grounded in verifiable evidence, and builds a Project Memory Baseline that '
-      + 'future agents can recall instead of re-investigating. Load it the first time '
-      + 'you work in an old or foreign codebase, when the user asks to init / '
-      + 'initialize memory or build a memory baseline, when asked "what is this '
-      + 'project / how does this work" with no baseline available, before high-risk '
-      + 'legacy changes (auth, data, infrastructure, migrations), or when existing '
-      + 'Veyra memory looks stale. Skip it for trivial tasks in projects that already '
-      + 'have a good baseline.',
+      'Build a project memory baseline in Veyra — the first-time onboarding pass '
+      + 'that discovers an unfamiliar, legacy, or not-yet-baselined repository and '
+      + 'records 4-8 durable, evidence-anchored facts a future session can recall '
+      + 'instead of re-investigating. Load at first entry into an old or foreign '
+      + 'codebase, when recall returns nothing or is too thin to answer "what is this '
+      + 'project, what are its constraints, what breaks here", when the user asks to '
+      + 'onboard or survey a project, when the user explicitly asks to initialize '
+      + 'memory (初始化记忆, 建立记忆基线, "init memory"), or before high-risk work on '
+      + 'authentication, databases, infrastructure, core APIs, migrations, or '
+      + "compatibility shims. Not for capturing this conversation's own findings and "
+      + 'not for cleaning up records that already exist — load veyra-memory-curation '
+      + 'for both of those.',
     whenToUse:
-      'First entry into a new, legacy, or unfamiliar project; a missing or stale '
-      + 'Veyra baseline; an explicit "init memory" or "initialize memory baseline" '
-      + 'request; high-risk changes to old systems; or an explicit request to '
-      + 'understand or onboard an unfamiliar repository.',
+      'First substantive work in a project whose Veyra memory is empty or too thin '
+      + 'to be useful, an explicit onboard or "initialize memory" request, a baseline '
+      + 'that has drifted from the code, or a high-risk change to a legacy area. Not '
+      + "for recording a session's own findings, and not for health-driven cleanup of "
+      + 'records that already exist — those are veyra-memory-curation.',
   },
   {
-    name: 'memory-review',
+    name: 'veyra-memory-curation',
     description:
-      'Review the current conversation for durable engineering memory worth keeping and '
-      + 'check whether Veyra already recorded it. Extracts a small set of evidence-backed '
-      + 'engineering facts from this session, recalls the existing memory, classifies each '
-      + 'fact as already recorded, missing, or stale/conflicting, updates only '
-      + 'evidence-backed gaps through existing Veyra tools, and ends with a short review '
-      + 'report. Load when the user asks to review memory, audit what this session '
-      + 'stored, check whether something from this conversation was recorded, or '
-      + 'reconcile conversation findings with Veyra. Not for initializing a new '
-      + 'project baseline — load legacy-onboarding for that.',
+      'Curate engineering memory that already exists or that this conversation just '
+      + 'produced. Two modes. Capture mode reviews the current session for durable, '
+      + 'evidence-backed findings, checks them against what Veyra already holds, and '
+      + 'writes only the genuine gaps. Maintain mode works from a Veyra health report '
+      + 'to inspect, verify, and lifecycle stale, invalid, or contradicted records '
+      + "through Veyra's existing commands. Load when the user asks whether something "
+      + 'was recorded, asks to review or audit memory, asks to clean up memory, '
+      + 'reconcile contradictions, or audit Veyra health. Not for building a first '
+      + 'project baseline — load veyra-memory-bootstrap for that.',
     whenToUse:
-      'End-of-session or mid-session memory audits, "did we record that" questions, '
-      + "and reconciling this conversation's findings against existing Veyra memory. "
-      + 'Not for project memory initialization (use legacy-onboarding).',
-  },
-  {
-    name: 'memory-maintenance',
-    description:
-      'Agent-executable memory maintenance workflow using Veyra\'s existing health '
-      + 'reports and lifecycle commands. Runs health findings, inspects records, '
-      + 'verifies against repository truth, applies lifecycle actions (KEEP / '
-      + 'SUPERSEDE / INVALIDATE / FORGET / TOMBSTONE / REVALIDATE / DEFER), and '
-      + 'reports before/after health changes. Use when the user asks to clean up '
-      + 'memory, maintain engineering knowledge, reconcile stale or contradictory '
-      + 'records, or audit Veyra health. Not for initializing a new project '
-      + 'baseline — load legacy-onboarding for that.',
-    whenToUse:
-      'Explicit memory maintenance requests: when the user asks to clean up memory, '
-      + 'maintain engineering knowledge, reconcile stale or contradictory records, or '
-      + 'audit Veyra health. Not for project memory initialization (use '
-      + 'legacy-onboarding).',
+      '"Did we record that", end-of-session memory reviews, session audits, '
+      + 'health-driven cleanup, reconciling stale or contradictory records, or any '
+      + 'explicit maintenance request about engineering memory. Not for project memory '
+      + 'initialization or first-time onboarding (use veyra-memory-bootstrap).',
   },
 ])
 
