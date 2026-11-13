@@ -1,5 +1,16 @@
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-13
+
+One changeset. The Network Graph page is rebuilt as a 3D observatory: a canvas scene replaces the flat SVG view, and the page gains a workspace switcher so the user can move between workspaces without leaving the tab.
+
+### Added
+
+- **A 3D observatory view for the Network Graph.** `graphPage()` now serves a canvas scene with a yaw/pitch camera, perspective divide, depth-sorted drawing, a starfield, and authority strata that place canonical, derived, and candidate records in three nested shells. Labels render only for hovered or selected nodes, so a bounded 40-node graph stays readable. The flat SVG page is gone.
+- **A glass HUD around the scene.** A workspace chip, an omnibox (Ctrl/Cmd+K) that searches records and workspaces, stat cells, a legend, tool toggles, and a slide-in record inspector. A command palette offers the same routes with the keyboard.
+- **`GET /veyra/workspaces`.** A read-only endpoint over `resolver.list()` that serves workspace metadata (`id`, `title`, `path`). It opens no room store, so listing workspaces cannot leak one workspace's memory into another, and it keeps `null` (registry unreadable) distinct from `[]` (no workspaces).
+- **Workspace switching in the page.** The chip and the palette reload the graph with the chosen workspace's `cwd`. The fail-closed contract is unchanged: every data route still requires an explicit `cwd` and answers 409 `WORKSPACE_CONTEXT_UNAVAILABLE` without one. `sessionId` still never serves as workspace proof.
+
 ## [0.3.1] - 2026-11-12
 
 Two changesets. A contract audit against the official DSH plugin documentation removes every declaration the Host never reads, or replaces a guess with the authoritative source; no Veyra feature is dropped. The documentation set then gains the front doors it was missing, so a first-time contributor or a security reporter has a route from the README to the rules that actually govern a change.
