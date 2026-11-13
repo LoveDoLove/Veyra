@@ -17,8 +17,8 @@ const BUNDLED_NAMES = BUNDLED_SKILL_DEFINITIONS.map((def) => def.name)
 
 test('bundled definitions match the on-disk skills directory convention', () => {
   assert.ok(BUNDLED_NAMES.includes('veyra'))
-  assert.ok(BUNDLED_NAMES.includes('legacy-onboarding'))
-  assert.ok(BUNDLED_NAMES.includes('memory-maintenance'))
+  assert.ok(BUNDLED_NAMES.includes('veyra-memory-bootstrap'))
+  assert.ok(BUNDLED_NAMES.includes('veyra-memory-curation'))
   for (const name of BUNDLED_NAMES) {
     assert.match(name, /^[a-z0-9]+(?:-[a-z0-9]+)*$/)
     const parsed = parseSkillMarkdown(readFileSync(skillFileFor(name), 'utf8'), name)
@@ -42,12 +42,12 @@ test('bundled SKILL.md has kebab-case name and routing fields', () => {
   assert.equal(stripSkillFrontmatter(raw), parsed.content)
 })
 
-test('legacy-onboarding SKILL.md carries the required workflow guidance', () => {
-  const raw = readFileSync(skillFileFor('legacy-onboarding'), 'utf8')
+test('veyra-memory-bootstrap SKILL.md carries the required workflow guidance', () => {
+  const raw = readFileSync(skillFileFor('veyra-memory-bootstrap'), 'utf8')
   const parsed = parseSkillMarkdown(raw)
-  assert.equal(parsed.name, 'legacy-onboarding')
+  assert.equal(parsed.name, 'veyra-memory-bootstrap')
   assert.equal(stripSkillFrontmatter(raw), parsed.content)
-  assert.ok(parsed.content.startsWith('# Legacy Project Onboarding'))
+  assert.ok(parsed.content.startsWith('# Veyra Memory Bootstrap'))
 
   // Required sections: trigger, depth control, workflow, evidence, completion,
   // stop conditions, failure recovery.
@@ -74,27 +74,29 @@ test('legacy-onboarding SKILL.md carries the required workflow guidance', () => 
   assert.match(parsed.content, /Veyra has no quarantine state/)
 })
 
-test('memory-review SKILL.md carries the required review guidance', () => {
-  const raw = readFileSync(skillFileFor('memory-review'), 'utf8')
-  const parsed = parseSkillMarkdown(raw, 'memory-review')
-  assert.equal(parsed.name, 'memory-review')
+test('veyra-memory-curation SKILL.md carries the required curation guidance', () => {
+  const raw = readFileSync(skillFileFor('veyra-memory-curation'), 'utf8')
+  const parsed = parseSkillMarkdown(raw, 'veyra-memory-curation')
+  assert.equal(parsed.name, 'veyra-memory-curation')
   assert.equal(stripSkillFrontmatter(raw), parsed.content)
-  assert.ok(parsed.content.startsWith('# Memory Review'))
+  assert.ok(parsed.content.startsWith('# Veyra Memory Curation'))
 
-  // Required sections: trigger, workflow, principles, report, completion,
-  // failure recovery.
+  // Both modes, plus the sections that keep them honest.
   for (const heading of [
-    '## Trigger and applicability',
-    '## Workflow',
-    '## Principles',
-    '## Review report',
+    '## Mode selection',
+    '## Hard rules',
+    '## Capture mode',
+    '## Maintain mode',
+    '## Veyra integration',
+    '## Evidence rules',
     '## Completion criteria',
+    '## Stop conditions',
     '## Failure and recovery',
   ]) {
     assert.ok(parsed.content.includes(heading), `missing section: ${heading}`)
   }
 
-  // Invariants: the skill reviews against existing Veyra tools only, keeps
+  // Invariants: reviews against existing Veyra tools only, keeps
   // Candidate/Truth and Similarity/Authority distinct, never stores the whole
   // conversation, and never grants canonical.
   for (const tool of ['veyra_recall', 'veyra_inspect', 'veyra_remember']) {
@@ -128,15 +130,15 @@ test('bundled provider lists and loads every bundled skill', async () => {
   assert.ok(loaded.content.startsWith('# Veyra'))
   assert.ok(loaded.path.endsWith('skills/veyra/SKILL.md'))
 
-  const onboarding = candidates.find((c) => c.name === 'legacy-onboarding')
+  const onboarding = candidates.find((c) => c.name === 'veyra-memory-bootstrap')
   assert.ok(onboarding)
   assert.equal(onboarding.source, 'bundled')
   assert.equal(onboarding.rank, BUNDLED_SKILL_RANK)
   const loadedOnboarding = await provider.get(onboarding)
-  assert.equal(loadedOnboarding.name, 'legacy-onboarding')
+  assert.equal(loadedOnboarding.name, 'veyra-memory-bootstrap')
   assert.equal(loadedOnboarding.content.startsWith('---'), false)
-  assert.ok(loadedOnboarding.content.startsWith('# Legacy Project Onboarding'))
-  assert.ok(loadedOnboarding.path.endsWith('skills/legacy-onboarding/SKILL.md'))
+  assert.ok(loadedOnboarding.content.startsWith('# Veyra Memory Bootstrap'))
+  assert.ok(loadedOnboarding.path.endsWith('skills/veyra-memory-bootstrap/SKILL.md'))
 })
 
 test('registerSkills prefers registerProvider and falls back to register', async () => {
@@ -166,9 +168,9 @@ test('registerSkills prefers registerProvider and falls back to register', async
   assert.ok(registered[0].content.includes('veyra_recall'))
   assert.equal(registered[0].invocation.modelInvocable, true)
 
-  const onboarding = registered.find((def) => def.name === 'legacy-onboarding')
+  const onboarding = registered.find((def) => def.name === 'veyra-memory-bootstrap')
   assert.ok(onboarding)
-  assert.ok(onboarding.content.includes('# Legacy Project Onboarding'))
+  assert.ok(onboarding.content.includes('# Veyra Memory Bootstrap'))
   assert.equal(onboarding.invocation.modelInvocable, true)
 
   assert.deepEqual(await registerSkills({}), [])
@@ -193,35 +195,51 @@ test('regression: frontmatter routing metadata matches BUNDLED_SKILL_DEFINITIONS
   }
 })
 
-test('regression: memory-review stays review-only, never destructive maintenance', () => {
-  const raw = readFileSync(skillFileFor('memory-review'), 'utf8')
-  const parsed = parseSkillMarkdown(raw, 'memory-review')
+test('regression: curation keeps capture non-destructive and gates maintenance', () => {
+  const raw = readFileSync(skillFileFor('veyra-memory-curation'), 'utf8')
+  const parsed = parseSkillMarkdown(raw, 'veyra-memory-curation')
 
-  // 1. No destructive lifecycle commands — review never performs maintenance.
+  // 1. Capture mode never performs maintenance: the section between the two
+  //    mode headings carries no lifecycle command. It may read a health report
+  //    as optional context, but must not act on one.
+  const capture = parsed.content
+    .split('## Capture mode')[1]
+    .split('## Maintain mode')[0]
+  assert.ok(capture.length > 0, 'capture mode section must exist')
   assert.ok(
-    !parsed.content.match(/\/veyra (forget|invalidate|supersede|tombstone|protect)/),
-    'memory-review must not invoke destructive /veyra lifecycle commands',
+    !capture.match(/\/veyra (forget|invalidate|supersede|tombstone|protect)/),
+    'capture mode must not invoke destructive /veyra lifecycle commands',
+  )
+  assert.ok(
+    !capture.match(/veyra_forget\s*\(/),
+    'capture mode must not call veyra_forget',
   )
 
-  // 2. Health findings are review input, not instructions.
+  // 2. Health findings are input, not instructions — and are never authorization.
   assert.ok(
     parsed.content.includes('not instructions'),
-    'health findings must be framed as review input, not instructions',
+    'health findings must be framed as input, not instructions',
   )
+  assert.match(parsed.content, /never fix them automatically/)
+  assert.match(parsed.content, /never authorization/)
+  assert.match(parsed.content, /Only an explicit user request in the current conversation/)
 
-  // 3. Review never auto-fixes health findings.
-  assert.ok(
-    parsed.content.includes('never fix them automatically'),
-    'review must keep the "never fix them automatically" boundary',
-  )
+  // 3. The blast-radius guardrails survive the merge.
+  assert.match(parsed.content, /At most 10 records/)
+  assert.match(parsed.content, /No full-sweep auto-iteration/)
+  assert.match(parsed.content, /Inspect before acting/)
+  assert.match(parsed.content, /Contradictions stay visible/)
+  assert.match(parsed.content, /never yours to grant/)
 
-  // 4. Only review-safe Veyra capabilities are used.
+  // 4. Only existing Veyra capabilities are used, and the skill routes the
+  //    first-baseline case away to the bootstrap skill.
   for (const tool of ['veyra_recall', 'veyra_inspect', 'veyra_remember', 'veyra_health']) {
-    assert.ok(parsed.content.includes(tool), `review must use ${tool}`)
+    assert.ok(parsed.content.includes(tool), `curation must use ${tool}`)
   }
+  assert.match(parsed.content, /veyra-memory-bootstrap/)
   assert.ok(
-    !parsed.content.match(/veyra_forget\s*\(/),
-    'memory-review must not call veyra_forget',
+    !parsed.content.match(/veyra_promote\([^)]*canonical/),
+    'curation must not promote to canonical',
   )
 })
 

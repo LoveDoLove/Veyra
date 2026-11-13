@@ -12,7 +12,7 @@ Local SQLite. Per-workspace isolation. No daemon. No API keys. No manual bookmar
 [![license](https://img.shields.io/badge/license-MIT-16a34a)](LICENSE)
 
 A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness).
-Local SQLite storage. No daemon. No API keys. 274.3 kB packed. Pure ESM.
+Local SQLite storage. No daemon. No API keys. 273.3 kB packed. Pure ESM.
 
 ---
 
@@ -132,7 +132,7 @@ Similarity is not authority, so a good match never promotes a record.
 | [Documentation index](docs/README.md) | Every document, grouped by audience |
 | [Whitepaper](docs/WHITEPAPER.md) · [简体中文](docs/WHITEPAPER.zh-CN.md) | Vision, design principles, architecture, core concepts, technical design, future direction |
 | [Memory model](docs/reference/memory-model.md) | Authority, validation, kinds, causal facets, lifecycle, trust, rooms and promotion |
-| [Tools](docs/reference/tools.md) | All eleven tools, their parameters, and the four bundled skills |
+| [Tools](docs/reference/tools.md) | All eleven tools, their parameters, and the three bundled skills |
 | [Commands](docs/reference/commands.md) | Every `/veyra` command, including the Observatory |
 | [Configuration](docs/reference/configuration.md) | Settings, environment variables, storage layout, reset |
 | [Code Intelligence](docs/reference/code-intelligence.md) | The optional structural layer, install, degradation, freshness |

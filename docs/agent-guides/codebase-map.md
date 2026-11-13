@@ -100,14 +100,14 @@ Bridge internals do **not** live here. See [CBM integration](./cbm-integration.m
 
 ## Bundled skills
 
-`skills/<name>/SKILL.md` — four skills shipped in the package:
-`legacy-onboarding`, `memory-maintenance`, `memory-review`, `veyra`.
+`skills/<name>/SKILL.md` — three skills shipped in the package:
+`veyra-memory-bootstrap`, `veyra-memory-curation`, `veyra`.
 Frontmatter is the source of truth; `src/skills.mjs` must stay in parity (a test
 asserts it). The `codebase-memory` skill now ships with CBM's own plugin.
 
 ## Tests
 
-`test/*.test.mjs` (75 files) plus `test/helpers/dsh.mjs`. See
+`test/*.test.mjs` (119 files) plus `test/helpers/dsh.mjs`. See
 [testing and verification](./testing-and-verification.md).
 
 ## Non-test files in `test/`

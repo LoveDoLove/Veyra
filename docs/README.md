@@ -19,7 +19,7 @@ How the product behaves, for the person using it.
 | Document | Covers |
 | --- | --- |
 | [reference/memory-model.md](./reference/memory-model.md) | Authority, validation, kinds, causal facets, lifecycle, trust, rooms, promotion |
-| [reference/tools.md](./reference/tools.md) | All eleven tools, their parameters, and the four bundled skills |
+| [reference/tools.md](./reference/tools.md) | All eleven tools, their parameters, and the three bundled skills |
 | [reference/commands.md](./reference/commands.md) | Every `/veyra` command, including the Observatory and web surfaces |
 | [reference/configuration.md](./reference/configuration.md) | Settings, environment variables, storage layout, reset |
 | [reference/code-intelligence.md](./reference/code-intelligence.md) | The optional structural layer, install, degradation, freshness |

@@ -11,7 +11,7 @@
 [![node](https://img.shields.io/badge/node-%3E%3D22.12%20%3C25-16a34a)](package.json)
 [![license](https://img.shields.io/badge/license-MIT-16a34a)](LICENSE)
 
-[DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness) 的插件。本地 SQLite 存储。无守护进程。无 API 密钥。打包后 274.3 kB。纯 ESM。
+[DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness) 的插件。本地 SQLite 存储。无守护进程。无 API 密钥。打包后 273.3 kB。纯 ESM。
 
 ---
 
@@ -120,7 +120,7 @@ dsh plugin --profile web add @lovedolove/veyra@0.3.1
 | [文档索引](docs/README.md) | 按读者分组的全部文档 |
 | [白皮书](docs/WHITEPAPER.md) · [简体中文](docs/WHITEPAPER.zh-CN.md) | 愿景、设计原则、架构、核心概念、技术设计、未来方向 |
 | [记忆模型](docs/reference/memory-model.md) | 权威级别、验证状态、种类、因果维度、生命周期、信任、房间与提升 |
-| [工具](docs/reference/tools.md) | 全部十一个工具、它们的参数，以及四个内置技能 |
+| [工具](docs/reference/tools.md) | 全部十一个工具、它们的参数，以及三个内置技能 |
 | [命令](docs/reference/commands.md) | 每个 `/veyra` 命令，包括观测台 |
 | [配置](docs/reference/configuration.md) | 设置、环境变量、存储布局、重置 |
 | [代码智能](docs/reference/code-intelligence.md) | 可选的结构层、安装、降级、新鲜度 |

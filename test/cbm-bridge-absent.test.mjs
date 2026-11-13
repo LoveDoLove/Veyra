@@ -252,7 +252,7 @@ test('an unavailable bridge reports unverifiable evidence, never a fabricated re
 test('Veyra no longer bundles a codebase-memory skill', async () => {
   const { BUNDLED_SKILL_DEFINITIONS } = await import('../src/skills.mjs')
   assert.equal(BUNDLED_SKILL_DEFINITIONS.some((s) => s.name === 'codebase-memory'), false)
-  assert.equal(BUNDLED_SKILL_DEFINITIONS.length, 4)
+  assert.equal(BUNDLED_SKILL_DEFINITIONS.length, 3)
 })
 
 // §13's whole point is the operator actually seeing the warning, so pin the

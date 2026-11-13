@@ -1,6 +1,6 @@
 # Tools and Skills
 
-Veyra exposes eleven model-facing tools and four bundled skills. Code
+Veyra exposes eleven model-facing tools and three bundled skills. Code
 Intelligence tools come from a separate plugin.
 
 Every tool is optional. Veyra's memory loop runs without any of them: tools are
@@ -43,14 +43,13 @@ Veyra registers none of them. See [code intelligence](./code-intelligence.md).
 
 ## Skills
 
-Four skills ship inside the package and register automatically.
+Three skills ship inside the package and register automatically.
 
 | Skill | Use it when |
 | --- | --- |
 | `veyra` | You need Veyra's own guidance: tool usage, the authority ladder, causal facets, hybrid search semantics, and the rule that repository truth wins. |
-| `legacy-onboarding` | First entry into an unfamiliar or legacy repository, or an explicit "init memory" request: baseline assessment, progressive investigation depth (an Init-mode straight line for explicit baseline requests), evidence-first extraction, and a Project Memory Baseline. |
-| `memory-review` | You want to audit a conversation for durable engineering memory: what is already recorded, what is missing, what looks stale or conflicting. |
-| `memory-maintenance` | The user explicitly asks to clean up or maintain memory. Applies lifecycle actions with before/after reporting. A health finding alone is never authorization. |
+| `veyra-memory-bootstrap` | First entry into an unfamiliar or legacy repository, or an explicit "init memory" request: baseline assessment, progressive investigation depth (an Init-mode straight line for explicit baseline requests), evidence-first extraction, and a Project Memory Baseline. |
+| `veyra-memory-curation` | You want to review or audit memory (capture mode: what is already recorded, what is missing, what looks stale or conflicting) or the user explicitly asks to clean up memory (maintain mode: applies lifecycle actions with before/after reporting). A health finding alone is never authorization. |
 
 ---
 

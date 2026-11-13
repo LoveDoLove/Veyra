@@ -175,7 +175,8 @@ test('Veyra composes against the real DSH host services', { skip }, async () => 
   const skillOut = await ctx.skills.list()
   const skillNames = (Array.isArray(skillOut) ? skillOut : skillOut.candidates).map((s) => s.name)
   assert.ok(skillNames.includes('veyra'), `veyra skill missing: ${skillNames.join(',')}`)
-  assert.ok(skillNames.includes('legacy-onboarding'), `legacy-onboarding skill missing: ${skillNames.join(',')}`)
+  assert.ok(skillNames.includes('veyra-memory-bootstrap'), `veyra-memory-bootstrap skill missing: ${skillNames.join(',')}`)
+  assert.ok(skillNames.includes('veyra-memory-curation'), `veyra-memory-curation skill missing: ${skillNames.join(',')}`)
 
   // 5. Advanced config/runtime seam: Veyra's dedicated Settings UI is removed.
   assert.equal(fiber.runtime.Config, veyra.Config)
@@ -215,9 +216,13 @@ test('Veyra composes against the real DSH host services', { skip }, async () => 
   assert.ok(veyraSkillNorm.toLowerCase().includes('never store temporary state, unsupported assumptions, secrets'), 'skill must preserve remember safety constraints')
   assert.ok(veyraSkill.path.endsWith('skills/veyra/SKILL.md'))
 
-  const onboardingSkill = await ctx.skills.get('legacy-onboarding')
-  assert.ok(onboardingSkill, 'skills.get("legacy-onboarding") must resolve')
-  assert.ok(onboardingSkill.content.includes('Legacy Project Onboarding'))
+  const onboardingSkill = await ctx.skills.get('veyra-memory-bootstrap')
+  assert.ok(onboardingSkill, 'skills.get("veyra-memory-bootstrap") must resolve')
+  assert.ok(onboardingSkill.content.includes('Veyra Memory Bootstrap'))
+
+  const curationSkill = await ctx.skills.get('veyra-memory-curation')
+  assert.ok(curationSkill, 'skills.get("veyra-memory-curation") must resolve')
+  assert.ok(curationSkill.content.includes('Veyra Memory Curation'))
 
   // 8. Real event dispatch: a turn observed on a registered workspace must
   // persist into that workspace's room, and only into the isolated home —
