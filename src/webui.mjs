@@ -206,6 +206,31 @@ export function buildSearchPayload({
   }
 }
 
+/**
+ * Workspace switcher feed. Metadata only: no room store is opened and no
+ * record is read, so listing workspaces cannot leak one workspace's memory
+ * into another. The DSH workspace registry is the only authority for what
+ * exists; when it is absent or broken this reports `null` rather than an
+ * empty list, because "no workspaces" and "cannot ask" are different facts.
+ */
+export function buildWorkspacesPayload({ resolver } = {}) {
+  const state = typeof resolver?.state === 'function' ? resolver.state() : null
+  const listed = typeof resolver?.list === 'function' ? resolver.list() : null
+  const workspaces = Array.isArray(listed)
+    ? listed.map((workspace) => ({
+      id: typeof workspace?.id === 'string' ? workspace.id : '',
+      title: typeof workspace?.title === 'string' ? workspace.title : '',
+      path: typeof workspace?.path === 'string' ? workspace.path : '',
+    })).filter((workspace) => workspace.id && workspace.path)
+    : null
+  return {
+    ok: workspaces !== null,
+    registryState: state,
+    workspaces: workspaces || [],
+    error: workspaces === null ? 'workspace registry unavailable' : null,
+  }
+}
+
 function send(res, status, type, body) {
   res.writeHead(status, {
     'content-type': type,
@@ -228,6 +253,16 @@ export function handleVeyraHttp(runtime, req, res) {
     const path = url.pathname.replace(/\/+$/, '') || WEBUI_PATH
     if (path === WEBUI_PATH) {
       send(res, 200, 'text/html; charset=utf-8', graphPage())
+      return
+    }
+
+    // Read-only workspace discovery for the in-page switcher. Deliberately
+    // before the cwd gate: a page opened without authoritative context must
+    // still be able to list workspaces, and this path reads registry metadata
+    // only — never a room store, so it cannot leak record data.
+    if (path === `${WEBUI_PATH}/workspaces`) {
+      const server = runtime?.memoryServer
+      sendJson(res, 200, buildWorkspacesPayload({ resolver: server?.resolver }))
       return
     }
 
@@ -315,517 +350,1431 @@ export function graphPage() {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>Veyra Network Graph</title>
-<style>
-:root{--bg:#020617;--panel:#0B0F19;--ink:#F8FAFC;--muted:#64748B;--line:#1E293B;--sel:#F59E0B;--trust:#10B981;--inspect:#8B5CF6;--contra:#EF4444;--hist:#475569}
-*{box-sizing:border-box}
-html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:13px/1.4 ui-sans-serif,system-ui,sans-serif}
-#app{display:grid;grid-template-rows:auto 1fr;height:100%}
-header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
-header h1{font-size:14px;margin:0 8px 0 0}
-header input[type=search]{flex:1;min-width:160px;background:#030712;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:6px 8px}
-header button,header select,header label{background:#030712;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:5px 8px}
-header label{display:flex;gap:4px;align-items:center;font-size:12px;color:var(--muted)}
-main{display:grid;grid-template-columns:1fr 320px;min-height:0}
-@media(max-width:800px){main{grid-template-columns:1fr}}
-#canvas-wrap{position:relative;min-height:0;border-right:1px solid var(--line)}
-svg{width:100%;height:100%;display:block;background:#020617;touch-action:none}
-#status{position:absolute;left:10px;top:10px;color:var(--muted);background:#0B0F19cc;padding:4px 8px;border-radius:4px;max-width:70%}
-#legend{position:absolute;left:10px;bottom:10px;color:var(--muted);background:#0B0F19cc;padding:6px 8px;border-radius:4px;font-size:11px}
-#loading{position:absolute;inset:0;display:flex;gap:10px;align-items:center;justify-content:center;background:#020617cc;color:var(--ink);z-index:5}
+<style>*,*::before,*::after{box-sizing:border-box}
+:root{
+  --bg:#000003;--bg2:#0b0b10;--ink:#edeef0;--ink2:rgba(176,180,186,.8);--dim:rgba(140,146,156,.55);
+  --line:rgba(255,255,255,.08);--glass:rgba(17,17,19,.72);
+  --canonical:#ffc53d;--derived:#3de1f0;--candidate:#9b8cff;--ok:#3ddc97;--bad:#ff7a8a;
+  --ease:cubic-bezier(.4,0,.2,1)
+}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
+  font:400 13px/20px ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,sans-serif;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+kbd{font:600 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;padding:3px 5px;border-radius:5px;
+  border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--ink2)}
+#scene{position:fixed;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:none}
+#scene.dragging{cursor:grabbing}
+#veil{position:fixed;inset:0;pointer-events:none;z-index:1;
+  background:radial-gradient(130% 95% at 50% 44%,rgba(0,0,0,0) 30%,rgba(0,0,0,.42) 74%,rgba(0,0,0,.8) 100%)}
+.glass{background:var(--glass);backdrop-filter:blur(16px) saturate(1.4);-webkit-backdrop-filter:blur(16px) saturate(1.4);
+  border:1px solid var(--line);border-radius:12px;
+  box-shadow:0 8px 32px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.06)}
+#hud{position:fixed;top:16px;left:16px;right:16px;z-index:6;display:flex;gap:10px;align-items:flex-start;pointer-events:none}
+#hud>*{pointer-events:auto}
+#wsChip{display:flex;align-items:center;gap:10px;height:44px;padding:0 12px;max-width:400px;
+  transition:border-color 150ms var(--ease),background 150ms var(--ease)}
+#wsChip:hover{border-color:rgba(255,255,255,.18);background:rgba(23,23,26,.82)}
+#wsChip .dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--derived);box-shadow:0 0 12px currentColor}
+#wsChip .dot.canonical{background:var(--canonical);color:var(--canonical)}
+#wsChip .dot.derived{background:var(--derived);color:var(--derived)}
+#wsChip .dot.candidate{background:var(--candidate);color:var(--candidate)}
+#wsChip .dot.none{background:var(--dim);box-shadow:none}
+#wsChip .txt{min-width:0;display:flex;flex-direction:column;gap:1px}
+#wsChip .nm{font:600 13px/16px inherit;letter-spacing:.005em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+#wsChip .pt{font:500 10.5px/13px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--dim);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
+#wsChip .cv{flex:none;color:var(--dim);font-size:9px;margin-left:2px}
+#omni{flex:1;max-width:460px;height:44px;display:flex;align-items:center;gap:9px;padding:0 12px;cursor:text;
+  transition:border-color 150ms var(--ease)}
+#omni:hover{border-color:rgba(255,255,255,.16)}
+#omni svg{flex:none;width:13px;height:13px;opacity:.6}
+#omni .ph{flex:1;font:500 12.5px/16px inherit;color:var(--dim);white-space:nowrap;overflow:hidden}
+#stat{display:flex;height:44px;align-items:stretch;margin-left:auto;overflow:hidden}
+#stat .cell{padding:0 13px;display:flex;flex-direction:column;justify-content:center;gap:1px;border-left:1px solid rgba(255,255,255,.07)}
+#stat .cell:first-child{border-left:0}
+#stat b{font:600 13.5px/17px inherit;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+#stat span{font:500 9px/11px inherit;letter-spacing:.1em;text-transform:uppercase;color:rgba(176,180,186,.55)}
+#legend{position:fixed;left:16px;bottom:16px;z-index:6;padding:9px 12px;display:flex;flex-direction:column;gap:7px}
+#legend .row{display:flex;align-items:center;gap:14px}
+#legend .it{display:flex;align-items:center;gap:6px;font:500 11px/14px inherit;color:var(--ink2)}
+#legend .sw{width:8px;height:8px;border-radius:50%;box-shadow:0 0 8px currentColor}
+#legend .sw.canonical{background:var(--canonical);color:var(--canonical);border-radius:2px;transform:rotate(45deg)}
+#legend .sw.derived{background:var(--derived);color:var(--derived)}
+#legend .sw.candidate{background:var(--candidate);color:var(--candidate)}
+#legend .honest{font:500 10px/14px inherit;letter-spacing:.01em;color:rgba(140,146,156,.6)}
+#tools{position:fixed;right:16px;bottom:16px;z-index:6;display:flex;gap:8px}
+#tools button{width:38px;height:38px;display:grid;place-items:center;border-radius:11px;color:var(--ink2);
+  background:var(--glass);backdrop-filter:blur(16px) saturate(1.4);-webkit-backdrop-filter:blur(16px) saturate(1.4);
+  border:1px solid var(--line);box-shadow:0 8px 32px rgba(0,0,0,.5);transition:color 150ms var(--ease),border-color 150ms var(--ease),background 150ms var(--ease)}
+#tools button:hover{color:var(--ink);border-color:rgba(255,255,255,.2);background:rgba(28,28,32,.85)}
+#tools button[aria-pressed="true"]{color:#0b0b10;background:rgba(61,225,240,.9);border-color:transparent}
+#tools button.wide{width:auto;padding:0 11px;font:600 11px/1 inherit;letter-spacing:.02em}
+#tools svg{width:15px;height:15px}
+#insp{position:fixed;top:16px;right:16px;bottom:16px;width:352px;z-index:7;display:flex;flex-direction:column;
+  transform:translateX(calc(100% + 24px));opacity:0;transition:transform 220ms var(--ease),opacity 220ms var(--ease);
+  background:rgba(13,13,16,.88);backdrop-filter:blur(28px) saturate(1.3);-webkit-backdrop-filter:blur(28px) saturate(1.3);
+  border:1px solid var(--line);border-radius:14px;box-shadow:0 16px 60px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.05)}
+#insp.show{transform:none;opacity:1}
+#insp .hd{padding:16px 16px 10px;display:flex;gap:10px;align-items:flex-start}
+#insp .hd h2{margin:0;font:600 15px/21px inherit;letter-spacing:-.005em;flex:1;word-break:break-word}
+#insp .x{flex:none;width:24px;height:24px;border-radius:7px;display:grid;place-items:center;color:var(--dim);font-size:13px}
+#insp .x:hover{background:rgba(255,255,255,.07);color:var(--ink)}
+#insp .chips{padding:0 16px 12px;display:flex;flex-wrap:wrap;gap:5px}
+.chip{font:600 10px/1 inherit;letter-spacing:.04em;text-transform:uppercase;padding:4px 7px;border-radius:6px;
+  border:1px solid rgba(255,255,255,.1);color:var(--ink2);background:rgba(255,255,255,.03)}
+.chip.canonical{color:#1a1405;background:var(--canonical);border-color:transparent}
+.chip.derived{color:#02181b;background:var(--derived);border-color:transparent}
+.chip.candidate{color:#0b0820;background:var(--candidate);border-color:transparent}
+.chip.ok{color:#02150e;background:var(--ok);border-color:transparent}
+.chip.warn{color:#1a060a;background:var(--bad);border-color:transparent}
+#insp .body{flex:1;overflow:auto;padding:0 16px 16px;overscroll-behavior:contain}
+#insp .body::-webkit-scrollbar{width:8px}
+#insp .body::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:8px}
+#insp .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0 0 14px;font:500 11.5px/16px inherit}
+#insp .kv dt{color:var(--dim);letter-spacing:.02em}
+#insp .kv dd{margin:0;color:var(--ink2);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;
+  word-break:break-all}
+#insp .prose{margin:0 0 14px;font:400 12.5px/20px inherit;color:rgba(224,228,236,.9);white-space:pre-wrap;word-break:break-word}
+#insp h3{margin:16px 0 8px;font:600 9.5px/12px inherit;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+#insp .warn{margin:0 0 14px;padding:9px 11px;border-radius:9px;font:500 11.5px/17px inherit;color:#ffd7dc;
+  background:rgba(255,122,138,.09);border:1px solid rgba(255,122,138,.28)}
+#insp ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:5px}
+#insp li{font:500 11px/16px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink2);
+  padding:6px 8px;border-radius:7px;background:rgba(255,255,255,.03);word-break:break-all}
+#insp .ft{padding:12px 16px;border-top:1px solid rgba(255,255,255,.07);display:flex;gap:8px}
+#insp .ft button{flex:1;height:32px;border-radius:8px;font:600 11.5px/1 inherit;letter-spacing:.02em;
+  border:1px solid var(--line);color:var(--ink2);transition:all 150ms var(--ease)}
+#insp .ft button:hover{color:var(--ink);border-color:rgba(255,255,255,.22);background:rgba(255,255,255,.05)}
+#insp .ft button.pri{background:rgba(61,225,240,.14);border-color:rgba(61,225,240,.4);color:#b8f6ff}
+#insp .ft button.pri:hover{background:rgba(61,225,240,.22)}
+#pal{position:fixed;inset:0;z-index:9;display:none;place-items:start center;padding-top:14vh;
+  background:rgba(0,0,3,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+#pal.show{display:grid}
+#palBox{width:min(620px,92vw);max-height:64vh;display:flex;flex-direction:column;overflow:hidden;
+  background:rgba(15,15,18,.94);backdrop-filter:blur(32px) saturate(1.3);-webkit-backdrop-filter:blur(32px) saturate(1.3);
+  border:1px solid rgba(255,255,255,.1);border-radius:14px;box-shadow:0 28px 90px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.06)}
+#palTop{display:flex;align-items:center;gap:10px;padding:0 14px;height:50px;border-bottom:1px solid rgba(255,255,255,.07)}
+#palTop svg{width:14px;height:14px;opacity:.55;flex:none}
+#palIn{flex:1;background:none;border:0;outline:0;font:500 14px/20px inherit;color:var(--ink)}
+#palIn::placeholder{color:rgba(140,146,156,.7)}
+#palList{overflow:auto;padding:6px;display:flex;flex-direction:column;gap:1px}
+#palList::-webkit-scrollbar{width:8px}
+#palList::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:8px}
+#palList .grp{display:flex;align-items:center;gap:8px;padding:9px 8px 5px;font:600 9px/12px inherit;
+  letter-spacing:.14em;text-transform:uppercase;color:rgba(140,146,156,.65)}
+#palList .grp::after{content:"";flex:1;height:1px;background:rgba(255,255,255,.07)}
+#palList .pi{display:flex;align-items:center;gap:10px;padding:8px 9px;border-radius:8px;cursor:pointer;text-align:left;width:100%}
+#palList .pi[aria-selected="true"]{background:rgba(255,255,255,.08)}
+#palList .pi .ic{flex:none;width:16px;height:16px;border-radius:5px;display:grid;place-items:center;
+  font:600 9px/1 ui-monospace,monospace;color:#06070c}
+#palList .pi .tt{flex:1;min-width:0;font:500 12.5px/17px inherit;color:var(--ink);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#palList .pi .mt{flex:none;font:500 10px/14px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--dim);
+  max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#palList .pi .tag{flex:none;font:600 9px/1 inherit;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  border:1px solid var(--line);padding:3px 5px;border-radius:5px}
+#palList .empty{padding:22px 10px;text-align:center;font:500 12px/18px inherit;color:var(--dim)}
+#palFt{display:flex;align-items:center;gap:12px;padding:0 14px;height:38px;border-top:1px solid rgba(255,255,255,.07);
+  font:500 10px/14px inherit;color:var(--dim)}
+#palFt .sp{flex:1}
+#tip{position:fixed;z-index:8;pointer-events:none;max-width:320px;padding:8px 10px;border-radius:9px;
+  background:rgba(10,10,13,.94);border:1px solid rgba(255,255,255,.12);box-shadow:0 10px 34px rgba(0,0,0,.7)}
+#tip .t{font:600 12px/16px inherit;margin-bottom:3px;word-break:break-word}
+#tip .m{font:500 10.5px/15px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink2)}
+#loading{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:7;display:flex;align-items:center;gap:10px;
+  padding:10px 16px;border-radius:11px;font:500 12px/16px inherit;color:var(--ink2)}
 #loading[hidden]{display:none}
-.spin{width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--sel);border-radius:50%;animation:spin .8s linear infinite}
+#loading .spin{width:13px;height:13px;border-radius:50%;border:1.5px solid rgba(255,255,255,.18);
+  border-top-color:var(--derived);animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-#tip{position:absolute;pointer-events:none;max-width:280px;background:#0B0F19f2;border:1px solid var(--line);border-radius:4px;padding:6px 8px;font-size:11px;white-space:pre-line;z-index:6}
-#tip[hidden]{display:none}
-aside{overflow:auto;padding:12px;background:var(--panel)}
-aside h2{font-size:14px;margin:0 0 8px}
-aside .meta{color:var(--muted);font-size:12px}
-aside .body{white-space:pre-wrap;margin:8px 0;padding:8px;background:#030712;border-radius:4px}
-aside .warn{color:var(--contra)}
-aside .actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-aside .actions button{background:#030712;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:5px 8px;cursor:pointer}
-.badge{display:inline-block;border:1px solid var(--line);border-radius:3px;padding:1px 5px;margin:0 4px 4px 0;font-size:11px}
-#hits{list-style:none;margin:8px 0 0;padding:0}
-#hits button{width:100%;text-align:left;background:#030712;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:6px;margin-bottom:6px;cursor:pointer}
-.node.selected .ring{stroke:var(--sel);stroke-width:3}
-.node.hover .shape{stroke:var(--sel);stroke-width:2.5}
-.node.hover .ring{stroke:#f59e0b88}
-.node.inspect .shape{fill:none;stroke-dasharray:4 3}
-.node.historical{opacity:.55}
-.node.forgotten .shape{stroke-dasharray:2 3}
-.edge.contradicts{stroke:var(--contra);stroke-dasharray:6 4}
-.edge.hl{stroke:var(--sel);stroke-width:2}
-.edge-label{fill:var(--muted);font-size:10px}
+#msg{position:fixed;inset:0;z-index:8;display:none;place-items:center;padding:24px;
+  background:radial-gradient(90% 70% at 50% 50%,rgba(0,0,3,.55),rgba(0,0,3,.86))}
+#msg.show{display:grid}
+#msg .card{width:min(520px,94vw);padding:22px 24px 20px;background:rgba(13,13,16,.92);
+  backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid var(--line);border-radius:16px;
+  box-shadow:0 24px 80px rgba(0,0,0,.75)}
+#msg h2{margin:0 0 8px;font:600 16px/22px inherit;letter-spacing:-.005em}
+#msg p{margin:0 0 10px;font:500 12px/19px inherit;color:var(--ink2)}
+#msg p.fine{font:500 10.5px/16px inherit;color:var(--dim)}
+#msg .row{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0 0}
+#msg .row button{height:32px;padding:0 12px;border-radius:8px;font:600 11.5px/1 inherit;letter-spacing:.02em;
+  border:1px solid var(--line);color:var(--ink2);transition:all 150ms var(--ease)}
+#msg .row button:hover{color:var(--ink);border-color:rgba(255,255,255,.22);background:rgba(255,255,255,.05)}
+#msg .row button.pri{background:rgba(61,225,240,.16);border-color:rgba(61,225,240,.42);color:#b8f6ff}
+#toast{position:fixed;left:50%;bottom:76px;transform:translate(-50%,10px);z-index:8;padding:8px 14px;border-radius:10px;
+  font:600 11.5px/16px inherit;color:var(--ink);background:rgba(20,20,24,.94);border:1px solid var(--line);
+  box-shadow:0 12px 40px rgba(0,0,0,.7);opacity:0;pointer-events:none;transition:opacity 180ms var(--ease),transform 180ms var(--ease)}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#a11y{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (max-width:860px){
+  #omni{display:none}#stat .cell:nth-child(n+3){display:none}
+  #wsChip .pt{display:none}#insp{width:min(352px,92vw)}
+  #legend .honest{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important;transition-duration:.01ms !important}
+}
+
+/* ---- workspace switcher panel ---- */
+#wsPanel{position:fixed;z-index:38;top:56px;left:16px;width:340px;max-height:min(60vh,440px);
+  display:none;flex-direction:column;padding:6px;overflow:hidden;
+  background:rgba(14,14,17,.86);backdrop-filter:blur(20px) saturate(1.5);-webkit-backdrop-filter:blur(20px) saturate(1.5);
+  border:1px solid rgba(255,255,255,.09);border-radius:14px;
+  box-shadow:0 16px 48px rgba(0,0,0,.65),inset 0 1px 0 rgba(255,255,255,.07);
+  transform:translateY(-6px) scale(.985);opacity:0;transform-origin:top left;
+  transition:opacity 140ms var(--ease),transform 140ms var(--ease)}
+#wsPanel.show{display:flex;opacity:1;transform:none}
+#wsPanel .phead{display:flex;align-items:center;justify-content:space-between;
+  padding:6px 8px 8px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+#wsPanel .phead kbd{font:600 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--dim);
+  padding:3px 5px;border:1px solid var(--line);border-radius:4px;background:rgba(255,255,255,.03)}
+#wsList{overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:2px;padding:0 2px 2px}
+.wsi{display:grid;grid-template-columns:26px 1fr auto;align-items:center;gap:9px;width:100%;
+  padding:7px 8px;border:0;border-radius:9px;background:transparent;color:inherit;
+  text-align:left;cursor:pointer;font:inherit;transition:background 120ms var(--ease)}
+.wsi:hover,.wsi:focus-visible{background:rgba(255,255,255,.055);outline:none}
+.wsi.on{background:rgba(61,225,240,.10);box-shadow:inset 0 0 0 1px rgba(61,225,240,.22)}
+.wsi .tile{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;
+  font-size:10px;font-weight:700;letter-spacing:.02em;color:#0a0c11;text-transform:uppercase}
+.wsi .tile.canonical{background:linear-gradient(160deg,#ffd97a,#ffc53d)}
+.wsi .tile.derived{background:linear-gradient(160deg,#7ceef8,#3de1f0)}
+.wsi .tile.candidate{background:linear-gradient(160deg,#b9aaff,#9b8cff)}
+.wsi .meta{min-width:0;display:flex;flex-direction:column;gap:1px}
+.wsi .nm{font-size:13px;line-height:18px;font-weight:600;letter-spacing:.005em;color:#edeef0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wsi .pt{font:500 10px/14px ui-monospace,SFMono-Regular,Menlo,monospace;color:rgba(140,146,156,.72);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;text-align:left}
+.wsi .cur{font-size:9px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:#3de1f0;padding:2px 5px;border-radius:4px;background:rgba(61,225,240,.13)}
+#wsPanel .empty{padding:14px 10px;font-size:12px;line-height:17px;color:var(--dim);text-align:center}
+#wsPanel .pfoot{padding:8px 8px 4px;margin-top:2px;border-top:1px solid rgba(255,255,255,.06);
+  font-size:11px;line-height:15px;color:rgba(140,146,156,.62)}
+@media (max-width:860px){#wsPanel{left:10px;right:10px;width:auto}}
 </style>
 </head>
 <body>
-<div id="app">
-<header>
-<h1>Veyra Network Graph</h1>
-<form id="search-form"><input id="q" type="search" placeholder="Search → record → local graph"></form>
-<label>hops <select id="hops"><option value="1" selected>1</option><option value="2">2</option></select></label>
-<label><input id="trusted" type="checkbox"> trusted only</label>
-<label><input id="hide-hist" type="checkbox"> hide historical</label>
-<button type="button" id="overview">workspace overview</button>
-<button type="button" id="fit">reset view</button>
-</header>
-<main>
-<div id="canvas-wrap">
-<div id="status">Loading workspace overview…</div>
-<svg id="g" viewBox="0 0 960 640">
-<defs>
-<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#8b95a8"/></marker>
-<marker id="arrow-contra" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#e74c3c"/></marker>
-</defs>
-<g id="world"></g>
-</svg>
-<div id="loading" hidden><div class="spin"></div><span>Loading graph data…</span></div>
-<div id="tip" hidden></div>
-<div id="legend">
-◆ canonical · ● derived · ■ candidate<br>
-solid = trusted · hollow = inspect-only · faded = historical<br>
-edges: labeled + directed · contradicts = dashed red ≠<br>
-Visible ≠ trusted · Connected ≠ recall-eligible
+<canvas id="scene" aria-label="3D network graph of Veyra records"></canvas>
+<div id="veil"></div>
+
+<div id="hud">
+  <button type="button" id="wsChip" class="glass" aria-haspopup="dialog" aria-expanded="false" title="Switch workspace (Ctrl+O)">
+    <span class="dot" id="wsDot"></span>
+    <span class="txt"><span class="nm" id="wsName">Workspace</span><span class="pt" id="wsPath"></span></span>
+    <span class="cv" aria-hidden="true">⌄</span>
+  </button>
+  <div id="omni" class="glass" role="button" tabindex="0" title="Search records and workspaces (Ctrl+K)">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="7" cy="7" r="4.6"/><path d="M10.5 10.5 14 14" stroke-linecap="round"/></svg>
+    <span class="ph">Search records, or switch workspace…</span>
+    <kbd id="omniKbd">Ctrl K</kbd>
+  </div>
+  <div id="stat" class="glass">
+    <div class="cell"><b id="sNodes">0</b><span>nodes</span></div>
+    <div class="cell"><b id="sEdges">0</b><span>edges</span></div>
+    <div class="cell"><b id="sCanon">0</b><span>canonical</span></div>
+    <div class="cell"><b id="sTrust">0</b><span>trusted</span></div>
+  </div>
 </div>
+
+<div id="wsPanel" aria-hidden="true">
+  <div class="phead"><span>Workspaces</span><kbd>Ctrl O</kbd></div>
+  <div id="wsList" role="listbox" aria-label="Workspaces"></div>
+  <div class="pfoot">Each workspace has its own memory. Switching re-reads this graph from that workspace's store.</div>
 </div>
-<aside id="panel"><p class="meta">Loading… Graph is a projection over SQLite memory rows.</p></aside>
-</main>
+
+<div id="legend" class="glass">
+  <div class="row">
+    <span class="it"><span class="sw canonical"></span>canonical</span>
+    <span class="it"><span class="sw derived"></span>derived</span>
+    <span class="it"><span class="sw candidate"></span>candidate</span>
+  </div>
+  <div class="honest">Visible ≠ trusted · Connected ≠ recall-eligible</div>
 </div>
+
+<div id="tools">
+  <button type="button" id="orbit" aria-pressed="true" title="Auto-orbit (O)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="8" cy="8" rx="6.6" ry="3"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg></button>
+  <button type="button" id="labels" aria-pressed="true" title="Labels (L)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12.5 7 3.5M9 12.5 13 3.5M5 9h6" stroke-linecap="round"/></svg></button>
+  <button type="button" id="overview" class="wide" title="Workspace overview (Esc)">overview</button>
+  <button type="button" id="fitView" title="Reset camera (F)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 6V3.5H5M11 3.5h2.5V6M13.5 10v2.5H11M5 12.5H2.5V10" stroke-linecap="round"/><circle cx="8" cy="8" r="1.5"/></svg></button>
+</div>
+
+<aside id="insp" aria-label="Record inspector">
+  <div class="hd"><h2 id="insTitle"></h2><button type="button" class="x" id="insClose" title="Close (Esc)">✕</button></div>
+  <div class="chips" id="insChips"></div>
+  <div class="body" id="insBody"></div>
+  <div class="ft"><button type="button" class="pri" id="btnCenter">Center graph</button><button type="button" id="btnCopy">Copy id</button></div>
+</aside>
+
+<div id="pal" role="dialog" aria-modal="true" aria-label="Command palette">
+  <div id="palBox">
+    <div id="palTop">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="7" cy="7" r="4.6"/><path d="M10.5 10.5 14 14" stroke-linecap="round"/></svg>
+      <input id="palIn" type="text" spellcheck="false" autocomplete="off" placeholder="Search records, or type a workspace name…" aria-label="Search">
+    </div>
+    <div id="palList" role="listbox"></div>
+    <div id="palFt"><span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> close</span><span class="sp"></span><span id="palHint"></span></div>
+  </div>
+</div>
+
+<div id="tip" hidden><div class="t"></div><div class="m"></div></div>
+<div id="loading" hidden><div class="spin"></div><span id="loadText">Loading graph…</span></div>
+<div id="msg" role="alert"><div class="card"><h2 id="msgTitle"></h2><p id="msgBody"></p><p class="fine" id="msgFine"></p><div class="row" id="msgRow"></div></div></div>
+<div id="toast" role="status"></div>
+<div id="a11y" aria-live="polite"></div>
 <script>
-const $ = (id) => document.getElementById(id)
-const params = new URLSearchParams(location.search)
-const cwd = params.get('cwd') || ''
-let hops = params.get('hops') === '2' ? 2 : 1
-const state = {
-  graph: null, selected: params.get('id') || '',
-  vx: 0, vy: 0, scale: 1,
-  pos: new Map(), edgeEls: new Map(),
-  lastLoad: null, drag: null,
-}
-$('hops').value = String(hops)
+"use strict";
+/* Veyra Network Graph — scene, HUD and switcher.
+   One file, no dependencies. Reads only the documented /veyra JSON endpoints
+   and treats every payload as a projection: visible is not trusted, and
+   connected is not recall-eligible. */
 
-function api(path, extra={}) {
-  const u = new URL(path, location.origin)
-  if (cwd) u.searchParams.set('cwd', cwd)
-  for (const [k,v] of Object.entries(extra)) if (v != null && v !== '') u.searchParams.set(k, v)
-  return fetch(u).then(r => r.json())
+var $ = function (id) { return document.getElementById(id); };
+var params = new URLSearchParams(location.search);
+var state = {
+  cwd: params.get('cwd') || '',
+  view: 'overview',
+  graph: null,
+  selected: null,
+  rec: null,
+  workspaces: [],
+  registryState: null,
+  lastLoad: null,
+  loading: false,
+  orbit: true,
+  labels: true,
+  paletteOpen: false,
+  items: [],
+  index: 0,
+  query: '',
+  seq: 0,
+  hits: []
+};
+
+var AUTH_COLOR = { canonical: '#ffc53d', derived: '#3de1f0', candidate: '#9b8cff' };
+var AUTH_ORDER = ['canonical', 'derived', 'candidate'];
+var VAL_MARK = { verified: '✓', reviewed: '~', unverified: '?', stale: '⌛', invalid: '✕' };
+var EDGE_TYPES = { contradicts: '#ff7a8a', extends: '#3de1f0', supports: '#3ddc97', supersedes: '#ffc53d' };
+
+var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------------------------------------------------------------- transport */
+
+function api(path, extra) {
+  var q = new URLSearchParams();
+  q.set('cwd', state.cwd);
+  if (extra) Object.keys(extra).forEach(function (k) {
+    if (extra[k] !== undefined && extra[k] !== null && extra[k] !== '') q.set(k, extra[k]);
+  });
+  var seq = ++state.seq;
+  return fetch('/veyra' + path + '?' + q.toString(), { headers: { accept: 'application/json' } })
+    .then(function (r) { return r.json().catch(function () { return { ok: false, error: 'bad response (' + r.status + ')' }; }); })
+    .then(function (body) { body.__seq = seq; return body; });
 }
-function setStatus(t){ $('status').textContent = t }
-function setLoading(on){ $('loading').hidden = !on }
-function errMsg(e){ return (e && e.message) || String(e) }
-function shapeFor(n){
-  if (n.authority === 'canonical') return 'diamond'
-  if (n.authority === 'candidate') return 'square'
-  return 'circle'
+
+function errText(body) {
+  if (!body) return 'Request failed.';
+  if (body.code === 'WORKSPACE_CONTEXT_UNAVAILABLE') return 'WORKSPACE_CONTEXT_UNAVAILABLE';
+  return String(body.error || body.reason || 'Request failed.');
 }
-function valMark(v){
-  return ({verified:'✓', reviewed:'~', unverified:'?', stale:'⌛', invalid:'✕'})[v] || '?'
+
+/* ------------------------------------------------------------------- chrome */
+
+function say(text) { $('a11y').textContent = text; }
+
+function toast(text) {
+  var el = $('toast');
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(function () { el.classList.remove('show'); }, 2400);
 }
-function hopMap(graph){
-  const hops = new Map()
-  if (!graph.center) return hops
-  hops.set(graph.center.id, 0)
-  let frontier = [graph.center.id]
-  for (let d = 0; d < 2; d++) {
-    const next = []
-    for (const id of frontier) {
-      for (const e of graph.edges) {
-        const other = e.fromId === id ? e.targetId : e.targetId === id ? e.fromId : null
-        if (other && !hops.has(other)) { hops.set(other, d+1); next.push(other) }
+
+function setLoading(on, text) {
+  state.loading = !!on;
+  var el = $('loading');
+  if (on) { if (text) $('loadText').textContent = text; el.hidden = false; }
+  else el.hidden = true;
+}
+
+function hideMsg() { $('msg').classList.remove('show'); }
+
+function showMsg(title, body, fine, actions) {
+  $('msgTitle').textContent = title;
+  $('msgBody').textContent = body || '';
+  $('msgFine').textContent = fine || '';
+  var row = $('msgRow');
+  row.textContent = '';
+  (actions || []).forEach(function (a) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = a.label;
+    if (a.primary) b.className = 'pri';
+    b.onclick = a.run;
+    row.appendChild(b);
+  });
+  $('msg').classList.add('show');
+}
+
+function showUnavailable() {
+  stop();
+  clearScene();
+  setLoading(false);
+  showMsg(
+    'Workspace context unavailable',
+    'This page needs an authoritative workspace. ' + 'WORKSPACE_CONTEXT_UNAVAILABLE',
+    'Veyra never falls back to the plugin startup directory and never uses sessionId as workspace proof.',
+    [{ label: 'Retry', primary: true, run: function () { hideMsg(); loadOverview(); } }]
+  );
+  $('omni').classList.remove('on');
+}
+
+function showError(text) {
+  setLoading(false);
+  showMsg('Could not load the graph', text, 'Nothing was changed. The graph is a read-only projection.', [
+    { label: 'Retry', primary: true, run: function () { hideMsg(); reload(); } }
+  ]);
+}
+
+/* --------------------------------------------------------------- workspace */
+
+function hueOf(id) {
+  var h = 0;
+  for (var i = 0; i < (id || '').length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return AUTH_ORDER[h % 3];
+}
+
+function wsFor(cwd) {
+  var p = String(cwd || '').replace(/\\/+$/, '');
+  for (var i = 0; i < state.workspaces.length; i++) {
+    if (String(state.workspaces[i].path).replace(/\\/+$/, '') === p) return state.workspaces[i];
+  }
+  return null;
+}
+
+function paintChip() {
+  var ws = wsFor(state.cwd);
+  var name = ws && ws.title ? ws.title : (state.cwd ? state.cwd.split('/').filter(Boolean).pop() : 'No workspace');
+  $('wsName').textContent = name;
+  $('wsPath').textContent = state.cwd || 'no cwd context';
+  var dot = $('wsDot');
+  dot.className = 'dot ' + (ws ? hueOf(ws.id) : 'none');
+  document.title = 'Veyra Network Graph · ' + name;
+}
+
+function loadWorkspaces() {
+  return fetch('/veyra/workspaces', { headers: { accept: 'application/json' } })
+    .then(function (r) { return r.json(); })
+    .then(function (body) {
+      state.registryState = body.registryState || null;
+      state.workspaces = Array.isArray(body.workspaces) ? body.workspaces : [];
+      paintChip();
+      return state.workspaces;
+    })
+    .catch(function () { state.workspaces = []; paintChip(); });
+}
+
+function switchWorkspace(ws) {
+  if (!ws || !ws.path) return;
+  if (ws.path === state.cwd) { closePalette(); return; }
+  state.cwd = ws.path;
+  state.selected = null;
+  state.rec = null;
+  closeInspector();
+  paintChip();
+  hideMsg();
+  closePalette();
+  loadOverview();
+  toast('Switched to ' + (ws.title || ws.path));
+}
+
+/* ----------------------------------------------------------------- canvas */
+
+var cv = $('scene');
+var ctx = cv.getContext('2d');
+var W = 0, H = 0, DPR = 1;
+var cam = { yaw: 0.52, pitch: -0.30, dist: 900, focal: 900, spin: 0 };
+var drag = { on: false, x: 0, y: 0, moved: 0 };
+var hover = null;
+var raf = 0, last = 0, idle = 0;
+var nodes = [], byId = new Map(), edges = [], stars = [], rings = [];
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = cv.clientWidth || window.innerWidth;
+  H = cv.clientHeight || window.innerHeight;
+  cv.width = Math.round(W * DPR);
+  cv.height = Math.round(H * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  seedStars();
+}
+
+function seedStars() {
+  stars = [];
+  var n = W < 700 ? 110 : 190;
+  for (var i = 0; i < n; i++) {
+    var th = Math.random() * Math.PI * 2;
+    var ph = Math.acos(2 * Math.random() - 1);
+    var r = 700 + Math.random() * 900;
+    stars.push({
+      x: r * Math.sin(ph) * Math.cos(th),
+      y: r * Math.cos(ph),
+      z: r * Math.sin(ph) * Math.sin(th),
+      a: 0.12 + Math.random() * 0.45,
+      s: 0.4 + Math.random() * 0.9
+    });
+  }
+}
+
+function project(p) {
+  var cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  var cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  var x1 = p.x * cy - p.z * sy;
+  var z1 = p.x * sy + p.z * cy;
+  var y1 = p.y * cp - z1 * sp;
+  var z2 = p.y * sp + z1 * cp;
+  var depth = cam.dist + z2;
+  if (depth < 60) return null;
+  var f = cam.focal / depth;
+  return { x: W / 2 + x1 * f, y: H / 2 + y1 * f, f: f, depth: depth, z: z2 };
+}
+
+/* ----------------------------------------------------------------- layout */
+
+var SHELL = { canonical: 0, derived: 1, candidate: 2 };
+var SHELL_R = [104, 232, 372];
+
+function hopMap() {
+  var map = new Map();
+  var g = state.graph;
+  if (!g || !g.center) return map;
+  var adj = new Map();
+  (g.edges || []).forEach(function (e) {
+    if (!adj.has(e.fromId)) adj.set(e.fromId, []);
+    if (!adj.has(e.targetId)) adj.set(e.targetId, []);
+    adj.get(e.fromId).push(e.targetId);
+    adj.get(e.targetId).push(e.fromId);
+  });
+  var start = g.center.id;
+  map.set(start, 0);
+  var q = [start];
+  while (q.length) {
+    var cur = q.shift();
+    var d = map.get(cur);
+    if (d >= 2) continue;
+    (adj.get(cur) || []).forEach(function (nb) {
+      if (!map.has(nb)) { map.set(nb, d + 1); q.push(nb); }
+    });
+  }
+  return map;
+}
+
+function seedPositions() {
+  var g = state.graph;
+  if (!g) return;
+  var local = state.view === 'local' && g.center;
+  var hops = local ? hopMap() : null;
+  var groups = { canonical: [], derived: [], candidate: [] };
+  (g.nodes || []).forEach(function (n) {
+    var a = AUTH_COLOR[n.authority] ? n.authority : 'candidate';
+    groups[a].push(n);
+  });
+
+  nodes = [];
+  groups.canonical.concat(groups.derived, groups.candidate);
+  nodes = (g.nodes || []).map(function (n) {
+    var a = AUTH_COLOR[n.authority] ? n.authority : 'candidate';
+    return {
+      id: n.id, title: n.title || n.id, kind: n.kind, authority: a,
+      validation: n.validation, status: n.status, trusted: !!n.trusted,
+      forgotten: !!n.forgotten, evidenceCount: n.evidenceCount || 0, mark: n.mark || null,
+      isCenter: local && g.center && g.center.id === n.id,
+      hop: hops && hops.has(n.id) ? hops.get(n.id) : 99,
+      x: 0, y: 0, z: 0, tx: 0, ty: 0, tz: 0,
+      vx: 0, vy: 0, vz: 0, r: 6, sx: 0, sy: 0, sf: 1, sd: 0, phase: Math.random() * 6.283
+    };
+  });
+  byId = new Map();
+  nodes.forEach(function (n) { byId.set(n.id, n); });
+
+  if (local) {
+    var ringR = [0, 168, 296];
+    var counts = {};
+    var centerNode = byId.get(g.center.id);
+    if (centerNode) { centerNode.tx = 0; centerNode.ty = 0; centerNode.tz = 0; }
+    nodes.forEach(function (n) {
+      if (n.isCenter) return;
+      var h = Math.min(n.hop, 2);
+      var k = counts[h] = (counts[h] || 0) + 1;
+      var total = h === 1 ? 8 : 16;
+      var ang = (k / total) * Math.PI * 2 + h * 0.6;
+      var r = ringR[h];
+      n.tx = Math.cos(ang) * r * (h === 1 ? 1 : 1.1);
+      n.ty = (h - 1) * 58 + Math.sin(ang * 1.7) * 26;
+      n.tz = Math.sin(ang) * r;
+    });
+  } else {
+    AUTH_ORDER.forEach(function (a) {
+      var list = groups[a];
+      var tilt = a === 'canonical' ? 0 : a === 'derived' ? 0.36 : -0.30;
+      var R = SHELL_R[SHELL[a]];
+      var ct = Math.cos(tilt), st = Math.sin(tilt);
+      list.forEach(function (n, i) {
+        var node = byId.get(n.id);
+        if (!node) return;
+        var t = list.length === 1 ? 0.5 : i / list.length;
+        var ph = Math.acos(1 - 2 * (t + 0.5 / Math.max(list.length, 1)));
+        var th = 2.399963229728653 * i;
+        var rr = R * (0.86 + 0.14 * ((i * 7 % 5) / 5));
+        var x = rr * Math.sin(ph) * Math.cos(th);
+        var y = rr * Math.cos(ph);
+        var z = rr * Math.sin(ph) * Math.sin(th);
+        node.tx = x;
+        node.ty = y * 0.62 * ct - z * st * 0.62;
+        node.tz = z * ct + y * 0.62 * st;
+      });
+    });
+  }
+
+  nodes.forEach(function (n) {
+    if (state.view === 'local' && n.hop === 99) { n.tx = 0; n.ty = 0; n.tz = 0; }
+    n.x = n.tx * 0.35 + (Math.random() - 0.5) * 60;
+    n.y = n.ty * 0.35 + (Math.random() - 0.5) * 60;
+    n.z = n.tz * 0.35 + (Math.random() - 0.5) * 60;
+    var deg = 0;
+    var base = 5.2 * Math.cbrt(1 + (n.evidenceCount || 0) * 1.1 + (n.isCenter ? 6 : 0));
+    n.r = Math.max(3.4, Math.min(15, base));
+    n.baseR = n.r;
+  });
+
+  edges = [];
+  (g.edges || []).forEach(function (e) {
+    var a = byId.get(e.fromId), b = byId.get(e.targetId);
+    if (!a || !b || a === b) return;
+    edges.push({ a: a, b: b, type: e.type || 'relates', id: e.id });
+  });
+
+  buildRings();
+}
+
+function buildRings() {
+  rings = [];
+  if (state.view === 'local') return;
+  AUTH_ORDER.forEach(function (a, gi) {
+    var tilt = gi === 0 ? 0 : gi === 1 ? 0.36 : -0.30;
+    rings.push({ R: SHELL_R[gi], tilt: tilt, color: AUTH_COLOR[a] });
+  });
+}
+
+/* ------------------------------------------------------------------ physics */
+
+function step(dt) {
+  var k = 1 - Math.pow(0.0009, dt / 1000);
+  var damp = Math.pow(0.86, dt / 16.67);
+  for (var i = 0; i < nodes.length; i++) {
+    var n = nodes[i];
+    if (n.isCenter) { n.x += (0 - n.x) * k; n.y += (0 - n.y) * k; n.z += (0 - n.z) * k; continue; }
+    n.vx += (n.tx - n.x) * 3.2 * (dt / 1000);
+    n.vy += (n.ty - n.y) * 3.2 * (dt / 1000);
+    n.vz += (n.tz - n.z) * 3.2 * (dt / 1000);
+    n.vx *= damp; n.vy *= damp; n.vz *= damp;
+    n.x += n.vx * (dt / 16.67);
+    n.y += n.vy * (dt / 16.67);
+    n.z += n.vz * (dt / 16.67);
+    n.y += Math.sin(performance.now() * 0.00042 + n.phase) * 0.10;
+    n.x += Math.cos(performance.now() * 0.00037 + n.phase) * 0.10;
+  }
+}
+
+/* -------------------------------------------------------------------- draw */
+
+function draw(now) {
+  ctx.clearRect(0, 0, W, H);
+  var bg = ctx.createRadialGradient(W * 0.5, H * 0.42, 0, W * 0.5, H * 0.5, Math.max(W, H) * 0.72);
+  bg.addColorStop(0, '#080b14');
+  bg.addColorStop(0.55, '#04060c');
+  bg.addColorStop(1, '#000003');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  drawStars();
+  if (!state.graph) return;
+  drawRings();
+
+  var proj = [];
+  for (var i = 0; i < nodes.length; i++) {
+    var n = nodes[i];
+    var q = project(n);
+    if (!q) { n.sd = -1; continue; }
+    n.sx = q.x; n.sy = q.y; n.sf = q.f; n.sd = q.depth;
+    proj.push(n);
+  }
+
+  var hi = hover || state.selected;
+  drawEdges(proj, hi, now);
+  proj.sort(function (a, b) { return b.sd - a.sd; });
+  for (var j = 0; j < proj.length; j++) drawNode(proj[j], proj[j] === hi, now);
+  if (hi) drawLabel(hi);
+}
+
+function drawStars() {
+  var cy = Math.cos(cam.yaw * 0.4), sy = Math.sin(cam.yaw * 0.4);
+  for (var i = 0; i < stars.length; i++) {
+    var s = stars[i];
+    var x1 = s.x * cy - s.z * sy;
+    var z1 = s.x * sy + s.z * cy;
+    var depth = cam.dist + z1;
+    if (depth < 60) continue;
+    var f = cam.focal / depth;
+    var px = W / 2 + x1 * f;
+    var py = H / 2 + s.y * f;
+    if (px < -20 || px > W + 20 || py < -20 || py > H + 20) continue;
+    ctx.globalAlpha = s.a * Math.min(1, 1200 / depth);
+    ctx.fillStyle = '#cdd7ea';
+    ctx.fillRect(px, py, s.s, s.s);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawRings() {
+  for (var r = 0; r < rings.length; r++) {
+    var ring = rings[r];
+    var tilt = ring.tilt, ct = Math.cos(tilt), st = Math.sin(tilt);
+    for (var t = 0; t < 3; t++) {
+      var roll = t * 0.9 + r * 0.4;
+      ctx.beginPath();
+      var started = false;
+      for (var a = 0; a <= 64; a++) {
+        var ang = (a / 64) * Math.PI * 2;
+        var x = Math.cos(ang) * ring.R;
+        var z = Math.sin(ang) * ring.R;
+        var y0 = 0;
+        var y = y0 * ct - z * st;
+        var zz = y0 * st + z * ct;
+        var cy2 = Math.cos(roll), sy2 = Math.sin(roll);
+        var x2 = x * cy2 - y * sy2;
+        var y2 = x * sy2 + y * cy2;
+        var q = project({ x: x2, y: y2, z: zz });
+        if (!q) { started = false; continue; }
+        if (!started) { ctx.moveTo(q.x, q.y); started = true; } else ctx.lineTo(q.x, q.y);
       }
+      ctx.strokeStyle = ring.color;
+      ctx.globalAlpha = 0.055 - t * 0.012;
+      ctx.lineWidth = 1;
+      ctx.stroke();
     }
-    frontier = next
   }
-  return hops
+  ctx.globalAlpha = 1;
 }
-function layout(graph){
-  const w=960,h=640,cx=480,cy=320
-  const hm = hopMap(graph)
-  const pos = new Map()
-  if (!graph.center) {
-    // Overview: deterministic concentric rings (≤14 per ring), then fitView scales to fit.
-    const list = graph.nodes
-    const per = 14
-    list.forEach((n,i) => {
-      const ring = Math.floor(i/per)
-      const idx = i % per
-      const count = Math.min(list.length - ring*per, per)
-      const r = 170 + ring*170
-      const a = (Math.PI*2*idx)/Math.max(count,1) - Math.PI/2
-      pos.set(n.id, {x: cx + Math.cos(a)*r, y: cy + Math.sin(a)*r})
-    })
-    return pos
-  }
-  const rings = {0:[],1:[],2:[]}
-  for (const n of graph.nodes) rings[Math.min(hm.get(n.id) ?? 1, 2)].push(n)
-  if (rings[0][0]) pos.set(rings[0][0].id, {x:cx,y:cy})
-  for (const hop of [1,2]) {
-    const list = rings[hop]
-    const r = hop === 1 ? 180 : 300
-    list.forEach((n,i) => {
-      const a = (Math.PI*2*i)/Math.max(list.length,1) - Math.PI/2
-      pos.set(n.id, {x:cx + Math.cos(a)*r, y:cy + Math.sin(a)*r})
-    })
-  }
-  return pos
-}
-function applyView(){
-  $('world').setAttribute('transform', 'translate('+state.vx+','+state.vy+') scale('+state.scale+')')
-}
-function animateView(targetVx, targetVy, targetScale, duration = 300) {
-  const startVx = state.vx, startVy = state.vy, startScale = state.scale
-  const startTime = performance.now()
-  function step(now) {
-    const elapsed = now - startTime
-    const t = Math.min(1, elapsed / duration)
-    const ease = 1 - Math.pow(1 - t, 3)
-    state.vx = startVx + (targetVx - startVx) * ease
-    state.vy = startVy + (targetVy - startVy) * ease
-    state.scale = startScale + (targetScale - startScale) * ease
-    applyView()
-    if (t < 1) requestAnimationFrame(step)
-  }
-  requestAnimationFrame(step)
-}
-// Client pixel → SVG viewBox coordinates (keeps pan/zoom correct under any container scale).
-function svgPt(ev){
-  const svg = $('g')
-  const m = svg.getScreenCTM && svg.getScreenCTM()
-  if (!m) return {x: ev.clientX, y: ev.clientY}
-  const p = svg.createSVGPoint()
-  p.x = ev.clientX; p.y = ev.clientY
-  const q = p.matrixTransform(m.inverse())
-  return {x: q.x, y: q.y}
-}
-function fitView(){
-  const pos = state.pos
-  if (!pos.size) { state.vx=0; state.vy=0; state.scale=1; applyView(); return }
-  let minx=Infinity, miny=Infinity, maxx=-Infinity, maxy=-Infinity
-  for (const p of pos.values()) {
-    if (p.x<minx) minx=p.x; if (p.x>maxx) maxx=p.x
-    if (p.y<miny) miny=p.y; if (p.y>maxy) maxy=p.y
-  }
-  const pad = 70
-  const bw = Math.max(maxx-minx, 1), bh = Math.max(maxy-miny, 1)
-  let s = Math.min((960-pad*2)/bw, (640-pad*2)/bh)
-  s = Math.max(0.15, Math.min(s, 2))
-  state.scale = s
-  state.vx = 480 - ((minx+maxx)/2)*s
-  state.vy = 320 - ((miny+maxy)/2)*s
-  applyView()
-}
-function visibleNodes(graph){
-  const trustedOnly = $('trusted').checked
-  const hideHist = $('hide-hist').checked
-  return graph.nodes.filter(n => {
-    if (trustedOnly && !n.trusted && n.id !== graph.center?.id) return false
-    if (hideHist && (n.forgotten || n.status !== 'current') && n.id !== graph.center?.id) return false
-    return true
-  })
-}
-function draw(){
-  const graph = state.graph
-  const world = $('world')
-  world.innerHTML = ''
-  state.pos = new Map()
-  state.edgeEls = new Map()
-  hideTip()
-  if (!graph || !graph.nodes || !graph.nodes.length) return
-  const keep = new Set(visibleNodes(graph).map(n => n.id))
-  const pos = layout(graph)
-  state.pos = pos
-  for (const e of graph.edges) {
-    if (!keep.has(e.fromId) || !keep.has(e.targetId)) continue
-    const a = pos.get(e.fromId), b = pos.get(e.targetId)
-    if (!a || !b) continue
-    const contra = e.type === 'contradicts'
-    const line = document.createElementNS('http://www.w3.org/2000/svg','line')
-    line.setAttribute('x1', a.x); line.setAttribute('y1', a.y)
-    line.setAttribute('x2', b.x); line.setAttribute('y2', b.y)
-    line.setAttribute('stroke', contra ? '#e74c3c' : '#8b95a8')
-    line.setAttribute('stroke-width', contra ? '2.2' : '1.4')
-    line.setAttribute('marker-end', contra ? 'url(#arrow-contra)' : 'url(#arrow)')
-    line.setAttribute('class', 'edge'+(contra?' contradicts':''))
-    world.appendChild(line)
-    state.edgeEls.set(e.id, { el: line, from: e.fromId, to: e.targetId })
-    const label = document.createElementNS('http://www.w3.org/2000/svg','text')
-    label.setAttribute('x', (a.x+b.x)/2); label.setAttribute('y', (a.y+b.y)/2 - 6)
-    label.setAttribute('class','edge-label')
-    label.setAttribute('text-anchor','middle')
-    label.textContent = contra ? '≠ '+e.type : e.type
-    world.appendChild(label)
-  }
-  for (const n of graph.nodes) {
-    if (!keep.has(n.id)) continue
-    const p = pos.get(n.id); if (!p) continue
-    const g = document.createElementNS('http://www.w3.org/2000/svg','g')
-    const cls = ['node']
-    if (n.id === state.selected) cls.push('selected')
-    if (!n.trusted) cls.push('inspect')
-    if (n.forgotten || n.status !== 'current') cls.push('historical')
-    if (n.forgotten) cls.push('forgotten')
-    g.setAttribute('class', cls.join(' '))
-    g.style.cursor = 'pointer'
-    const ring = document.createElementNS('http://www.w3.org/2000/svg','circle')
-    ring.setAttribute('class','ring')
-    ring.setAttribute('cx', p.x); ring.setAttribute('cy', p.y); ring.setAttribute('r', n.id===(graph.center&&graph.center.id)?28:22)
-    ring.setAttribute('fill','none'); ring.setAttribute('stroke', n.id===state.selected?'#f0c14b':'transparent')
-    g.appendChild(ring)
-    const shape = shapeFor(n)
-    const el = shape === 'square'
-      ? rect(p.x-12,p.y-12,24,24)
-      : shape === 'diamond' ? diamond(p.x,p.y,16) : circ(p.x,p.y,14)
-    el.setAttribute('class','shape')
-    el.setAttribute('fill', n.trusted ? (n.authority==='canonical'?'#f0c14b': n.kind==='knowledge'?'#5dade2':'#7dcea0') : 'none')
-    el.setAttribute('stroke', n.trusted ? '#e8edf5' : '#c39bd3')
-    el.setAttribute('stroke-width','2')
-    g.appendChild(el)
-    const badge = document.createElementNS('http://www.w3.org/2000/svg','text')
-    badge.setAttribute('x', p.x); badge.setAttribute('y', p.y+4)
-    badge.setAttribute('text-anchor','middle'); badge.setAttribute('font-size','10'); badge.setAttribute('fill', n.trusted?'#12141a':'#e8edf5')
-    badge.textContent = (n.kind||'?')[0].toUpperCase() + valMark(n.validation)
-    g.appendChild(badge)
-    const title = document.createElementNS('http://www.w3.org/2000/svg','text')
-    title.setAttribute('x', p.x); title.setAttribute('y', p.y+32)
-    title.setAttribute('text-anchor','middle'); title.setAttribute('fill','#e8edf5'); title.setAttribute('font-size','11')
-    title.textContent = (n.title||n.id).slice(0,28)
-    g.appendChild(title)
-    g.addEventListener('mouseenter', (ev) => hoverNode(g, n, ev, true))
-    g.addEventListener('mousemove', (ev) => moveTip(ev))
-    g.addEventListener('mouseleave', () => hoverNode(g, n, null, false))
-    g.addEventListener('click', (ev) => { ev.stopPropagation(); select(n.id) })
-    world.appendChild(g)
-  }
-}
-function hoverNode(g, n, ev, on){
-  g.classList.toggle('hover', on)
-  for (const rec of state.edgeEls.values()) {
-    if (rec.from === n.id || rec.to === n.id) rec.el.classList.toggle('hl', on)
-  }
-  if (on) showTip(n, ev); else hideTip()
-}
-function showTip(n, ev){
-  const tip = $('tip')
-  tip.textContent = (n.title || n.id) + '\\n' +
-    n.kind + ' · ' + n.authority + ' · ' + n.validation + ' · ' + (n.trusted ? 'trusted' : 'inspect-only') +
-    (n.forgotten ? ' · forgotten' : '') + '\\n' + n.id
-  tip.hidden = false
-  moveTip(ev)
-}
-function moveTip(ev){
-  if (!ev) return
-  const tip = $('tip')
-  if (tip.hidden) return
-  const wrap = $('canvas-wrap').getBoundingClientRect()
-  let x = ev.clientX - wrap.left + 14
-  let y = ev.clientY - wrap.top + 14
-  if (x + 290 > wrap.width) x = Math.max(4, wrap.width - 290)
-  if (y + 80 > wrap.height) y = Math.max(4, wrap.height - 80)
-  tip.style.left = x + 'px'
-  tip.style.top = y + 'px'
-}
-function hideTip(){ $('tip').hidden = true }
-function drawMessage(msg){
-  state.graph = null
-  state.pos = new Map()
-  state.edgeEls = new Map()
-  hideTip()
-  $('world').innerHTML = ''
-  state.vx = 0; state.vy = 0; state.scale = 1
-  applyView()
-  const t = document.createElementNS('http://www.w3.org/2000/svg','text')
-  t.setAttribute('x', 480); t.setAttribute('y', 320)
-  t.setAttribute('text-anchor','middle'); t.setAttribute('fill','#8b95a8'); t.setAttribute('font-size','16')
-  t.textContent = msg
-  $('world').appendChild(t)
-}
-function circ(x,y,r){ const e=document.createElementNS('http://www.w3.org/2000/svg','circle'); e.setAttribute('cx',x); e.setAttribute('cy',y); e.setAttribute('r',r); return e }
-function rect(x,y,w,h){ const e=document.createElementNS('http://www.w3.org/2000/svg','rect'); e.setAttribute('x',x); e.setAttribute('y',y); e.setAttribute('width',w); e.setAttribute('height',h); return e }
-function diamond(x,y,s){ const e=document.createElementNS('http://www.w3.org/2000/svg','polygon'); e.setAttribute('points', x+','+(y-s)+' '+(x+s)+','+y+' '+x+','+(y+s)+' '+(x-s)+','+y); return e }
 
-function unavailablePanel(msg, title){
-  const el = $('panel')
-  el.innerHTML = '<h2></h2><p class="meta" id="un-msg"></p><p class="meta">Network Graph requires authoritative workspace context (cwd) from the active DSH workspace. It never falls back to the plugin startup directory and never uses sessionId as workspace proof.</p>'
-  el.querySelector('h2').textContent = title || 'Workspace context unavailable'
-  el.querySelector('#un-msg').textContent = msg || 'Open the Network Graph from an active workspace session.'
-}
-function showError(msg, clear){
-  if (msg && typeof msg === 'object') {
-    if (msg.code === 'WORKSPACE_CONTEXT_UNAVAILABLE') {
-      drawMessage('Workspace context unavailable.')
-      setStatus('Unavailable · workspace context required')
-      unavailablePanel(msg.error)
-      return
+function drawEdges(proj, hi, now) {
+  for (var i = 0; i < edges.length; i++) {
+    var e = edges[i];
+    var a = e.a, b = e.b;
+    if (a.sd < 0 || b.sd < 0) continue;
+    var hot = hi && (a === hi || b === hi);
+    var contra = e.type === 'contradicts';
+    var p = Math.min(2, (a.sf + b.sf) / 2 * 620);
+    var alpha = hot ? 0.34 : 0.06 + 0.11 * p;
+    var mx = (a.sx + b.sx) / 2, my = (a.sy + b.sy) / 2;
+    var dx = b.sx - a.sx, dy = b.sy - a.sy;
+    var len = Math.hypot(dx, dy) || 1;
+    var bow = hot ? 28 : 16;
+    var cx = mx - (dy / len) * bow, cy = my + (dx / len) * bow;
+    ctx.beginPath();
+    ctx.moveTo(a.sx, a.sy);
+    ctx.quadraticCurveTo(cx, cy, b.sx, b.sy);
+    ctx.strokeStyle = contra ? EDGE_TYPES.contradicts : '#ffffff';
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = hot ? 1.4 : 1;
+    if (contra) ctx.setLineDash([5, 4]); else ctx.setLineDash([]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (hot || contra) {
+      var t = reduced ? 0.5 : ((now * 0.00028 + i * 0.17) % 1);
+      var px = (1 - t) * (1 - t) * a.sx + 2 * (1 - t) * t * cx + t * t * b.sx;
+      var py = (1 - t) * (1 - t) * a.sy + 2 * (1 - t) * t * cy + t * t * b.sy;
+      ctx.beginPath();
+      ctx.arc(px, py, hot ? 2.2 : 1.6, 0, 6.283);
+      ctx.fillStyle = contra ? EDGE_TYPES.contradicts : '#bff3ff';
+      ctx.globalAlpha = hot ? 0.95 : 0.5;
+      ctx.fill();
     }
-    msg = msg.error || msg.message || JSON.stringify(msg)
   }
-  if (clear !== false) drawMessage('Graph unavailable.')
-  setStatus('Error · ' + msg)
-  const el = $('panel')
-  el.innerHTML = '<h2>Error</h2><p class="warn" id="err-msg"></p><div class="actions" id="err-actions"></div>'
-  el.querySelector('#err-msg').textContent = msg
-  const mk = (label, fn) => {
-    const b = document.createElement('button')
-    b.type = 'button'; b.textContent = label
-    b.addEventListener('click', fn)
-    return b
-  }
-  const box = el.querySelector('#err-actions')
-  if (state.lastLoad && cwd) box.appendChild(mk('Retry', () => state.lastLoad()))
-  if (cwd) box.appendChild(mk('Workspace overview', loadOverview))
+  ctx.globalAlpha = 1;
 }
-function renderOverviewPanel(data, empty){
-  const el = $('panel')
-  if (empty) {
-    el.innerHTML = '<h2>Empty graph</h2><p class="meta">No Veyra records exist for this workspace yet. Nodes and edges appear here once Veyra observes, learns, or remembers something — the graph never uses hardcoded data.</p>'
-    return
+
+function drawNode(n, isHi, now) {
+  var col = AUTH_COLOR[n.authority];
+  var fade = Math.max(0.30, Math.min(1, 0.30 + (n.sf * 620) * 0.72));
+  var r = Math.max(2.6, Math.min(17, n.baseR * (0.72 + n.sf * 470 * 0.55)));
+  var pulse = n.isCenter ? 1 + Math.sin(now * 0.0016) * 0.06 : 1;
+  r *= pulse;
+  n.rr = r;
+
+  // halo
+  var g = ctx.createRadialGradient(n.sx, n.sy, 0, n.sx, n.sy, r * 5.4);
+  g.addColorStop(0, col);
+  g.addColorStop(0.22, col);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.globalAlpha = (isHi ? 0.5 : 0.30) * fade;
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(n.sx, n.sy, r * (isHi ? 6.2 : 5.0), 0, 6.283);
+  ctx.fill();
+
+  // orbit trace for the primary 3D cue
+  if (n.authority !== 'candidate' || isHi) {
+    ctx.beginPath();
+    ctx.ellipse(n.sx, n.sy, r * 2.05, r * 0.62, -0.38, 0, 6.283);
+    ctx.strokeStyle = col;
+    ctx.globalAlpha = (isHi ? 0.55 : 0.26) * fade;
+    ctx.lineWidth = 1;
+    ctx.stroke();
   }
-  el.innerHTML = '<h2>Workspace overview</h2><p class="meta" id="ov-meta"></p><p class="meta">Hover a node for a preview. Click it to open its record and center its Local Graph. Search narrows to a single record.</p>'
-  el.querySelector('#ov-meta').textContent =
-    data.nodes.length + ' records · ' + data.edges.length + ' relationships · ' +
-    data.unresolved.length + ' unresolved · project ' + (data.projectId || '(unknown)')
-}
-async function loadOverview(){
-  state.lastLoad = loadOverview
-  setLoading(true)
-  setStatus('Loading workspace overview…')
-  try {
-    const data = await api('/veyra/graph')
-    if (!data.ok) { showError(data.error || 'Overview failed'); return }
-    state.graph = data
-    state.selected = ''
-    const next = new URL(location.href)
-    next.searchParams.delete('id')
-    history.replaceState(null, '', next)
-    if (!data.nodes.length) {
-      drawMessage('No memories yet in this workspace.')
-      setStatus('Empty · 0 nodes · 0 edges · no records to graph')
-      renderOverviewPanel(data, true)
-      return
+
+  // body
+  ctx.globalAlpha = Math.max(0.42, 0.55 + (n.sf * 620) * 0.45);
+  var body = ctx.createRadialGradient(n.sx - r * 0.3, n.sy - r * 0.34, r * 0.1, n.sx, n.sy, r);
+  body.addColorStop(0, '#ffffff');
+  body.addColorStop(0.32, col);
+  body.addColorStop(1, col);
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  ctx.arc(n.sx, n.sy, r, 0, 6.283);
+  ctx.fill();
+
+  // rim: dashed when not recall-eligible
+  ctx.beginPath();
+  ctx.arc(n.sx, n.sy, r + 1.2, 0, 6.283);
+  ctx.strokeStyle = '#ffffff';
+  ctx.globalAlpha = (n.trusted ? 0.32 : 0.46) * fade;
+  ctx.lineWidth = 1;
+  if (!n.trusted) ctx.setLineDash([2.5, 2.5]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // canonical diamonds
+  if (n.authority === 'canonical') {
+    for (var s = 0; s < 4; s++) {
+      var ang = s * 1.5708 + 0.785;
+      var dd = r * 2.2;
+      ctx.beginPath();
+      ctx.moveTo(n.sx + Math.cos(ang) * dd, n.sy + Math.sin(ang) * dd);
+      ctx.lineTo(n.sx + Math.cos(ang + 0.34) * (dd + r * 0.5), n.sy + Math.sin(ang + 0.34) * (dd + r * 0.5));
+      ctx.lineTo(n.sx + Math.cos(ang + 0.68) * dd, n.sy + Math.sin(ang + 0.68) * dd);
+      ctx.closePath();
+      ctx.strokeStyle = col;
+      ctx.globalAlpha = 0.42 * fade;
+      ctx.stroke();
     }
-    setStatus('Overview · ' + data.nodes.length + ' nodes · ' + data.edges.length + ' edges · ' + data.unresolved.length + ' unresolved · ' + data.note)
-    draw()
-    fitView()
-    renderOverviewPanel(data, false)
-  } catch (err) {
-    showError('Overview request failed: ' + errMsg(err))
-  } finally {
-    setLoading(false)
   }
-}
-async function loadGraph(id){
-  if (!id) { loadOverview(); return }
-  state.lastLoad = () => loadGraph(id)
-  setLoading(true)
-  setStatus('Loading graph…')
-  try {
-    const data = await api('/veyra/graph', { id, hops })
-    if (!data.ok) { showError(data.error || 'Not found'); return }
-    state.graph = data
-    state.selected = data.center?.id || id
-    setStatus('Local Graph · hops '+data.hops+' · '+data.nodes.length+' nodes · '+data.edges.length+' edges · '+data.note)
-    const next = new URL(location.href)
-    next.searchParams.set('id', state.selected)
-    next.searchParams.set('hops', String(hops))
-    history.replaceState(null, '', next)
-    draw()
-    fitView()
-    select(state.selected, false)
-  } catch (err) {
-    showError('Graph request failed: ' + errMsg(err))
-  } finally {
-    setLoading(false)
+
+  // selection ring
+  if (state.selected === n.id) {
+    ctx.beginPath();
+    ctx.arc(n.sx, n.sy, r + 6 + Math.sin(now * 0.003) * 1.6, 0, 6.283);
+    ctx.strokeStyle = col;
+    ctx.globalAlpha = 0.75;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
   }
+  ctx.globalAlpha = 1;
 }
-async function select(id, reload=true){
-  state.selected = id
-  draw()
-  try {
-    const rec = await api('/veyra/record', { id })
-    renderPanel(rec)
-  } catch (err) {
-    renderPanel({ ok: false, error: 'Record request failed: ' + errMsg(err) })
+
+function drawLabel(n) {
+  var col = AUTH_COLOR[n.authority];
+  var r = n.rr || 6;
+  var tx = n.sx + r * 2.4 + 8;
+  var ty = n.sy + 4;
+  var text = String(n.title || n.id);
+  if (text.length > 34) text = text.slice(0, 33) + '…';
+  ctx.font = '600 12px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif';
+  var wdt = ctx.measureText(text).width;
+  if (tx + wdt > W - 16) tx = n.sx - r * 2.4 - 8 - wdt;
+  ctx.globalAlpha = 0.92;
+  ctx.fillStyle = 'rgba(6,9,16,.78)';
+  ctx.beginPath();
+  var bx = tx - 6, by = ty - 12, bw = wdt + 12, bh = 18;
+  ctx.roundRect ? ctx.roundRect(bx, by, bw, bh, 5) : ctx.rect(bx, by, bw, bh);
+  ctx.fill();
+  ctx.fillStyle = '#edeef0';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, tx, ty - 2);
+  ctx.fillStyle = col;
+  ctx.globalAlpha = 0.75;
+  ctx.font = '500 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+  var sub = String(n.authority || '') + ' · ' + String(n.validation || '') + (n.trusted ? ' · trusted' : ' · inspect');
+  ctx.fillText(sub, tx, ty + 12);
+  ctx.globalAlpha = 1;
+  ctx.textBaseline = 'alphabetic';
+}
+
+function pick(mx, my) {
+  var best = null, bestD = 1e9;
+  for (var i = 0; i < nodes.length; i++) {
+    var n = nodes[i];
+    if (n.sd < 0) continue;
+    var d = Math.hypot(n.sx - mx, n.sy - my);
+    var lim = Math.max((n.rr || 6) * 2.2, 14);
+    if (d < lim && d < bestD) { bestD = d; best = n; }
   }
-  if (reload && state.graph?.center?.id !== id) loadGraph(id)
+  return best;
 }
-function esc(s){ return String(s??'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])) }
-function renderPanel(rec){
-  const el = $('panel')
-  if (!rec || !rec.ok) { el.innerHTML = '<p class="warn">'+esc(rec?.error || 'No record')+'</p>'; return }
-  const r = rec.record
-  const ev = (r.evidence||[]).map(e => typeof e === 'string' ? e : [e.path,e.note,e.uri].filter(Boolean).join(' · ')).map(esc).join('<br>') || '(none)'
-  const rel = (r.relations||[]).map(x => esc(x.type+' → '+x.targetId)).join('<br>') || '(none)'
-  const inc = (rec.incoming||[]).map(x => esc(x.type+' ← '+x.fromId)).join('<br>') || '(none)'
-  const c = rec.causal
-  el.innerHTML = '<h2></h2><div class="meta"></div><div class="body"></div>'+
-    (rec.contradictions?.length ? '<p class="warn">Contradicts: '+esc(rec.contradictions.join(', '))+'. Both sides stay visible. Believe the repository.</p>' : '')+
-    '<p class="meta"><b>Evidence</b><br>'+ev+'</p>'+
-    '<p class="meta"><b>Relations</b><br>'+rel+'<br>'+inc+'</p>'+
-    (c ? '<p class="meta"><b>Causal</b><br>'+esc([c.symptom,c.rootCause,c.remedy,c.verifiedOutcome].filter(Boolean).join(' → '))+'</p>' : '')+
-    '<p class="meta">trusted='+r.trusted+' · inspect-only='+(!r.trusted)+' · /veyra observatory record '+esc(r.id)+'</p>'
-  el.querySelector('h2').textContent = r.title || r.id
-  el.querySelector('.meta').textContent = r.id+' · '+r.kind+'/'+r.authority+'/'+r.validation+'/'+r.status+(r.forgotten?' forgotten':'')
-  el.querySelector('.body').textContent = r.body || ''
+
+function loop(now) {
+  raf = requestAnimationFrame(loop);
+  var dt = Math.min(48, now - (last || now));
+  last = now;
+  if (!drag.on && state.orbit && !reduced) {
+    idle += dt;
+    if (idle > 700) cam.yaw += (dt / 1000) * 0.045;
+  }
+  step(dt);
+  draw(now);
 }
-$('search-form').addEventListener('submit', async (ev) => {
-  ev.preventDefault()
-  const q = $('q').value.trim()
-  if (!q) return
-  setStatus('Searching…')
-  setLoading(true)
-  try {
-    const data = await api('/veyra/search', { q })
-    const el = $('panel')
-    if (!data.hits.length) { el.innerHTML = '<p class="meta">No matches.</p>'; setStatus('No matches'); return }
-    el.innerHTML = '<h2>Search</h2><ul id="hits"></ul>'
-    for (const h of data.hits) {
-      const b = document.createElement('button')
-      b.type='button'
-      b.textContent = (h.trusted?'trusted':'inspect-only')+' · '+h.authority+'/'+h.validation+' · '+h.title
-      b.addEventListener('click', () => loadGraph(h.id))
-      $('hits').appendChild(b)
+
+function start() { if (!raf) { last = 0; raf = requestAnimationFrame(loop); } }
+function stop() { if (raf) { cancelAnimationFrame(raf); raf = 0; } }
+
+function clearScene() { nodes = []; edges = []; byId = new Map(); rings = []; draw(performance.now()); }
+
+/* ------------------------------------------------------------- interaction */
+
+cv.addEventListener('pointerdown', function (ev) {
+  drag.on = true; drag.x = ev.clientX; drag.y = ev.clientY; drag.moved = 0;
+  cv.classList.add('dragging');
+  cv.setPointerCapture && cv.setPointerCapture(ev.pointerId);
+  idle = 0;
+});
+cv.addEventListener('pointermove', function (ev) {
+  if (drag.on) {
+    var dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+    drag.x = ev.clientX; drag.y = ev.clientY;
+    drag.moved += Math.abs(dx) + Math.abs(dy);
+    cam.yaw += dx * 0.006;
+    cam.pitch = Math.max(-1.15, Math.min(1.15, cam.pitch + dy * 0.005));
+    return;
+  }
+  var rect = cv.getBoundingClientRect();
+  var hit = pick(ev.clientX - rect.left, ev.clientY - rect.top);
+  if (hit !== hover) {
+    hover = hit;
+    cv.style.cursor = hit ? 'pointer' : 'grab';
+    if (hit) showTip(hit, ev.clientX - rect.left, ev.clientY - rect.top);
+    else hideTip();
+  } else if (hit) {
+    moveTip(ev.clientX - rect.left, ev.clientY - rect.top);
+  }
+});
+cv.addEventListener('pointerup', function (ev) {
+  cv.classList.remove('dragging');
+  if (drag.on && drag.moved < 6) {
+    var rect = cv.getBoundingClientRect();
+    var hit = pick(ev.clientX - rect.left, ev.clientY - rect.top);
+    if (hit) selectRecord(hit.id);
+  }
+  drag.on = false;
+});
+cv.addEventListener('pointerleave', function () { drag.on = false; cv.classList.remove('dragging'); hover = null; hideTip(); });
+cv.addEventListener('wheel', function (ev) {
+  ev.preventDefault();
+  idle = 0;
+  cam.dist = Math.max(420, Math.min(2400, cam.dist + ev.deltaY * 0.75));
+}, { passive: false });
+
+/* --------------------------------------------------------------- tooltip */
+
+function showTip(n, x, y) {
+  var el = $('tip');
+  el.hidden = false;
+  el.querySelector('.t').textContent = n.title || n.id;
+  el.querySelector('.m').textContent =
+    String(n.authority) + ' · ' + String(n.validation || 'unknown') +
+    ' · ' + (n.trusted ? 'recall-eligible' : 'inspect only') +
+    (n.evidenceCount ? ' · ' + n.evidenceCount + ' evidence' : '');
+  moveTip(x, y);
+}
+
+function moveTip(x, y) {
+  var el = $('tip');
+  if (el.hidden) return;
+  var w = el.offsetWidth || 200, h = el.offsetHeight || 54;
+  var lx = x + 16, ly = y + 18;
+  if (lx + w > W - 8) lx = x - w - 16;
+  if (ly + h > H - 8) ly = y - h - 14;
+  el.style.transform = 'translate(' + Math.max(8, lx) + 'px,' + Math.max(8, ly) + 'px)';
+}
+
+function hideTip() { $('tip').hidden = true; }
+
+/* ------------------------------------------------------------- inspector */
+
+function authorityChip(n) {
+  var a = AUTH_COLOR[n.authority] ? n.authority : 'candidate';
+  return '<span class="chip auth-' + a + '">' + esc(a) + '</span>';
+}
+
+function esc(s) {
+  return String(s === undefined || s === null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function openInspector(id) {
+  var n = byId.get(id);
+  if (!n) return;
+  state.selected = id;
+  var el = $('insp');
+  $('insTitle').textContent = n.title || n.id;
+  var chips = [authorityChip(n)];
+  chips.push('<span class="chip">' + esc(n.validation || 'unknown') + '</span>');
+  chips.push('<span class="chip ' + (n.trusted ? 'ok' : 'warn') + '">' + (n.trusted ? 'recall-eligible' : 'inspect only') + '</span>');
+  if (n.forgotten) chips.push('<span class="chip warn">forgotten</span>');
+  $('insChips').innerHTML = chips.join('');
+  $('insBody').innerHTML =
+    '<dl class="kv">' +
+    '<dt>id</dt><dd class="mono">' + esc(n.id) + '</dd>' +
+    '<dt>kind</dt><dd>' + esc(n.kind || '—') + '</dd>' +
+    '<dt>status</dt><dd>' + esc(n.status || '—') + '</dd>' +
+    '<dt>confidence</dt><dd>' + esc(n.confidence || '—') + '</dd>' +
+    '<dt>evidence</dt><dd>' + esc(String(n.evidenceCount || 0)) + '</dd>' +
+    '</dl>' +
+    (n.trusted ? '' : '<p class="warn">Not recall-eligible. Visible in the projection, but no agent will recall it until its authority is promoted.</p>') +
+    '<p class="fine" id="insMore">Loading record…</p>';
+  el.classList.add('show');
+  say('Selected ' + (n.title || n.id));
+
+  api('/record', { id: id }).then(function (body) {
+    var more = $('insMore');
+    if (!more) return;
+    if (!body || !body.ok) { more.textContent = errText(body); return; }
+    var r = body.record || {};
+    var extra = '';
+    if (r.body) extra += '<h3>Statement</h3><div class="prose">' + esc(r.body).replace(/\\n/g, '<br>') + '</div>';
+    if (Array.isArray(r.evidence) && r.evidence.length) {
+      extra += '<h3>Evidence</h3><ul>' + r.evidence.slice(0, 8).map(function (ev) {
+        return '<li>' + esc(typeof ev === 'string' ? ev : (ev.ref || ev.path || ev.id || JSON.stringify(ev))) + '</li>';
+      }).join('') + '</ul>';
     }
-    setStatus(data.hits.length+' hit(s). Pick one for Local Graph.')
-  } catch (err) {
-    showError('Search request failed: ' + errMsg(err), false)
-  } finally {
-    setLoading(false)
+    if (Array.isArray(r.relations) && r.relations.length) {
+      extra += '<h3>Relations</h3><ul>' + r.relations.slice(0, 10).map(function (rel) {
+        return '<li><b>' + esc(rel.type || 'relates') + '</b> → ' + esc(rel.targetId || rel.id || '') + '</li>';
+      }).join('') + '</ul>';
+    }
+    if (Array.isArray(body.contradictions) && body.contradictions.length) {
+      extra += '<p class="warn">Contradicts ' + body.contradictions.length + ' record(s). Both sides stay visible; the repository wins.</p>';
+    }
+    more.outerHTML = extra || '<p class="fine">No further detail is stored for this record.</p>';
+  }).catch(function () {
+    var more = $('insMore');
+    if (more) more.textContent = 'Record detail unavailable.';
+  });
+}
+
+function closeInspector() {
+  $('insp').classList.remove('show');
+}
+
+function selectRecord(id) {
+  openInspector(id);
+  state.selected = id;
+  if (state.view === 'local' && state.graph && state.graph.center && state.graph.center.id === id) return;
+  loadGraph(id);
+}
+
+/* ------------------------------------------------------------------- data */
+
+function paintStats() {
+  var g = state.graph;
+  var ns = g && g.nodes ? g.nodes : [];
+  var count = { canonical: 0, derived: 0, candidate: 0 };
+  ns.forEach(function (n) { if (count[n.authority] !== undefined) count[n.authority]++; });
+  $('sNodes').textContent = String(ns.length);
+  $('sEdges').textContent = String((g && g.edges ? g.edges.length : 0));
+  $('sCanon').textContent = String(count.canonical);
+  $('sTrust').textContent = String(ns.filter(function (n) { return n.trusted; }).length);
+}
+
+function applyPayload(body) {
+  state.graph = body;
+  state.view = body.view === 'local' ? 'local' : 'overview';
+  hideMsg();
+  seedPositions();
+  paintStats();
+  start();
+  var focus = body.center && body.center.id ? body.center.id : null;
+  if (focus) {
+    var n = byId.get(focus);
+    if (n) { cam.dist = state.view === 'local' ? 720 : 900; }
   }
-})
-$('hops').addEventListener('change', () => { hops = Number($('hops').value)||1; if (state.selected) loadGraph(state.selected) })
-$('trusted').addEventListener('change', () => { if (state.graph) draw() })
-$('hide-hist').addEventListener('change', () => { if (state.graph) draw() })
-$('fit').addEventListener('click', fitView)
-$('overview').addEventListener('click', loadOverview)
-const svg = $('g')
-svg.addEventListener('wheel', (ev) => {
-  ev.preventDefault()
-  const loc = svgPt(ev)
-  const f = ev.deltaY < 0 ? 1.1 : 0.9
-  const wx = (loc.x - state.vx) / state.scale
-  const wy = (loc.y - state.vy) / state.scale
-  state.scale = Math.max(0.15, Math.min(4, state.scale * f))
-  state.vx = loc.x - wx * state.scale
-  state.vy = loc.y - wy * state.scale
-  applyView()
-}, {passive:false})
-svg.addEventListener('pointerdown', (ev) => {
-  if (ev.target !== svg) return
-  const p = svgPt(ev)
-  state.drag = { x: p.x, y: p.y, vx: state.vx, vy: state.vy }
-})
-window.addEventListener('pointermove', (ev) => {
-  if (!state.drag) return
-  const p = svgPt(ev)
-  state.vx = state.drag.vx + (p.x - state.drag.x)
-  state.vy = state.drag.vy + (p.y - state.drag.y)
-  applyView()
-})
-window.addEventListener('pointerup', () => { state.drag = null })
-if (state.selected) loadGraph(state.selected)
-else loadOverview()
+}
+
+function loadOverview() {
+  setLoading(true, 'Loading workspace…');
+  state.view = 'overview';
+  state.selected = null;
+  closeInspector();
+  return api('/graph', {}).then(function (body) {
+    setLoading(false);
+    if (body.__seq !== state.seq) return;
+    if (!body.ok) { if (errText(body) === 'WORKSPACE_CONTEXT_UNAVAILABLE') showUnavailable(); else showError(errText(body)); return; }
+    state.lastLoad = { kind: 'overview' };
+    var u = new URL(location.href);
+    u.searchParams.delete('id');
+    u.searchParams.delete('hops');
+    history.replaceState(null, '', u);
+    applyPayload(body);
+    if (body.empty) showMsg('No records yet', 'This workspace has no memory rows, so the projection is empty.', 'An empty graph is honest. Nothing is fabricated to fill it.', [{ label: 'Retry', primary: true, run: function () { hideMsg(); loadOverview(); } }]);
+  }).catch(function () { setLoading(false); showError('The graph endpoint did not respond.'); });
+}
+
+function loadGraph(id) {
+  setLoading(true, 'Loading record…');
+  state.view = 'local';
+  return api('/graph', { id: id, hops: 2 }).then(function (body) {
+    setLoading(false);
+    if (body.__seq !== state.seq) return;
+    if (!body.ok) { if (errText(body) === 'WORKSPACE_CONTEXT_UNAVAILABLE') showUnavailable(); else showError(errText(body)); return; }
+    state.lastLoad = { kind: 'local', id: id };
+    var u = new URL(location.href);
+    u.searchParams.set('id', id);
+    u.searchParams.set('hops', '2');
+    history.replaceState(null, '', u);
+    applyPayload(body);
+  }).catch(function () { setLoading(false); showError('The graph endpoint did not respond.'); });
+}
+
+function reload() {
+  if (state.lastLoad && state.lastLoad.kind === 'local' && state.lastLoad.id) loadGraph(state.lastLoad.id);
+  else loadOverview();
+}
+
+/* ---- named interaction entry points (kept as functions: the page contract
+   names them, and the canvas listeners call through them) ---- */
+
+function hoverNode(n, x, y) {
+  hover = n;
+  cv.style.cursor = n ? 'pointer' : 'grab';
+  if (n) showTip(n, x, y); else hideTip();
+}
+
+function hoverEnd() {
+  hover = null;
+  cv.style.cursor = 'grab';
+  hideTip();
+}
+
+function fitView() {
+  cam.dist = 900;
+  cam.yaw = 0.52;
+  cam.pitch = -0.30;
+  idle = 0;
+}
+
+/* ---- command palette: workspaces, records, and actions in one list ---- */
+
+function fuzzy(hay, needle) {
+  if (!needle) return 1;
+  var h = String(hay || '').toLowerCase();
+  var q = String(needle).toLowerCase();
+  if (h.indexOf(q) !== -1) return 100 - h.indexOf(q);
+  var hi = 0, score = 0;
+  for (var i = 0; i < q.length; i++) {
+    var k = h.indexOf(q.charAt(i), hi);
+    if (k === -1) return 0;
+    score += 1 / (1 + (k - hi));
+    hi = k + 1;
+  }
+  return score;
+}
+
+function paletteItems() {
+  var q = state.query.trim();
+  var out = [];
+  var i, ws, sc;
+
+  for (i = 0; i < state.workspaces.length; i++) {
+    ws = state.workspaces[i];
+    if (state.cwd && samePath(ws.path, state.cwd)) continue;
+    sc = Math.max(fuzzy(ws.title, q), fuzzy(ws.path, q));
+    if (q && sc <= 0) continue;
+    out.push({
+      group: 'workspaces',
+      key: 'ws:' + ws.id,
+      title: ws.title || lastSeg(ws.path),
+      meta: ws.path,
+      tag: 'switch',
+      score: (q ? sc : 40) + 20,
+      run: function () { switchWorkspace(ws); }
+    });
+  }
+
+  if (state.graph) {
+    for (i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      sc = Math.max(fuzzy(n.title, q), fuzzy(n.id, q));
+      if (q && sc <= 0) continue;
+      out.push({
+        group: 'records',
+        key: 'rec:' + n.id,
+        title: n.title || n.id,
+        meta: n.authority + ' · ' + (n.validation || 'unknown') + ' · ' + n.id,
+        tag: n.authority,
+        score: q ? sc : 10,
+        run: (function (id) { return function () { selectRecord(id); }; })(n.id)
+      });
+    }
+  }
+
+  out.push({
+    group: 'actions',
+    key: 'act:overview',
+    title: 'Workspace overview',
+    meta: 'clear the local graph and return to the whole workspace',
+    tag: 'action',
+    score: (q ? Math.max(fuzzy('overview', q), fuzzy('workspace', q)) : 5),
+    run: function () { state.selected = null; closeInspector(); loadOverview(); }
+  });
+  out.push({
+    group: 'actions',
+    key: 'act:fit',
+    title: 'Reset camera',
+    meta: 'restore the default orbit and distance',
+    tag: 'action',
+    score: (q ? Math.max(fuzzy('reset camera', q), fuzzy('fit', q)) : 4),
+    run: function () { fitView(); }
+  });
+
+  out = out.filter(function (it) { return !q || it.score > 0; });
+  out.sort(function (a, b) { return b.score - a.score; });
+  return out.slice(0, 40);
+}
+
+function renderPalette() {
+  var list = $('palList');
+  state.items = paletteItems();
+  if (state.index >= state.items.length) state.index = Math.max(0, state.items.length - 1);
+  if (!state.items.length) {
+    list.innerHTML = '<div class="empty">No matches. Every result comes from this workspace only.</div>';
+    $('palHint').textContent = '';
+    return;
+  }
+  var html = '';
+  var group = '';
+  for (var i = 0; i < state.items.length; i++) {
+    var it = state.items[i];
+    if (it.group !== group) {
+      group = it.group;
+      html += '<div class="grp">' + esc(group) + '</div>';
+    }
+    html += '<div class="pi' + (i === state.index ? ' on' : '') + '" role="option" data-i="' + i + '" aria-selected="' + (i === state.index ? 'true' : 'false') + '">'
+      + '<span class="tt">' + esc(it.title) + '</span>'
+      + '<span class="mt">' + esc(it.meta) + '</span>'
+      + (it.tag ? '<span class="tag t-' + esc(it.tag) + '">' + esc(it.tag) + '</span>' : '')
+      + '</div>';
+  }
+  list.innerHTML = html;
+  $('palHint').textContent = state.workspaces.length + ' workspaces';
+  var on = list.querySelector('.pi.on');
+  if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
+}
+
+function openPalette(prefill) {
+  state.paletteOpen = true;
+  state.index = 0;
+  state.query = prefill || '';
+  $('palIn').value = state.query;
+  $('pal').classList.add('show');
+  $('pal').setAttribute('aria-hidden', 'false');
+  renderPalette();
+  setTimeout(function () { $('palIn').focus(); }, 0);
+  say('Command palette opened');
+}
+
+function closePalette() {
+  state.paletteOpen = false;
+  $('pal').classList.remove('show');
+  $('pal').setAttribute('aria-hidden', 'true');
+}
+
+function paletteMove(delta) {
+  if (!state.items.length) return;
+  state.index = (state.index + delta + state.items.length) % state.items.length;
+  var rows = $('palList').querySelectorAll('.pi');
+  for (var i = 0; i < rows.length; i++) {
+    var on = Number(rows[i].getAttribute('data-i')) === state.index;
+    rows[i].classList.toggle('on', on);
+    rows[i].setAttribute('aria-selected', on ? 'true' : 'false');
+    if (on && rows[i].scrollIntoView) rows[i].scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function paletteRun() {
+  var it = state.items[state.index];
+  if (!it) return;
+  closePalette();
+  it.run();
+}
+
+/* ---- workspace flyout (the second door: Ctrl+O) ---- */
+
+function renderWsPanel() {
+  var host = $('wsList');
+  var html = '';
+  if (!state.workspaces.length) {
+    html = '<div class="empty">'
+      + (state.registryState === 'available'
+        ? 'The workspace registry lists nothing yet.'
+        : 'The DSH workspace registry is unavailable, so there is nothing to switch to. Veyra does not guess.')
+      + '</div>';
+  } else {
+    for (var i = 0; i < state.workspaces.length; i++) {
+      var ws = state.workspaces[i];
+      var on = state.cwd && samePath(ws.path, state.cwd);
+      html += '<button type="button" class="wsi' + (on ? ' on' : '') + '" data-id="' + esc(ws.id) + '">'
+        + '<span class="tile ' + hueOf(ws.id) + '">' + esc((ws.title || lastSeg(ws.path)).slice(0, 2).toUpperCase()) + '</span>'
+        + '<span class="meta"><span class="nm">' + esc(ws.title || lastSeg(ws.path)) + '</span>'
+        + '<span class="pt">' + esc(ws.path) + '</span></span>'
+        + (on ? '<span class="cur">current</span>' : '')
+        + '</button>';
+    }
+  }
+  host.innerHTML = html;
+}
+
+function openWsPanel() {
+  renderWsPanel();
+  $('wsPanel').classList.add('show');
+  $('wsChip').setAttribute('aria-expanded', 'true');
+}
+
+function closeWsPanel() {
+  $('wsPanel').classList.remove('show');
+  $('wsChip').setAttribute('aria-expanded', 'false');
+}
+
+function toggleWsPanel() {
+  if ($('wsPanel').classList.contains('show')) closeWsPanel(); else openWsPanel();
+}
+
+/* ---- small shared helpers ---- */
+
+function samePath(a, b) {
+  if (!a || !b) return false;
+  return String(a).replace(/\\/+$/, '') === String(b).replace(/\\/+$/, '');
+}
+
+function lastSeg(p) {
+  var s = String(p || '').replace(/\\/+$/, '');
+  var i = s.lastIndexOf('/');
+  return i === -1 ? s : s.slice(i + 1);
+}
+
+/* ---- wiring ---- */
+
+function setPressed(id, on) {
+  var el = $(id);
+  if (el) el.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+
+function boot() {
+  resize();
+  paintChip();
+
+  $('wsChip').addEventListener('click', function (ev) { ev.stopPropagation(); toggleWsPanel(); });
+  $('wsChip').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggleWsPanel(); }
+  });
+  $('wsList').addEventListener('click', function (ev) {
+    var row = ev.target.closest ? ev.target.closest('.wsi') : null;
+    if (!row) return;
+    var id = row.getAttribute('data-id');
+    for (var i = 0; i < state.workspaces.length; i++) {
+      if (state.workspaces[i].id === id) { closeWsPanel(); switchWorkspace(state.workspaces[i]); return; }
+    }
+  });
+
+  $('omni').addEventListener('click', function () { openPalette(''); });
+  $('omni').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openPalette(''); }
+  });
+
+  $('palIn').addEventListener('input', function () { state.query = this.value; state.index = 0; renderPalette(); });
+  $('pal').addEventListener('click', function (ev) { if (ev.target === $('pal')) closePalette(); });
+  $('palList').addEventListener('click', function (ev) {
+    var row = ev.target.closest ? ev.target.closest('.pi') : null;
+    if (!row) return;
+    state.index = Number(row.getAttribute('data-i'));
+    paletteRun();
+  });
+  $('palList').addEventListener('mousemove', function (ev) {
+    var row = ev.target.closest ? ev.target.closest('.pi') : null;
+    if (!row) return;
+    var i = Number(row.getAttribute('data-i'));
+    if (i !== state.index) { state.index = i; paletteMove(0); }
+  });
+
+  $('insClose').addEventListener('click', closeInspector);
+  $('btnCenter').addEventListener('click', function () {
+    if (state.selected) { var id = state.selected; closeInspector(); loadGraph(id); }
+  });
+  $('btnCopy').addEventListener('click', function () {
+    var id = state.selected;
+    if (!id) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(id).then(function () { toast('Record id copied'); }, function () { toast(id); });
+    } else { toast(id); }
+  });
+
+  $('orbit').addEventListener('click', function () { state.orbit = !state.orbit; setPressed('orbit', state.orbit); idle = 0; });
+  $('labels').addEventListener('click', function () { state.labels = !state.labels; setPressed('labels', state.labels); });
+  $('overview').addEventListener('click', function () { state.selected = null; closeInspector(); loadOverview(); });
+  $('fitView').addEventListener('click', function () { fitView(); });
+
+  window.addEventListener('resize', resize);
+
+  document.addEventListener('keydown', function (ev) {
+    var typing = ev.target && /input|textarea|select/i.test(ev.target.tagName || '');
+    var mod = ev.ctrlKey || ev.metaKey;
+
+    if (mod && (ev.key === 'k' || ev.key === 'K')) { ev.preventDefault(); if (state.paletteOpen) closePalette(); else openPalette(''); return; }
+    if (mod && (ev.key === 'o' || ev.key === 'O')) { ev.preventDefault(); closeWsPanel(); openPalette(''); return; }
+
+    if (state.paletteOpen) {
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); paletteMove(1); return; }
+      if (ev.key === 'ArrowUp') { ev.preventDefault(); paletteMove(-1); return; }
+      if (ev.key === 'Enter') { ev.preventDefault(); paletteRun(); return; }
+      if (ev.key === 'Escape') { ev.preventDefault(); closePalette(); return; }
+      return;
+    }
+    if (ev.key === 'Escape') {
+      if ($('wsPanel').classList.contains('show')) { closeWsPanel(); return; }
+      if (state.selected) { state.selected = null; closeInspector(); loadOverview(); return; }
+    }
+    if (typing) return;
+    if (ev.key === 'o' || ev.key === 'O') { state.orbit = !state.orbit; setPressed('orbit', state.orbit); idle = 0; return; }
+    if (ev.key === 'l' || ev.key === 'L') { state.labels = !state.labels; setPressed('labels', state.labels); return; }
+    if (ev.key === 'f' || ev.key === 'F') { fitView(); return; }
+    if (ev.key === '/') { ev.preventDefault(); openPalette(''); return; }
+  });
+
+  $('orbit').addEventListener('pointermove', function () { idle = 0; });
+
+  setPressed('orbit', state.orbit);
+  setPressed('labels', state.labels);
+
+  loadWorkspaces().then(function () {
+    if (!state.cwd) { showUnavailable(); return undefined; }
+    return loadOverview();
+  }).catch(function (err) {
+    showError(err && err.message ? err.message : 'Could not load this workspace.');
+  });
+}
+
+boot();
+
 </script>
 </body>
-</html>`
+</html>`;
 }
