@@ -73,7 +73,7 @@ cause-duplicate, and a `CONFLICT` verdict is never overridden.
 | `forget` | soft-forget, still inspectable | no |
 | `tombstone` | terminal marker, still inspectable | no |
 
-Lifecycle changes are explicit. The bundled `memory-maintenance` skill applies
+Lifecycle changes are explicit. The bundled `veyra-memory-curation` skill applies
 them only when you ask for it; a health finding is never authorization.
 
 The skill also reports three findings that are **not** store mutations, so

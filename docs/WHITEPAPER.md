@@ -151,7 +151,7 @@ The local graph is a derived projection, not a second store.
 
 | Property | Value |
 | --- | --- |
-| Package | `@lovedolove/veyra`, 274.3 kB packed, 52 files |
+| Package | `@lovedolove/veyra`, 273.3 kB packed, 51 files |
 | Module system | Pure ESM |
 | Required runtime dependencies | None |
 | Optional peer | `@lovedolove/dsh-codebase-memory-mcp`, loaded through `src/cbm-bridge.mjs` |
@@ -290,7 +290,7 @@ dispatch.
 ### 6.5 Maintenance
 
 Lifecycle actions are explicit: protect, unprotect, invalidate, supersede,
-forget, tombstone. The bundled `memory-maintenance` skill applies them on
+forget, tombstone. The bundled `veyra-memory-curation` skill applies them on
 request with before/after reporting. A health finding is never authorization by
 itself. The skill also reports `KEEP`, `REVALIDATE` and `DEFER`; those are
 recommendations in a report, not store mutations, and nothing is written for
@@ -514,7 +514,7 @@ and eventual *measured* demonstration of utility on paired tasks.
 
 1. **Task-outcome utility.** No measured paired-task result exists.
 2. **Onboarding coverage.** What fraction of a real codebase's durable knowledge
-   a legacy-onboarding pass captures is unmeasured.
+   a bootstrap pass captures is unmeasured.
 3. **Auto-recall noise rate.** Noise was observed in one session population; a
    rate has not been measured.
 4. **Generality.** Validation has been on DSH-adjacent projects on one host.

@@ -118,7 +118,7 @@ Veyra 连接两个回答不同问题的层。
 
 | 属性 | 值 |
 | --- | --- |
-| 包 | `@lovedolove/veyra`，打包 274.3 kB，52 个文件 |
+| 包 | `@lovedolove/veyra`，打包 273.3 kB，51 个文件 |
 | 模块系统 | 纯 ESM |
 | 必需运行时依赖 | 无 |
 | 可选 peer | `@lovedolove/dsh-codebase-memory-mcp`，通过 `src/cbm-bridge.mjs` 加载 |
@@ -219,7 +219,7 @@ Veyra 观察会话事件。只有真正能修改文件的工具才贡献修改�
 
 ### 6.5 维护
 
-生命周期操作是显式的：protect、unprotect、invalidate、supersede、forget、tombstone。捆绑的 `memory-maintenance` 技能按请求应用它们，并报告前后状态。健康发现本身永远不是授权。该技能还会报告 `KEEP`、`REVALIDATE` 与 `DEFER`；它们只是报告中的建议，不是存储变更，不会写入任何内容。
+生命周期操作是显式的：protect、unprotect、invalidate、supersede、forget、tombstone。捆绑的 `veyra-memory-curation` 技能按请求应用它们，并报告前后状态。健康发现本身永远不是授权。该技能还会报告 `KEEP`、`REVALIDATE` 与 `DEFER`；它们只是报告中的建议，不是存储变更，不会写入任何内容。
 
 ---
 
