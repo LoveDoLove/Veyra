@@ -1,5 +1,13 @@
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-13
+
+### Changed
+
+- **The bundled skill set is now three skills, with a sharper boundary.** `legacy-onboarding`, `memory-review` and `memory-maintenance` are replaced by `veyra-memory-bootstrap` (first contact with an unfamiliar repository, and explicit "init memory" requests: assessment, progressive investigation depth, evidence-first extraction, Project Memory Baseline) and `veyra-memory-curation` (one skill, two modes — capture mode audits what memory already holds or what this session produced, maintain mode applies lifecycle actions when the user explicitly asks). `veyra` is unchanged. The merge removes the routing ambiguity between reviewing memory and maintaining it: bootstrap owns building a baseline, curation owns records that already exist. Safety invariants are carried over verbatim — candidate ≠ truth, similarity is not authority, canonical is never self-granted, health findings are never authorization, at most 10 lifecycle actions per run, inspect before acting, contradictions stay visible.
+- `BUNDLED_SKILL_DEFINITIONS` in `src/skills.mjs`, the on-disk `skills/` tree, the skill tests, and the references in `docs/reference/tools.md`, `docs/reference/memory-model.md`, `docs/agent-guides/codebase-map.md` and both whitepapers are updated together; the frontmatter-parity and bundled-count assertions moved with them.
+- The packaged size and file count move with the skill set, so the four documents that quote them are re-measured in the same change: 273.3 kB across 51 files (from 274.3 kB across 52). `docs/agent-guides/codebase-map.md` also carried a stale test-file count of 75 against 119 in the tree.
+
 ## [0.5.0] - 2026-11-13
 
 Two changesets. Both attack the same complaint: the agent under-uses Veyra's
