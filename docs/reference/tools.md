@@ -48,7 +48,7 @@ Four skills ship inside the package and register automatically.
 | Skill | Use it when |
 | --- | --- |
 | `veyra` | You need Veyra's own guidance: tool usage, the authority ladder, causal facets, hybrid search semantics, and the rule that repository truth wins. |
-| `legacy-onboarding` | First entry into an unfamiliar or legacy repository: baseline assessment, progressive investigation depth, evidence-first extraction, and a Project Memory Baseline. |
+| `legacy-onboarding` | First entry into an unfamiliar or legacy repository, or an explicit "init memory" request: baseline assessment, progressive investigation depth (an Init-mode straight line for explicit baseline requests), evidence-first extraction, and a Project Memory Baseline. |
 | `memory-review` | You want to audit a conversation for durable engineering memory: what is already recorded, what is missing, what looks stale or conflicting. |
 | `memory-maintenance` | The user explicitly asks to clean up or maintain memory. Applies lifecycle actions with before/after reporting. A health finding alone is never authorization. |
 

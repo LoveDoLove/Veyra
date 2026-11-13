@@ -38,7 +38,7 @@ and injects the relevant parts automatically.
 | | |
 | --- | --- |
 | **It captures without being asked** | Veyra watches session events and distills each turn into an observation. A governed gate decides whether it earned a place in memory. A turn that produced nothing durable is dropped, not stored. |
-| **It recalls without being asked** | At the start of a turn, the most relevant records are injected into context, each labelled with its trust state. The agent never has to remember to search. |
+| **It recalls without being asked** | At the start of a turn, the most relevant records are injected into context, each labelled with its trust state. The injected policy also makes one targeted `veyra_recall` call the agent's required first action on any non-trivial task, so keyword-matched injection is backed by an on-demand search. |
 | **It refuses to invent evidence** | A path mentioned in prose is not a changed file. A symbol name in a sentence is not a symbol. Only real, resolved anchors ground a record. |
 | **It knows when it might be wrong** | Every recalled record is re-checked against the current repository and classified `trusted`, `review_required`, `stale`, `contradicted`, or `insufficient_evidence`. |
 | **It never becomes the source of truth** | The repository always wins. `canonical` authority is reachable only through an explicit human action. Nothing is written into your repo. |

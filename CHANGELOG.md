@@ -1,5 +1,19 @@
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-13
+
+Two changesets. Both attack the same complaint: the agent under-uses Veyra's
+own instructions. The injected policy used to bury the proactive recall rule
+under 30+ prohibition lines and even opened with an excuse to skip it; the
+bundled skills had no friendly entry for the most common request of all,
+"init memory".
+
+### Fixed
+
+- **The injected policy now leads with a hard proactive-recall trigger.** `GUIDANCE_TEXT` (`src/context.mjs`) opens with a first-action rule: call `veyra_recall` once with a targeted query before writing, searching, or editing any code for a new task; non-trivial means a bug fix, feature work, refactor, architecture change, dependency choice, or debugging of unexpected behavior. The old opener ("A recall snapshot may already be injected") — which gave the model an excuse to skip its own recall — is replaced by the statement that the keyword-matched snapshot never substitutes for a targeted call. All existing invariants and tested strings are unchanged.
+- **The skills gain an explicit init-memory path.** `legacy-onboarding`'s frontmatter and trigger table now match init / initialize-memory phrasing, and a new Init mode workflow treats building the baseline as the task itself: recall first, Discover at Standard depth, extract the 4-Part baseline (4–8 records), ground every record, record with `veyra_remember` under the usual invariants, and report ids, checklist answers, and held items. `memory-review` and `memory-maintenance` route init requests to `legacy-onboarding` instead of absorbing them. Frontmatter and `BUNDLED_SKILL_DEFINITIONS` stay in sync.
+- **README and README.zh-CN.md no longer claim the agent "never has to remember to search".** The recall row now states both layers: automatic injection plus the required first-action `veyra_recall`, and `docs/reference/tools.md` mentions Init mode for `legacy-onboarding`.
+
 ## [0.4.0] - 2026-11-13
 
 One changeset. The Network Graph page is rebuilt as a 3D observatory: a canvas scene replaces the flat SVG view, and the page gains a workspace switcher so the user can move between workspaces without leaving the tab.
