@@ -1,19 +1,22 @@
 ---
 name: legacy-onboarding
 description: >
-  Onboard an unfamiliar, legacy, or not-yet-baselined project into Veyra.
-  Assesses the existing memory baseline, discovers the repository, chooses a
+  Onboard an unfamiliar, legacy, or not-yet-baselined project into Veyra, or
+  initialize ("init") Veyra memory for a project on explicit request. Assesses
+  the existing memory baseline, discovers the repository, chooses a
   progressive investigation depth, extracts only durable engineering knowledge
   grounded in verifiable evidence, and builds a Project Memory Baseline that
   future agents can recall instead of re-investigating. Load it the first time
-  you work in an old or foreign codebase, when asked "what is this project /
-  how does this work" with no baseline available, before high-risk legacy
-  changes (auth, data, infrastructure, migrations), or when existing Veyra
-  memory looks stale. Skip it for trivial tasks in projects that already have
-  a good baseline.
+  you work in an old or foreign codebase, when the user asks to init /
+  initialize memory or build a memory baseline, when asked "what is this
+  project / how does this work" with no baseline available, before high-risk
+  legacy changes (auth, data, infrastructure, migrations), or when existing
+  Veyra memory looks stale. Skip it for trivial tasks in projects that already
+  have a good baseline.
 whenToUse: >
   First entry into a new, legacy, or unfamiliar project; a missing or stale
-  Veyra baseline; high-risk changes to old systems; or an explicit request to
+  Veyra baseline; an explicit "init memory" or "initialize memory baseline"
+  request; high-risk changes to old systems; or an explicit request to
   understand or onboard an unfamiliar repository.
 ---
 
@@ -31,14 +34,18 @@ project isolation. Never reimplement any of that here, never invent states or
 commands Veyra does not have, and never duplicate Veyra's tool documentation —
 load the bundled `veyra` skill for tool reference.
 
-Onboarding is **progressive, not ceremonial**: it runs when there is genuine
-knowledge to gain, deepens only where risk justifies it, and always yields to
-the actual task.
+Onboarding is **progressive, not ceremonial** for ambient work: it runs when
+there is genuine knowledge to gain, deepens only where risk justifies it, and
+always yields to the actual task. **Init mode is different**: when the user
+explicitly asks to initialize memory, building the baseline IS the task —
+run the Init workflow below end to end instead of deferring to a coding task.
 
 ## Trigger and applicability
 
 Use when any of these holds:
 
+- The user explicitly asks to init / initialize Veyra memory or build a
+  project memory baseline (init mode — run the Init workflow below).
 - First substantive work in this project and Veyra has no (or thin) baseline.
 - Existing memory exists but current repository evidence suggests it drifted.
 - The task will modify high-risk legacy areas (authentication, database,
@@ -52,6 +59,8 @@ Do **not** use when:
   normally and let Veyra's automatic observation capture anything durable.
 - A reliable baseline already answers the current task — recall, top up only
   what the task needs, and continue. Re-onboarding a known project is waste.
+- The request is a cleanup, audit, or review of existing memory — load
+  `memory-maintenance` or `memory-review` instead.
 
 ### Scenario routing
 
@@ -62,6 +71,32 @@ Do **not** use when:
 | C. Baseline exists but looks stale | Compare recalled claims to current repository evidence; update or supersede — never blind-duplicate |
 | D. High-risk legacy change | Escalate to Deep (targeted) before touching the system |
 | E. Trivial task | Shallow; run no archaeology; store nothing unless something durable surfaces on its own |
+
+### Init mode (explicit baseline request)
+
+When the user explicitly asks to init / initialize memory, skip the routing
+and depth hesitation: **building the baseline is the task**. Run a straight
+line and report at the end.
+
+1. **Recall first.** `veyra_recall` project identity / architecture /
+   constraints. If a solid baseline already exists, say so, offer a refresh of
+   drifted areas, and stop — do not blind-duplicate.
+2. **Discover** (Standard depth; go Deep only for high-risk systems):
+   structure, entry points, manifests, AGENTS.md/CLAUDE.md, docs, tests, CI.
+   Respect the anti-bloat budget.
+3. **Extract** the 4-Part baseline (Identity & Architecture / Invariants &
+   Constraints / Build-Test-CI / Pitfalls & Workarounds), 4–8 records total.
+4. **Ground and Validate** every record against current repository evidence.
+5. **Record** with `veyra_remember`: project scope, evidence anchor
+   (`path=...`) per record, honest confidence. Recall-before-write for every
+   topic; never grant canonical.
+6. **Report**: the record ids written, the recall-verified checklist answers
+   (what is this project, key modules, constraints), and any held/uncertain
+   items for the user to decide.
+
+Init mode changes the *posture* (you are delivering a baseline, not
+side-capturing knowledge), never the invariants: evidence anchors, honest
+confidence, recall before write, and canonical-never-yours all still apply.
 
 ## Depth control
 

@@ -9,11 +9,12 @@ description: >
   tools, and ends with a short review report. Load when the user asks to
   review memory, audit what this session stored, check whether something from
   this conversation was recorded, or reconcile conversation findings with
-  Veyra.
+  Veyra. Not for initializing a new project baseline — load
+  legacy-onboarding for that.
 whenToUse: >
   End-of-session or mid-session memory audits, "did we record that"
   questions, and reconciling this conversation's findings against existing
-  Veyra memory.
+  Veyra memory. Not for project memory initialization (use legacy-onboarding).
 ---
 
 # Memory Review

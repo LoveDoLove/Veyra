@@ -46,19 +46,22 @@ export const BUNDLED_SKILL_DEFINITIONS = Object.freeze([
   {
     name: 'legacy-onboarding',
     description:
-      'Onboard an unfamiliar, legacy, or not-yet-baselined project into Veyra. '
+      'Onboard an unfamiliar, legacy, or not-yet-baselined project into Veyra, or '
+      + 'initialize ("init") Veyra memory for a project on explicit request. '
       + 'Assesses the existing memory baseline, discovers the repository, chooses a '
       + 'progressive investigation depth, extracts only durable engineering knowledge '
       + 'grounded in verifiable evidence, and builds a Project Memory Baseline that '
       + 'future agents can recall instead of re-investigating. Load it the first time '
-      + 'you work in an old or foreign codebase, when asked "what is this project / '
-      + 'how does this work" with no baseline available, before high-risk legacy '
-      + 'changes (auth, data, infrastructure, migrations), or when existing Veyra '
-      + 'memory looks stale. Skip it for trivial tasks in projects that already have '
-      + 'a good baseline.',
+      + 'you work in an old or foreign codebase, when the user asks to init / '
+      + 'initialize memory or build a memory baseline, when asked "what is this '
+      + 'project / how does this work" with no baseline available, before high-risk '
+      + 'legacy changes (auth, data, infrastructure, migrations), or when existing '
+      + 'Veyra memory looks stale. Skip it for trivial tasks in projects that already '
+      + 'have a good baseline.',
     whenToUse:
       'First entry into a new, legacy, or unfamiliar project; a missing or stale '
-      + 'Veyra baseline; high-risk changes to old systems; or an explicit request to '
+      + 'Veyra baseline; an explicit "init memory" or "initialize memory baseline" '
+      + 'request; high-risk changes to old systems; or an explicit request to '
       + 'understand or onboard an unfamiliar repository.',
   },
   {
@@ -71,10 +74,12 @@ export const BUNDLED_SKILL_DEFINITIONS = Object.freeze([
       + 'evidence-backed gaps through existing Veyra tools, and ends with a short review '
       + 'report. Load when the user asks to review memory, audit what this session '
       + 'stored, check whether something from this conversation was recorded, or '
-      + 'reconcile conversation findings with Veyra.',
+      + 'reconcile conversation findings with Veyra. Not for initializing a new '
+      + 'project baseline — load legacy-onboarding for that.',
     whenToUse:
       'End-of-session or mid-session memory audits, "did we record that" questions, '
-      + "and reconciling this conversation's findings against existing Veyra memory.",
+      + "and reconciling this conversation's findings against existing Veyra memory. "
+      + 'Not for project memory initialization (use legacy-onboarding).',
   },
   {
     name: 'memory-maintenance',
@@ -85,11 +90,13 @@ export const BUNDLED_SKILL_DEFINITIONS = Object.freeze([
       + 'SUPERSEDE / INVALIDATE / FORGET / TOMBSTONE / REVALIDATE / DEFER), and '
       + 'reports before/after health changes. Use when the user asks to clean up '
       + 'memory, maintain engineering knowledge, reconcile stale or contradictory '
-      + 'records, or audit Veyra health.',
+      + 'records, or audit Veyra health. Not for initializing a new project '
+      + 'baseline — load legacy-onboarding for that.',
     whenToUse:
       'Explicit memory maintenance requests: when the user asks to clean up memory, '
       + 'maintain engineering knowledge, reconcile stale or contradictory records, or '
-      + 'audit Veyra health.',
+      + 'audit Veyra health. Not for project memory initialization (use '
+      + 'legacy-onboarding).',
   },
 ])
 

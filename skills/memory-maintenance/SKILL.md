@@ -7,11 +7,13 @@ description: >
   SUPERSEDE / INVALIDATE / FORGET / TOMBSTONE / REVALIDATE / DEFER), and
   reports before/after health changes. Use when the user asks to clean up
   memory, maintain engineering knowledge, reconcile stale or contradictory
-  records, or audit Veyra health.
+  records, or audit Veyra health. Not for initializing a new project
+  baseline — load legacy-onboarding for that.
 whenToUse: >
   Explicit memory maintenance requests: when the user asks to clean up memory,
   maintain engineering knowledge, reconcile stale or contradictory records, or
-  audit Veyra health.
+  audit Veyra health. Not for project memory initialization (use
+  legacy-onboarding).
 ---
 
 # Memory Maintenance
