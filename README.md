@@ -12,7 +12,7 @@ Local SQLite. Per-workspace isolation. No daemon. No API keys. No manual bookmar
 [![license](https://img.shields.io/badge/license-MIT-16a34a)](LICENSE)
 
 A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness).
-Local SQLite storage. No daemon. No API keys. 273.3 kB packed. Pure ESM.
+Local SQLite storage. No daemon. No API keys. 273.1 kB packed. Pure ESM.
 
 ---
 

@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Fixed
+
+- The packaged-size figure in `README.md`, `README.zh-CN.md`, `docs/WHITEPAPER.md` and `docs/WHITEPAPER.zh-CN.md` is corrected from 273.3 kB to 273.1 kB. The 0.6.0 figure was read from `npm run pack:check`, which packs the working copy; two shipped files (`src/evolve.mjs`, `src/text.mjs`) hold CRLF on disk and LF in git, so that pack is 343 bytes larger than the artifact the registry actually publishes. The published `0.6.0` tarball is 273103 bytes (273.1 kB), and it is byte-identical to a `git archive` export of the tag. Measure from `git archive`, never from the working copy.
+
 ## [0.6.0] - 2026-11-13
 
 ### Changed

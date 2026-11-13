@@ -151,7 +151,7 @@ The local graph is a derived projection, not a second store.
 
 | Property | Value |
 | --- | --- |
-| Package | `@lovedolove/veyra`, 273.3 kB packed, 51 files |
+| Package | `@lovedolove/veyra`, 273.1 kB packed, 51 files |
 | Module system | Pure ESM |
 | Required runtime dependencies | None |
 | Optional peer | `@lovedolove/dsh-codebase-memory-mcp`, loaded through `src/cbm-bridge.mjs` |

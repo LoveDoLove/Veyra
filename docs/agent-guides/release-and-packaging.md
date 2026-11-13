@@ -108,6 +108,10 @@ node scripts/runtime-deps-check.mjs green
 npm run pack:check shows exactly the intended files
 git archive HEAD | tar -x, then npm pack — record that shasum (working-copy
   packs differ by CRLF line endings and will never match the published one)
+the packaged-size figure quoted in README.md, README.zh-CN.md and both
+  whitepapers is the `npm pack` size reported by that git-archive export, NOT
+  the `npm run pack:check` size — the two differ by the CRLF delta (343 bytes
+  at 0.6.0) and only the archive number matches what users download
 registry HTTP status for the intended version is 404 (not already taken)
 README / guides updated for any behavior change
 No secrets, no temp files, no unrelated diff

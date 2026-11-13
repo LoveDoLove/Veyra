@@ -118,7 +118,7 @@ Veyra 连接两个回答不同问题的层。
 
 | 属性 | 值 |
 | --- | --- |
-| 包 | `@lovedolove/veyra`，打包 273.3 kB，51 个文件 |
+| 包 | `@lovedolove/veyra`，打包 273.1 kB，51 个文件 |
 | 模块系统 | 纯 ESM |
 | 必需运行时依赖 | 无 |
 | 可选 peer | `@lovedolove/dsh-codebase-memory-mcp`，通过 `src/cbm-bridge.mjs` 加载 |
