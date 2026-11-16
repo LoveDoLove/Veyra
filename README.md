@@ -1,5 +1,7 @@
 # Veyra
 
+<p align="center"><img src="assets/brand/veyra-logo.svg" alt="Veyra — Engineering Intelligence for Coding Agents" width="620"></p>
+
 [English](README.md) · [简体中文](README.zh-CN.md)
 
 **Persistent engineering memory for coding agents.** Veyra learns the lessons your agent already paid for, remembers the ones that held up, and puts them back in front of it the next time the same problem appears.
