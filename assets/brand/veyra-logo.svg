@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="240" viewBox="0 0 960 240" role="img" aria-labelledby="title desc">
+  <title id="title">Veyra</title>
+  <desc id="desc">Geometric V monogram and VEYRA wordmark in electric blue and cyan on a transparent background.</desc>
+  <defs>
+    <linearGradient id="veyra-gradient" x1="30" y1="20" x2="210" y2="210" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#35E6FF"/>
+      <stop offset=".52" stop-color="#168BFF"/>
+      <stop offset="1" stop-color="#526BFF"/>
+    </linearGradient>
+    <linearGradient id="word-gradient" x1="300" y1="60" x2="800" y2="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F4FAFF"/>
+      <stop offset="1" stop-color="#B9D8F5"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke="url(#veyra-gradient)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M34 42 L112 198 L190 42" stroke-width="25"/>
+    <path d="M73 42 L112 119 L151 42" stroke="#35E6FF" stroke-width="12" opacity=".95"/>
+    <path d="M112 119 L112 198" stroke="#168BFF" stroke-width="9" opacity=".7"/>
+  </g>
+  <path d="M214 42 V198" stroke="#1D3B5A" stroke-width="2" opacity=".75"/>
+  <text x="270" y="157" fill="url(#word-gradient)" font-family="Inter, Avenir Next, Segoe UI, Arial, sans-serif" font-size="112" font-weight="700" letter-spacing="13">VEYRA</text>
+  <path d="M278 184 H690" stroke="url(#veyra-gradient)" stroke-width="3" stroke-linecap="round" opacity=".8"/>
+</svg>
