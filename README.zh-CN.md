@@ -1,5 +1,7 @@
 # Veyra
 
+<p align="center"><img src="assets/brand/veyra-logo.svg" alt="Veyra — Engineering Intelligence for Coding Agents" width="620"></p>
+
 [English](README.md) · [简体中文](README.zh-CN.md)
 
 **为编码智能体提供持久化工程记忆。** Veyra 学习你的智能体已经付出代价换来的教训，记住那些经受住检验的，并在同样的问题再次出现时把它们放回智能体面前。
