@@ -78,6 +78,58 @@ export function hasGrounding(candidate) {
   return files.length > 0
 }
 
+/**
+ * Validate evidence anchor structure (Phase 2: function-level evidence).
+ *
+ * Rules:
+ * - Function-level fields (symbol, startLine, endLine) must all be present or all absent
+ * - Function-level fields require a path field
+ * - symbol: non-empty string
+ * - startLine, endLine: positive integers
+ * - startLine <= endLine
+ *
+ * Throws on validation failure.
+ */
+function validateEvidence(arr) {
+  if (!Array.isArray(arr)) return
+
+  for (const item of arr) {
+    if (!item) continue
+
+    const { symbol, startLine, endLine, path } = item
+    const hasFunctionFields = symbol !== undefined || startLine !== undefined || endLine !== undefined
+
+    if (hasFunctionFields) {
+      // All three required
+      if (symbol === undefined || startLine === undefined || endLine === undefined) {
+        throw new Error('Function-level evidence requires symbol, startLine, and endLine (all three or none)')
+      }
+
+      // Requires path
+      if (!path) {
+        throw new Error('Function-level evidence requires path field')
+      }
+
+      // Type checks
+      if (typeof symbol !== 'string' || symbol.trim() === '') {
+        throw new Error('symbol must be a non-empty string')
+      }
+
+      if (!Number.isInteger(startLine) || startLine < 1) {
+        throw new Error('startLine must be a positive integer')
+      }
+
+      if (!Number.isInteger(endLine) || endLine < 1) {
+        throw new Error('endLine must be a positive integer')
+      }
+
+      if (startLine > endLine) {
+        throw new Error(`startLine (${startLine}) must be <= endLine (${endLine})`)
+      }
+    }
+  }
+}
+
 function mergeEvidence(existing, incoming) {
   const seen = new Set()
   const out = []
@@ -90,6 +142,9 @@ function mergeEvidence(existing, incoming) {
     seen.add(key)
     out.push(item)
   }
+
+  // Phase 2: Validate evidence before return
+  validateEvidence(out)
   return out.slice(0, 32)
 }
 
@@ -822,6 +877,9 @@ export function remember(store, input, { explicitCanonical = false, repair = fal
   const authority = explicitCanonical
     ? AUTHORITIES.CANONICAL
     : (input.authority === AUTHORITIES.CANONICAL ? AUTHORITIES.DERIVED : (input.authority || AUTHORITIES.DERIVED))
+  // Phase 2: Validate evidence before write
+  validateEvidence(input.evidence)
+
   const written = store.put({
     ...input,
     kind,
@@ -941,5 +999,4 @@ export function promote(store, id, { to = AUTHORITIES.DERIVED, explicit = false 
 function unique(arr) {
   return [...new Set(arr.filter(Boolean))]
 }
-
 

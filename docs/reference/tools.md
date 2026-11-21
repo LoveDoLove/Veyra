@@ -12,8 +12,8 @@ the manual surface on top of it.
 
 | Tool | Parameters | What it does |
 | --- | --- | --- |
-| `veyra_remember` | `title`, `body`, `kind`, `scope`, `tags`, `evidence`, `confidence`, `validFrom`, `validUntil`, `context`, `id`, `repair` | Store durable, evidence-backed engineering knowledge. Record only what a later engineer would need: a non-obvious root cause, a verified fix pattern, a durable architecture decision, a project constraint. |
-| `veyra_recall` | `query`, `goal`, `limit`, `kind` | Search memory for the current task. Returns the records and a `generationEventId` identifying the dispatch. |
+| `veyra_remember` | `title`, `body`, `kind`, `scope`, `tags`, `evidence`, `confidence`, `validFrom`, `validUntil`, `context`, `id`, `repair` | Store durable, evidence-backed engineering knowledge. Record only what a later engineer would need: a non-obvious root cause, a verified fix pattern, a durable architecture decision, a project constraint. Evidence anchors may be URI-only (`{uri, note}`), file-level (`{path, note}`), or function-level (`{path, symbol, startLine, endLine, note}` — all four or none). |
+| `veyra_recall` | `query`, `goal`, `limit`, `include_reusable`, `trace`, `kind` | Search memory for the current task. Returns the records and a `generationEventId` identifying the dispatch. `include_reusable` controls cross-project memory inclusion (default true). `trace` opt-in returns structured diagnostics of the real execution path. |
 | `veyra_inspect` | `id` | Read one record in full: evidence anchors, causal facets, provenance, relationships. |
 | `veyra_forget` | `id`, `reason`, `override` | Soft-forget. The record leaves recall but stays inspectable. Protected or canonical records need `override: true` with a reason. |
 | `veyra_promote` | `id`, `to`, `explicit`, `central`, `reason` | Change standing. `canonical` requires `explicit: true` and should only follow an explicit user instruction. `central: true` publishes the record to Central Memories. |

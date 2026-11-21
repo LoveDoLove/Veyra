@@ -27,7 +27,29 @@ refuses the attempt if one is written.
 
 ---
 
-## 2. Record kinds
+## 2. Evidence anchors
+
+Memory records carry evidence anchors that point to the facts behind the claim.
+Three anchor types coexist:
+
+| Type | Fields | Example | Precision |
+| --- | --- | --- | --- |
+| **URI-only** | `uri`, `note` | `{uri: "https://github.com/issue/123", note: "Root cause confirmed"}` | External reference |
+| **File-level** | `path`, `note` | `{path: "src/auth.mjs", note: "Login flow"}` | Whole file |
+| **Function-level** | `path`, `symbol`, `startLine`, `endLine`, `note` | `{path: "src/auth.mjs", symbol: "login", startLine: 45, endLine: 78, note: "test-passed"}` | Specific function |
+
+Function-level anchors require all four fields (`path`, `symbol`, `startLine`,
+`endLine`) or none — partial anchors are rejected. `startLine` and `endLine` are
+1-based line numbers; `startLine ≤ endLine`.
+
+Evidence strength influences **Confidence** (line 18) but not **Authority** or
+**Validation**. Precision (function-level vs file-level) improves retrieval by
+reducing noise 16-40×, but it does not elevate trust. A function-level anchor
+proves *location accuracy*, not test coverage or correctness.
+
+---
+
+## 3. Record kinds
 
 | Kind | Holds | Title is |
 | --- | --- | --- |
@@ -43,7 +65,7 @@ is still unknown, is as useful to a later agent as knowing what worked.
 
 ---
 
-## 3. Causal facets
+## 4. Causal facets
 
 A record may carry structured causal fields. They are extracted from text that
 states them and are used by recall ranking and by merge decisions.
@@ -63,7 +85,7 @@ cause-duplicate, and a `CONFLICT` verdict is never overridden.
 
 ---
 
-## 4. Lifecycle
+## 5. Lifecycle
 
 | Action | Effect | Recall |
 | --- | --- | --- |
@@ -83,7 +105,7 @@ stays open for a later run).
 
 ---
 
-## 5. Trust at read time
+## 6. Trust at read time
 
 Every recalled record is classified against the current repository state. This
 is a projection. It never writes, and it never changes authority or validation.
@@ -105,7 +127,7 @@ visible: hiding them is a rejected behaviour.
 
 ---
 
-## 6. Rooms, Central Memories, and promotion
+## 7. Rooms, Central Memories, and promotion
 
 Storage lives under `$DSH_HOME/veyra/` (or `$VEYRA_HOME`), never inside your
 repository.
@@ -125,7 +147,7 @@ migrated, merged, or deleted.
 
 ---
 
-## 7. Write gate
+## 8. Write gate
 
 Automatic learning runs every observation through a gate that can accept, merge,
 drop, or defer it. Each verdict is counted, with its reason, in a ledger you can
@@ -144,7 +166,7 @@ root cause merges into it.
 
 ---
 
-## 8. Redaction
+## 9. Redaction
 
 Every write path goes through `src/redact.mjs` before persistence. Secrets are
 removed by shape, and a validated tier catches payment cards (Luhn), IBANs
@@ -152,7 +174,7 @@ removed by shape, and a validated tier catches payment cards (Luhn), IBANs
 
 ---
 
-## 9. What Veyra never does
+## 10. What Veyra never does
 
 - It never writes into your repository.
 - It never marks a record `verified` because the record claims success.

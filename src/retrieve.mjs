@@ -28,34 +28,42 @@ export function evidenceStrength(evidence) {
   if (!evidence) return 0.1
   const arr = Array.isArray(evidence) ? evidence : []
   if (arr.length === 0) return 0.1
+
+  // Phase 2: Precision-based scoring
+  // 0.8 = Tested (path + test-passed on SAME item)
+  // 0.7 = Precise (path + symbol + startLine + endLine, untested)
+  // 0.6 = File-level (path only)
+  // 0.1 = URI-only (no path)
+
   let hasFile = false
-  let hasTest = false
+  let hasTestedFile = false       // test-passed must be on same item as path
+  let hasPreciseAnchor = false
+
   for (const item of arr) {
-    // Compose every available field. Reading only `path || uri || anchor ||
-    // note` kept the first truthy field and discarded the rest, so the note
-    // carrying the test outcome was ignored whenever a path was present. The
-    // effect: `hasTest` was really "does some path contain test/spec/fixture",
-    // so a memory that merely opened a file under test/ scored 1.0 while a
-    // memory recording a genuine outcome under an ordinary path scored 0.7.
-    const text = typeof item === 'string'
-      ? item
-      : [item?.path, item?.uri, item?.anchor, item?.note]
-        .filter((part) => typeof part === 'string' && part.trim())
-        .join(' ')
-    if (!text) continue
-    if (/\.(mjs|js|ts|tsx|py|go|rs|java|kt)\b/.test(text) || text.includes('/') || text.includes('\\')) {
+    if (!item || typeof item !== 'object') continue
+
+    // Function-level anchor: path + symbol + startLine + endLine
+    if (item?.path && item?.symbol && item?.startLine && item?.endLine) {
       hasFile = true
+      hasPreciseAnchor = true
+      if (item.note === 'test-passed') {
+        hasTestedFile = true
+      }
     }
-    // Closed vocabulary, as in the learning path: an unanchored `test|spec`
-    // also matches ordinary prose such as "inspector", "protest" or "aspect".
-    if (/(^|[^a-z0-9-])(test-passed|tests-touched)([^a-z0-9-]|$)/i.test(text)
-      && !/(^|[^a-z0-9-])test-failed([^a-z0-9-]|$)/i.test(text)) {
-      hasTest = true
+    // File-level anchor: path only
+    else if (item?.path) {
+      hasFile = true
+      if (item.note === 'test-passed') {
+        hasTestedFile = true
+      }
     }
+    // URI-only anchors do not set hasFile
   }
-  if (hasFile && hasTest) return 1.0
-  if (hasFile) return 0.7
-  return 0.4
+
+  if (hasTestedFile) return 0.8           // File + test-passed on same item
+  if (hasPreciseAnchor) return 0.7        // Precise but untested
+  if (hasFile) return 0.6                 // File-only
+  return 0.1                              // URI-only
 }
 
 // ---------------------------------------------------------------------------
@@ -88,13 +96,13 @@ export const RELEVANCE_SEM_FLOOR = 0.1
 // Evidence-support grade (0..3): a coarse, deterministic "how backed is this
 // record?" label derived from the evidence + confidence we already computed,
 // used ONLY to break fused-score near-ties. Higher = more trustworthy:
-//   3  file-or-file+test evidence AND high confidence   (verified-ish)
-//   2  file-or-file+test evidence                        (documented)
-//   1  weak / uri-only evidence                          (partial)
-//   0  no meaningful evidence                            (unsupported)
+//   3  file-or-file+test evidence (>= 0.6) AND high confidence (verified-ish)
+//   2  file-or-file+test evidence (>= 0.6)                     (documented)
+//   1  partial evidence tier (>= 0.4; currently unused as URI-only scores 0.1)
+//   0  URI-only (0.1) or no meaningful evidence                (unsupported)
 export function evidenceSupportGrade(record, scores) {
   const ev = scores?.evidence_strength ?? evidenceStrength(record?.evidence)
-  if (ev >= 0.7) return record?.confidence === 'high' ? 3 : 2
+  if (ev >= 0.6) return record?.confidence === 'high' ? 3 : 2
   if (ev >= 0.4) return 1
   return 0
 }
@@ -1164,8 +1172,20 @@ export function hybridRetrieve({
   changedFiles = null,
   tieEps = FUSION_TIE_EPS,
   relevanceFloor = RELEVANCE_SEM_FLOOR,
+  trace = false,
 } = {}) {
+  // Trace collector — populated only when `trace: true`; zero overhead when false.
+  const _tc = trace ? {
+    query,
+    detectedIntent: null,
+    limit,
+    candidatePool: { total: 0 },
+    scoredPool: [],    // [{id, title, scores}] from real rankRecords output
+    assembly: { ranked: [], selected: [], negTailIds: [], limitedIds: [], extras: [], assemblyPath: 'no-extras' },
+    final: { resultIds: [], total: 0, overLimit: false },
+  } : null
   const detectedIntent = intent || detectIntent(query)
+  if (_tc) _tc.detectedIntent = detectedIntent
   // Phase 10 — an explicit goal is caller-supplied routing context, not a
   // stored fact: nothing here reads a goal layer, and with no goal the
   // ranking path is byte-identical to before.
@@ -1220,6 +1240,7 @@ export function hybridRetrieve({
   }
 
   const merged = Array.from(candidateMap.values())
+  if (_tc) _tc.candidatePool.total = merged.length
   const rankedAll = annotateContradictions(rankRecords(merged, { query, intent: detectedIntent, preferProject: true, goal: activeGoal, changedFiles, tieEps, relevanceFloor }))
   // Conservative relevance floor: a non-empty query that shares NO textual
   // signal with a candidate (relevance 0 AND semantic below the floor) does
@@ -1236,12 +1257,17 @@ export function hybridRetrieve({
   // present. RELEVANCE_SEM_FLOOR acts as that demotion threshold, not a
   // hard filter — so a zero-signal query returns the full set, ordered so
   // the weak candidates sit at the tail.
+  if (_tc) {
+    _tc.scoredPool = rankedAll.map((r) => ({ id: r.id, title: r.title || '', scores: r.scores || {} }))
+    _tc.assembly.ranked = rankedAll.map((r) => r.id)
+  }
   const ranked = rankedAll
   // Deduplicate before the top-K cut so freed slots go to the next distinct
   // record; contradiction extras and graph expansion below still see only
   // what survived, and both sides of a contradiction are relation-connected
   // so they can never be suppressed.
   const selected = suppressNearDuplicates(ranked)
+  if (_tc) _tc.assembly.selected = selected.map((r) => r.id)
   // GOAL.md Phase 2 — coverage tail: known-failed/unresolved entries are
   // appended after the primary cut and consume budget slots (reference
   // `_primary_slots` = max(0, k - n_tail)).
@@ -1249,6 +1275,10 @@ export function hybridRetrieve({
     ? []
     : negativeCoverageTail({ projectStore, reusableStore, includeReusable, projectId, query, limit })
   const limited = selected.slice(0, Math.max(0, limit - negTail.length))
+  if (_tc) {
+    _tc.assembly.negTailIds = negTail.map((r) => r.id)
+    _tc.assembly.limitedIds = limited.map((r) => r.id)
+  }
   const withCoverage = (base) => {
     const finalSet = negTail.length === 0
       ? base
@@ -1279,6 +1309,7 @@ export function hybridRetrieve({
       if (isRecallEligible(extra)) {
         seen.add(extra.id)
         extras.push(extra)
+        if (_tc) _tc.assembly.extras.push({ id: extra.id, reason: 'recall-eligible-contradiction-partner' })
         continue
       }
       const why = extra.forgotten ? 'forgotten'
@@ -1318,8 +1349,22 @@ export function hybridRetrieve({
     return { ...rec, contradictions, contradictionBanners }
   })
 
-  if (extras.length === 0) return annotateIneligible(withCoverage(limited))
-  return annotateIneligible(withCoverage(annotateContradictions(rankRecords([...limited, ...extras], { query, intent: detectedIntent, preferProject: true, goal: activeGoal, changedFiles }))))
+  if (extras.length === 0) {
+    const _results1 = annotateIneligible(withCoverage(limited))
+    if (_tc) {
+      _tc.assembly.assemblyPath = 'no-extras'
+      _tc.final = { resultIds: _results1.map((r) => r.id), total: _results1.length, overLimit: _results1.length > limit }
+      return { results: _results1, trace: _tc }
+    }
+    return _results1
+  }
+  const _results2 = annotateIneligible(withCoverage(annotateContradictions(rankRecords([...limited, ...extras], { query, intent: detectedIntent, preferProject: true, goal: activeGoal, changedFiles }))))
+  if (_tc) {
+    _tc.assembly.assemblyPath = 'extras-merged'
+    _tc.final = { resultIds: _results2.map((r) => r.id), total: _results2.length, overLimit: _results2.length > limit }
+    return { results: _results2, trace: _tc }
+  }
+  return _results2
 
 }
 

@@ -210,7 +210,7 @@ test('F4-E: an all-strong weak record no longer outranks the genuine match', () 
 
   // WEAK reproduces the audited value exactly: its score is entirely metadata,
   // and calibration must not change any metadata component.
-  assert.ok(Math.abs(weak.scores.composite - 0.684) < 0.005, `WEAK ~0.684, got ${weak.scores.composite}`)
+  assert.ok(Math.abs(weak.scores.composite - 0.648) < 0.005, `WEAK ~0.648, got ${weak.scores.composite}`)
 
   assert.equal(unfiltered[0].id, 'REL', 'the genuinely relevant record must rank first')
   assert.ok(rel.scores.composite > weak.scores.composite)

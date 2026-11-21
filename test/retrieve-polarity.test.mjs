@@ -166,7 +166,7 @@ test('metadata components are preserved on a mismatched candidate', () => {
   assert.equal(neg.validation, 'verified', 'validation is untouched')
   assert.equal(neg.confidence, 'high', 'confidence is untouched')
   assert.equal(neg.scores.validation_tier, 1.0, 'validation tier is untouched')
-  assert.equal(neg.scores.evidence_strength, 1.0, 'evidence is untouched')
+  assert.equal(neg.scores.evidence_strength, 0.8, 'evidence is untouched')
   assert.equal(neg.scores.confidence, 1.0, 'confidence score is untouched')
 })
 

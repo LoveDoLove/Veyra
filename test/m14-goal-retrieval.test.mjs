@@ -184,7 +184,7 @@ test('records with equal goal affinity preserve their composite / fusion order',
   const pool = [
     rec('twin-thin', 'redis cache warming takes minutes', { evidence: [] }),
     rec('twin-rich', 'redis cache warming takes minutes', {
-      evidence: [{ type: 'test', note: 'reproduced 3x' }, { type: 'doc', note: 'runbook' }],
+      evidence: [{ path: 'src/cache.mjs', note: 'reproduced 3x' }],
     }),
   ]
   const q = 'redis cache warming'

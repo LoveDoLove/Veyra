@@ -49,8 +49,8 @@ test('evidenceSupportGrade maps evidence+confidence to a 0..3 grade', () => {
   assert.equal(evidenceSupportGrade({ evidence: [{ path: 'src/x.mjs', note: 'test-passed' }], confidence: 'high' }), 3)
   // file evidence (0.7) but non-high confidence
   assert.equal(evidenceSupportGrade({ evidence: [{ path: 'src/x.mjs' }], confidence: 'medium' }), 2)
-  // slash-bearing uri counts as file evidence (0.7); high confidence -> top grade
-  assert.equal(evidenceSupportGrade({ evidence: [{ uri: 'https://x.example/doc' }], confidence: 'high' }), 3)
+  // URI-only evidence in Phase 2 scores 0.1 (not 0.7); not enough for any grade tier
+  assert.equal(evidenceSupportGrade({ evidence: [{ uri: 'https://x.example/doc' }], confidence: 'high' }), 0)
   // no meaningful evidence
   assert.equal(evidenceSupportGrade({ evidence: [], confidence: 'low' }), 0)
 })

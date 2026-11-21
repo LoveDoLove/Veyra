@@ -285,7 +285,7 @@ export function buildToolDefinitions(runtime) {
         tags: { type: 'array', items: { type: 'string' }, description: 'Optional short tags.' },
         evidence: {
           type: 'array',
-          description: 'Optional evidence anchors (path, note, uri).',
+          description: 'Optional evidence anchors (path, note, uri, symbol, startLine, endLine).',
           items: {
             type: 'object',
             description: 'Evidence anchor item.',
@@ -294,6 +294,9 @@ export function buildToolDefinitions(runtime) {
               path: { type: 'string', description: 'Repository file path anchor.' },
               note: { type: 'string', description: 'Evidence note, symptom, or observation details.' },
               uri: { type: 'string', description: 'External URI or document reference.' },
+              symbol: { type: 'string', description: 'Target symbol or function name (function-level evidence).' },
+              startLine: { type: 'number', description: '1-based starting line number (function-level evidence).' },
+              endLine: { type: 'number', description: '1-based ending line number (function-level evidence).' },
             },
           },
         },
@@ -392,6 +395,7 @@ export function buildToolDefinitions(runtime) {
         goal: { type: 'string', description: 'Optional goal-directed routing: the task you are working toward. Steers ranking toward relevant experience; it is a direction, never an authority, and never promotes or demotes anything. Omit for ordinary search.' },
         limit: { type: 'number', description: 'Max results (default 5, max 20).' },
         include_reusable: { type: 'boolean', description: 'Include cross-project reusable experience. Default true.' },
+        trace: { type: 'boolean', description: 'Opt-in diagnostic trace: returns structured trace of real execution path (candidate pool, score breakdown, assembly steps, final). Off by default; zero overhead when false.' },
         kind: { type: 'string', enum: [...VALID_KINDS], description: 'Optional kind filter: memory | knowledge | evidence | observation | negative | unresolved. Omit for unified search (known-failed/unresolved then surface only as a bounded zero-score coverage tail).' },
       },
       output: {
@@ -418,7 +422,8 @@ export function buildToolDefinitions(runtime) {
         const includeReusable = args.include_reusable !== false
         // Phase 10 — goal is caller-supplied routing context only.
         const goal = String(args.goal ?? '').trim() ? args.goal : null
-        const items = recall({
+        const _traceEnabled = args.trace === true
+        const _rawRecall = recall({
           projectStore,
           reusableStore,
           query: args.query,
@@ -426,7 +431,11 @@ export function buildToolDefinitions(runtime) {
           limit,
           includeReusable,
           kind: args.kind || null,
+          trace: _traceEnabled,
         })
+        // When trace=true, hybridRetrieve returns {results, trace}; otherwise bare array.
+        const items = _traceEnabled ? _rawRecall.results : _rawRecall
+        const _traceData = _traceEnabled ? _rawRecall.trace : null
         // The library keeps zero-signal candidates recallable (recency pool).
         // At the tool surface that reads as an answer to a question it did not
         // answer, so a non-empty query with no genuine signal returns nothing.
@@ -473,13 +482,15 @@ export function buildToolDefinitions(runtime) {
             generationEventId = emitted?.entries?.at(-1)?.eventId ?? null
           }
         } catch { /* telemetry never breaks a recall */ }
-        return {
+        const _recall_return = {
           ok: true,
           count: visible.length,
           items: visible.map(recordView),
           generationEventId,
           disclaimer: 'Recalled memory is not repository truth. Verify before acting.',
         }
+        if (_traceData) _recall_return.trace = _traceData
+        return _recall_return
       },
       presentCall: (args) => ({ card: 'generic', title: 'Recall', kind: 'read', rawInput: args.query }),
     },

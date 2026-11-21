@@ -224,7 +224,7 @@ test('RQB-4: verified/reviewed records outrank unverified canonical noise', () =
       'verified derived record outranks unverified canonical')
     assert.equal(top.validation, VALIDATIONS.VERIFIED, 'top record is verified')
     assert.ok(top.scores.validation_tier > 0.9, 'verified tier is high')
-    assert.ok(top.scores.evidence_strength > 0.8, 'strong evidence')
+    assert.ok(top.scores.evidence_strength >= 0.8, 'strong evidence')
 
     const canonical = hits.find((r) => r.authority === AUTHORITIES.CANONICAL)
     assert.ok(canonical, 'canonical record still present (not filtered)')

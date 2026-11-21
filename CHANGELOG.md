@@ -1,5 +1,21 @@
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-22
+
+### Added
+
+- **Function-level evidence anchors (`symbol`, `startLine`, `endLine`).** Evidence anchors now support function-level granularity alongside file-level and URI-only anchors. Schema validation in `src/learn.mjs` enforces all-or-none presence of function fields, requires `path`, validates positive line integers, and enforces `startLine <= endLine`.
+- **Opt-in structured retrieval trace (`trace: true`).** `hybridRetrieve` and `veyra_recall` accept an optional `trace` boolean parameter that returns the real execution path (candidate pool size, dimensional score breakdown in `rankRecords`, assembly steps, and final selected IDs). Off by default with zero runtime overhead.
+
+### Changed
+
+- **Evidence precision scoring calibrated.** Precision (location accuracy) is strictly separated from reliability (test verification). Tested files (`path` + `note: 'test-passed'` on the same item) score 0.8; function-level anchors (untested) score 0.7; file-level anchors score 0.6; URI-only anchors score 0.1. Cross-item outcome aggregation is rejected. `tests-touched` is classified as file-adjacent (0.6) rather than tested (0.8).
+- **`evidenceSupportGrade` documentation updated.** Clarified that URI-only anchors (0.1) map to Grade 0, while file-level and function-level anchors (>= 0.6) map to Grade 2 (or Grade 3 with high confidence). Grade 1 is preserved for future intermediate tiers.
+
+### Backward Compatibility
+
+- Existing memories with file-level (`{path, note}`) or URI-only (`{uri, note}`) anchors continue to work without migration or schema changes. All existing recall and ranking contracts remain byte-identical when `trace` is false or omitted.
+
 ### Fixed
 
 - The packaged-size figure in `README.md`, `README.zh-CN.md`, `docs/WHITEPAPER.md` and `docs/WHITEPAPER.zh-CN.md` is corrected from 273.3 kB to 273.1 kB. The 0.6.0 figure was read from `npm run pack:check`, which packs the working copy; two shipped files (`src/evolve.mjs`, `src/text.mjs`) hold CRLF on disk and LF in git, so that pack is 343 bytes larger than the artifact the registry actually publishes. The published `0.6.0` tarball is 273103 bytes (273.1 kB), and it is byte-identical to a `git archive` export of the tag. Measure from `git archive`, never from the working copy.

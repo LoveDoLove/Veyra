@@ -38,43 +38,43 @@ function tempStore() {
 // ---------------------------------------------------------------------------
 
 test('F1: a genuine test-passed note is detected even when a path is present', () => {
-  assert.equal(evidenceStrength([{ path: 'src/store.mjs', note: 'test-passed' }]), 1.0)
+  assert.equal(evidenceStrength([{ path: 'src/store.mjs', note: 'test-passed' }]), 0.8)
 })
 
-test('F1: a genuine tests-touched note is detected even when a path is present', () => {
-  assert.equal(evidenceStrength([{ path: 'src/store.mjs', note: 'tests-touched' }]), 1.0)
+test('F1: a genuine tests-touched note is detected as file-level evidence (0.6, not tested 0.8)', () => {
+  assert.equal(evidenceStrength([{ path: 'src/store.mjs', note: 'tests-touched' }]), 0.6)
 })
 
 test('F1: a test-failed note is not positive evidence', () => {
   // hasFile still applies, so the score is the file-only tier.
-  assert.equal(evidenceStrength([{ path: 'src/store.mjs', note: 'test-failed' }]), 0.7)
+  assert.equal(evidenceStrength([{ path: 'src/store.mjs', note: 'test-failed' }]), 0.6)
 })
 
 test('F1: a path alone no longer implies test evidence', () => {
-  assert.equal(evidenceStrength([{ path: 'test/foo.test.mjs', note: 'ordinary note' }]), 0.7)
-  assert.equal(evidenceStrength([{ path: 'test/helpers.mjs' }]), 0.7)
-  assert.equal(evidenceStrength([{ path: 'spec/x.rb' }]), 0.7)
+  assert.equal(evidenceStrength([{ path: 'test/foo.test.mjs', note: 'ordinary note' }]), 0.6)
+  assert.equal(evidenceStrength([{ path: 'test/helpers.mjs' }]), 0.6)
+  assert.equal(evidenceStrength([{ path: 'spec/x.rb' }]), 0.6)
 })
 
 test('F1: outcome and path may arrive as separate evidence items', () => {
   assert.equal(evidenceStrength([
     { path: 'src/store.mjs' },
     { note: 'test-passed' },
-  ]), 1.0)
+  ]), 0.6)
   assert.equal(evidenceStrength([
     { path: 'src/store.mjs' },
     { note: 'tests-touched' },
-  ]), 1.0)
+  ]), 0.6)
 })
 
 test('F1: a passing test with no file reference is not promoted to file tier', () => {
   // No path at all -> no hasFile. Outcome alone must not fabricate a file.
-  assert.equal(evidenceStrength([{ note: 'test-passed' }]), 0.4)
+  assert.equal(evidenceStrength([{ note: 'test-passed' }]), 0.1)
 })
 
 test('F1: uri and anchor fields participate, not just path and note', () => {
-  assert.equal(evidenceStrength([{ uri: 'src/store.mjs' }]), 0.7)
-  assert.equal(evidenceStrength([{ anchor: 'section-2' }]), 0.4)
+  assert.equal(evidenceStrength([{ uri: 'src/store.mjs' }]), 0.1)
+  assert.equal(evidenceStrength([{ anchor: 'section-2' }]), 0.1)
 })
 
 // ---------------------------------------------------------------------------
@@ -90,7 +90,7 @@ for (const [label, path] of [
   ['attestation', 'src/attestation.mjs'],
 ]) {
   test(`F2: "${label}" produces no test evidence`, () => {
-    assert.equal(evidenceStrength([{ path, note: 'ordinary note' }]), 0.7)
+    assert.equal(evidenceStrength([{ path, note: 'ordinary note' }]), 0.6)
   })
 }
 
@@ -104,12 +104,12 @@ for (const note of [
   'fixture file',
 ]) {
   test(`F2: note "${note}" is not positive test evidence`, () => {
-    assert.equal(evidenceStrength([{ path: 'src/store.mjs', note }]), 0.7)
+    assert.equal(evidenceStrength([{ path: 'src/store.mjs', note }]), 0.6)
   })
 }
 
 test('F2: test-failed alongside a path is not positive evidence', () => {
-  assert.equal(evidenceStrength([{ path: 'test/foo.test.mjs', note: 'test-failed' }]), 0.7)
+  assert.equal(evidenceStrength([{ path: 'test/foo.test.mjs', note: 'test-failed' }]), 0.6)
 })
 
 // ---------------------------------------------------------------------------
@@ -123,8 +123,8 @@ test('empty and absent evidence keep their baseline tiers', () => {
 })
 
 test('a plain string evidence item is still scored', () => {
-  assert.equal(evidenceStrength(['src/store.mjs']), 0.7)
-  assert.equal(evidenceStrength(['test-passed']), 0.4)
+  assert.equal(evidenceStrength(['src/store.mjs']), 0.1)
+  assert.equal(evidenceStrength(['test-passed']), 0.1)
 })
 
 test('the evidence weight is still 0.18 and is not rebalanced', () => {
@@ -138,7 +138,7 @@ test('the evidence weight is still 0.18 and is not rebalanced', () => {
     title: 't', body: 'b',
     evidence: [{ path: 'src/store.mjs', note: 'test-passed' }],
   }], { query: '' })
-  assert.equal(ranked.scores.evidence_strength, 1.0)
+  assert.equal(ranked.scores.evidence_strength, 0.8)
   // composite is a fixed linear sum; changing any weight changes it, so this
   // pins the contribution of evidence at 0.18 * 1.0 = 0.18.
   assert.equal(ranked.scores.composite > 0.18, true)
@@ -171,8 +171,8 @@ test('runtime: recall() reports full evidence only for a genuine outcome', () =>
   const pathOnly = ranked.find((r) => r.id === 'PATHONLY')
   assert.ok(genuine, 'genuine record must be recallable')
   assert.ok(pathOnly, 'path-only record must still be recallable')
-  assert.equal(genuine.scores.evidence_strength, 1.0)
-  assert.equal(pathOnly.scores.evidence_strength, 0.7)
+  assert.equal(genuine.scores.evidence_strength, 0.8)
+  assert.equal(pathOnly.scores.evidence_strength, 0.6)
   store.close()
 })
 
@@ -185,6 +185,6 @@ test('runtime: an inspector path no longer earns full evidence', () => {
     evidence: [{ path: 'src/inspector.mjs', note: 'modified src/inspector.mjs' }],
   })
   const [ranked] = recall({ projectStore: store, query: 'inspector refactor', limit: 5 })
-  assert.equal(ranked.scores.evidence_strength, 0.7, 'must not reach the full tier')
+  assert.equal(ranked.scores.evidence_strength, 0.6, 'must not reach the full tier')
   store.close()
 })

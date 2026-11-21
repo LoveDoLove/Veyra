@@ -87,7 +87,7 @@ test('hybrid search: transparent dimensional score breakdown and ranking', () =>
 
   // Top result has strong lexical and semantic overlap
   assert.ok(sc.semantic > 0.3)
-  assert.ok(sc.evidence_strength >= 0.7)
+  assert.ok(sc.evidence_strength >= 0.6)
   assert.ok(sc.composite > 0.7)
 
   store.close()
